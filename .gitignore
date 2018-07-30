@@ -1,0 +1,5 @@
+.DS_Store
+docs/_build
+*checkpoint.ipynb
+*.pyc
+*.npy
