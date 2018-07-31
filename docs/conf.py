@@ -24,7 +24,7 @@ class Mock(MagicMock):
 	@classmethod
 	def __getattr__(cls,name):
 		return MagicMock()
-MOCK_MODULES = ['pyopencl','pyopencl.array']
+MOCK_MODULES = ['numpy','numpy.random','numpy.fft','scipy.special','scipy.interpolate','scipy.sparse','scipy.sparse.linalg','scipy','scipy.linalg','scipy.spatial','pyopencl','pyopencl.array']
 sys.modules.update((mod_name,Mock()) for mod_name in MOCK_MODULES)
 
 sys.path.insert(0, os.path.abspath('..'))
