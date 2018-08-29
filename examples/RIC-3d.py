@@ -20,7 +20,7 @@ mess = 'Processing input file...\n'
 # Preprocessing calculations
 # Use thick lens theory to set up channel parameters for given focal length
 
-ideal_form = True
+ideal_form = False
 f = 0.01/mks_length
 Rlens = 0.75*f
 if ideal_form:

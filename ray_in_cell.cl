@@ -25,22 +25,30 @@ inline double ComputeRayVolume(int vidx,__global double *xp)
 
 inline double Gather(__global double *dens,const double4 x)
 {
+	// cart,cyl are constant doubles installed dynamically
 	// spacing,size are constant double4's installed dynamically
 	// num is a constant int[4] installed dynamically
 	// Assumes coordinate lies in the interior grid
 	double ans = 0.0;
-	const double rho = sqrt(x.s1*x.s1 + x.s2*x.s2);
-	const int c1 = 2 + (int)(rho/spacing.s1);
-	const int c3 = 2 + (int)((x.s3+0.5*size.s3)/spacing.s3);
-	const int s1 = (c1>0)*(c1<num[1]-1)*num[3];
+	const double x1 = (cart*x.s1 + cyl*sqrt(x.s1*x.s1 + x.s2*x.s2))/spacing.s1;
+	const double x2 = cart*x.s2/spacing.s2;
+	const double x3 = x.s3/spacing.s3;
+	const int c1 = 2 + ((int)cart)*(num[1]-4)/2 + (int)x1 - (x1<0);
+	const int c2 = 2 + (num[2]-4)/2 + (int)x2 - (x2<0);
+	const int c3 = 2 + (num[3]-4)/2 + (int)x3 - (x3<0);
+	const int s1 = (c1>0)*(c1<num[1]-1)*num[2]*num[3];
+	const int s2 = (c2>0)*(c2<num[2]-1)*num[3];
 	const int s3 = (c3>0)*(c3<num[3]-1);
-	const double r = 2.0 + rho/spacing.s1 - (double)c1 - 0.5;
-	const double z = 2.0 + (x.s3+0.5*size.s3)/spacing.s3 - (double)c3 - 0.5;
-	const double w1[3] = {0.125-0.5*r+0.5*r*r,0.75-r*r,0.125+0.5*r+0.5*r*r};
-	const double w3[3] = {0.125-0.5*z+0.5*z*z,0.75-z*z,0.125+0.5*z+0.5*z*z};
+	const double q1 = x1 - (int)x1 + (x1<0) - 0.5;
+	const double q2 = cart*(x2 - (int)x2 + (x2<0) - 0.5);
+	const double q3 = x3 - (int)x3 + (x3<0) - 0.5;
+	const double w1[3] = {0.125-0.5*q1+0.5*q1*q1,0.75-q1*q1,0.125+0.5*q1+0.5*q1*q1};
+	const double w2[3] = {0.125-0.5*q2+0.5*q2*q2,0.75-q2*q2,0.125+0.5*q2+0.5*q2*q2};
+	const double w3[3] = {0.125-0.5*q3+0.5*q3*q3,0.75-q3*q3,0.125+0.5*q3+0.5*q3*q3};
 	for (int i1=0;i1<3;i1++)
-		for (int i3=0;i3<3;i3++)
-			ans += w1[i1]*w3[i3]*dens[(c1+i1-1)*s1 + (c3+i3-1)*s3];
+		for (int i2=0;i2<3;i2++)
+			for (int i3=0;i3<3;i3++)
+				ans += w1[i1]*w2[i2]*w3[i3]*dens[(c1+i1-1)*s1 + (c2+i2-1)*s2 + (c3+i3-1)*s3];
 	return ans;
 }
 

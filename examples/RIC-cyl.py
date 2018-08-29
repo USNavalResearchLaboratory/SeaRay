@@ -7,7 +7,7 @@ import volume
 
 # Example input file for ray-in-cell propagation through ideal form plasma lens.
 # The alternate test case creates a quartic lens on a grid.
-# The ideal form lens data must be in ./aux.  Generate with synth-lens.py.
+# The ideal form lens data must be in ./extras.  Generate with synth-lens.py.
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -28,7 +28,7 @@ if ideal_form:
 	lens_object = volume.AxisymmetricGrid('plasma')
 else:
 	Lch = 0.2*f
-	lens_object = volume.TestGrid('plasma')
+	lens_object = volume.AxisymmetricTestGrid('plasma')
 Fnum = 1.0
 r00 = 0.5*f/Fnum # spot size of radiation
 t00 = 1e-6*C.c/mks_length # pulse width (not important)

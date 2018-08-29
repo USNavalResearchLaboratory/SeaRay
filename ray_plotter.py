@@ -207,11 +207,11 @@ class MeshViewer:
 			self.structured_mesh.append(np.load(prefix+'mesh.npy'))
 	def GetMeshList(self):
 		return self.structured_mesh
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		if 'mesh' in sys.argv:
 			# For rotated meshes we have a problem here
-			fig_num += 1
-			fig = plt.figure(fig_num,figsize=(7,6))
+			mpl_plot_count += 1
+			fig = plt.figure(mpl_plot_count,figsize=(7,6))
 			ax = fig.add_subplot(111,projection='3d')
 			surf = []
 			for j,mesh in enumerate(self.mesh):
@@ -225,7 +225,7 @@ class MeshViewer:
 			ax.set_ylabel(lab_str[2])
 			ax.set_zlabel(lab_str[3])
 			plt.tight_layout()
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
 class PhaseSpace:
 	def __init__(self):
@@ -235,13 +235,13 @@ class PhaseSpace:
 		self.eikonal[:,0] += self.xp[:,0,4]*self.xp[:,0,0]
 		self.eikonal[:,0] -= np.min(self.eikonal[:,0])
 		self.res = 200
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		for i in range(12):
 			for j in range(12):
 				plot_key = 'h'+format(i,'01X').lower()+format(j,'01X').lower()
 				if plot_key in sys.argv:
-					fig_num += 1
-					plt.figure(fig_num,figsize=(7,6))
+					mpl_plot_count += 1
+					plt.figure(mpl_plot_count,figsize=(7,6))
 					if i<8:
 						x = self.xp[:,0,i]
 					else:
@@ -267,7 +267,7 @@ class PhaseSpace:
 					plt.xlabel(lab_str[i],size=18)
 					plt.ylabel(lab_str[j],size=18)
 					plt.tight_layout()
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
 class Orbits:
 	def __init__(self,mesh_list):
@@ -278,14 +278,14 @@ class Orbits:
 		self.xpo[:,8] += self.xpo[:,4]*self.xpo[:,0]
 		self.mesh_list = mesh_list
 		self.res = 200
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		for i in range(12):
 			for j in range(12):
 				for k in range(12):
 					plot_key = 'f'+format(i,'01X').lower()+format(j,'01X').lower()+format(k,'01X').lower()
 					if plot_key in sys.argv:
-						fig_num += 1
-						plt.figure(fig_num,figsize=(7,6))
+						mpl_plot_count += 1
+						plt.figure(mpl_plot_count,figsize=(7,6))
 						harray,plot_ext = grid_tools.GridFromInterpolation(self.xpo[:,i],self.xpo[:,j],self.xpo[:,k],(self.res,self.res))
 						plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,i,j))
 						b=plt.colorbar()
@@ -295,6 +295,7 @@ class Orbits:
 						plt.tight_layout()
 		if 'o3d' in sys.argv:
 			if maya_loaded:
+				maya_plot_count += 1
 				for j in range(self.orbits.shape[1]):
 					x = normalization[1]*self.orbits[:,j,1]
 					y = normalization[2]*self.orbits[:,j,2]
@@ -308,17 +309,18 @@ class Orbits:
 					y = y[np.where(test)]
 					z = z[np.where(test)]
 					s = s[np.where(test)]
-					characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
-					mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
+					if x.shape[0]>0:
+						characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
+						mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
 				for mesh in self.mesh_list:
 					c = mesh[:,:,0]
 					x = mesh[:,:,1]
 					y = mesh[:,:,2]
 					z = mesh[:,:,3]
-					mlab.mesh(x*normalization[1],y*normalization[2],z*normalization[3],color=(0.5,1,0.5),opacity=1.0)
-			if mpl_loaded:
-				fig_num += 1
-				fig = plt.figure(fig_num,figsize=(7,6))
+					mlab.mesh(x*normalization[1],y*normalization[2],z*normalization[3],color=(0.5,1,0.5),opacity=0.1)
+			if mpl_loaded and not maya_loaded:
+				mpl_plot_count += 1
+				fig = plt.figure(mpl_plot_count,figsize=(7,6))
 				ax = fig.add_subplot(111,projection='3d')
 				for j in range(self.orbits.shape[1]):
 					ax.plot(normalization[1]*self.orbits[:,j,1],normalization[2]*self.orbits[:,j,2],normalization[3]*self.orbits[:,j,3])
@@ -346,8 +348,8 @@ class Orbits:
 				except:
 					arg = 'stop'
 				if arg!='stop':
-					fig_num += 1
-					plt.figure(fig_num,figsize=(4,4))
+					mpl_plot_count += 1
+					plt.figure(mpl_plot_count,figsize=(4,4))
 					center = (origin[i],origin[j])
 					if arg!='default':
 						lims = (np.float(arg.split(',')[0]),np.float(arg.split(',')[1]),np.float(arg.split(',')[2]),np.float(arg.split(',')[3]))
@@ -358,7 +360,7 @@ class Orbits:
 					plt.xlabel(lab_str[i],size=18)
 					plt.ylabel(lab_str[j],size=18)
 					plt.tight_layout()
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
 class EikonalWaveProfiler:
 	def __init__(self):
@@ -375,12 +377,12 @@ class EikonalWaveProfiler:
 		except:
 			self.res = 200
 		print('eikonal detectors =',self.name)
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		for det_idx,eik in enumerate(self.name):
 			if eik in sys.argv:
 				xps = self.xp[det_idx]
 				eiks = self.eik[det_idx]
-				fig_num += 1
+				mpl_plot_count += 1
 				plt.figure(eik,figsize=(6,7))
 				phase = eiks[:,0] + xps[:,4]*xps[:,0]
 				phase -= np.min(phase)
@@ -405,7 +407,7 @@ class EikonalWaveProfiler:
 				plt.ylabel(lab_str[2],size=18)
 
 				plt.tight_layout()
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
 class PlaneWaveProfiler:
 	def __init__(self):
@@ -420,7 +422,7 @@ class PlaneWaveProfiler:
 			self.eik.append(np.load(prefix+'plane_eik.npy'))
 			self.ext.append(np.load(prefix+'plane_plot_ext.npy'))
 		print('plane wave detectors =',self.name)
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		for det_idx,pw in enumerate(self.name):
 			try:
 				arg = arg_dict[pw]
@@ -435,8 +437,8 @@ class PlaneWaveProfiler:
 					vaxis = np.int(arg.split(',')[1])
 					slice_idx = np.int(arg.split(',')[2])
 					wave_zone_fraction = np.double(arg.split(',')[3])
-				fig_num += 1
-				plt.figure(fig_num,figsize=(5,7))
+				mpl_plot_count += 1
+				plt.figure(mpl_plot_count,figsize=(5,7))
 				plt.subplot(211)
 				A = self.eik[det_idx]
 				A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
@@ -460,7 +462,7 @@ class PlaneWaveProfiler:
 				plt.tight_layout()
 			except KeyError:
 				print('INFO:',pw,'not used.')
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
 class BesselBeamProfiler:
 	def __init__(self):
@@ -475,7 +477,7 @@ class BesselBeamProfiler:
 			self.eik.append(np.load(prefix+'bess_eik.npy'))
 			self.ext.append(np.load(prefix+'bess_plot_ext.npy'))
 		print('Bessel beam detectors =',self.name)
-	def Plot(self,fig_num):
+	def Plot(self,mpl_plot_count,maya_plot_count):
 		for det_idx,bess in enumerate(self.name):
 			try:
 				arg = arg_dict[bess]
@@ -483,11 +485,11 @@ class BesselBeamProfiler:
 				if arg.split(',')[0]=='3d':
 					lab_str = cunits.GetLabels()
 					wave_zone_fraction = np.double(arg.split(',')[1])
-					fig_num += 1
+					mpl_plot_count += 1
 					A = self.wave[det_idx]
 					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
 					A2,plot_ext = RadialReduce(A2,dom[:4],wave_zone_fraction)
-					fig = plt.figure(fig_num,figsize=(8,8))
+					fig = plt.figure(mpl_plot_count,figsize=(8,8))
 					ax = fig.add_subplot(111,projection='3d')
 					z_list = np.linspace(dom[4],dom[5],A2.shape[2])
 					rho_list = np.linspace(dom[0],dom[1],A2.shape[0])
@@ -518,8 +520,8 @@ class BesselBeamProfiler:
 						slice_idx = np.int(arg.split(',')[2])
 						wave_zone_fraction = np.double(arg.split(',')[3])
 					lab_str = cunits.GetLabels()
-					fig_num += 1
-					plt.figure(fig_num,figsize=(5,7))
+					mpl_plot_count += 1
+					plt.figure(mpl_plot_count,figsize=(5,7))
 					plt.subplot(211)
 					A = self.eik[det_idx]
 					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
@@ -543,9 +545,10 @@ class BesselBeamProfiler:
 					plt.tight_layout()
 			except KeyError:
 				print('INFO:',bess,'not used.')
-		return fig_num
+		return mpl_plot_count,maya_plot_count
 
-fig_num = 0
+mpl_plot_count = 0
+maya_plot_count = 0
 
 try:
 	label_type = arg_dict['labels']
@@ -564,25 +567,25 @@ lab_str = units.GetLabels()
 cunits = Units('cyl')
 
 meshPlots = MeshViewer()
-fig_num = meshPlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = meshPlots.Plot(mpl_plot_count,maya_plot_count)
 
 orbitPlots = Orbits(meshPlots.GetMeshList())
-fig_num = orbitPlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = orbitPlots.Plot(mpl_plot_count,maya_plot_count)
 
 phaseSpacePlots = PhaseSpace()
-fig_num = phaseSpacePlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = phaseSpacePlots.Plot(mpl_plot_count,maya_plot_count)
 
 eikonalPlots = EikonalWaveProfiler()
-fig_num = eikonalPlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = eikonalPlots.Plot(mpl_plot_count,maya_plot_count)
 
 planePlots = PlaneWaveProfiler()
-fig_num = planePlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = planePlots.Plot(mpl_plot_count,maya_plot_count)
 
 besselPlots = BesselBeamProfiler()
-fig_num = besselPlots.Plot(fig_num)
+mpl_plot_count,maya_plot_count = besselPlots.Plot(mpl_plot_count,maya_plot_count)
 
-if maya_loaded:
+if maya_loaded and maya_plot_count>0:
 	mlab.show()
 
-if mpl_loaded:
+if mpl_loaded and mpl_plot_count>0:
 	plt.show()

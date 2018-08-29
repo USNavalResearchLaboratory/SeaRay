@@ -8,6 +8,8 @@ All input dictionaries for volumes have the following in common:
 #. :samp:`dispersion outside` means dispersion outside the volume.
 #. :samp:`origin` is the location of a reference point which differs by type of volume.
 #. :samp:`euler angles` rotates the volume from the default orientation.
+
+This module uses multiple inheritance resulting in a diamond problem.  All volumes inherit from ``base_volume``.  This branches into some objects that describe a region, and others that describe a nonuniformity inside the region.  Nonuniform volumes are derived from both, hence the diamond problem.  This is resolved by using the ``super()`` function in the initialization chain.
 '''
 import numpy as np
 import scipy.spatial
@@ -97,7 +99,7 @@ class SphericalLens(base_volume):
 	The thickness is measured along central axis of lens.
 	The extremities on axis are equidistant from the origin'''
 	def Initialize(self,input_dict):
-		base_volume.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.R1 = input_dict['rcurv beneath']
 		self.R2 = input_dict['rcurv above']
 		self.Lz = input_dict['thickness']
@@ -140,9 +142,8 @@ class SphericalLens(base_volume):
 		self.surfaces[2].Initialize(surf_dict)
 
 class Box(base_volume):
-	'''Used primarily to add visual elements to 3D ray drawings'''
 	def Initialize(self,input_dict):
-		base_volume.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.size = input_dict['size']
 		self.surfaces.append(surface.rectangle('f1'))
 		surf_dict = { 'dispersion beneath' : self.disp_out,
@@ -187,9 +188,9 @@ class Box(base_volume):
 			'size' : (self.size[0],self.size[1]) }
 		self.surfaces[-1].Initialize(surf_dict)
 
-class nonuniform_cylinder(base_volume):
+class Cylinder(base_volume):
 	def Initialize(self,input_dict):
-		base_volume.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.Rd = input_dict['radius']
 		self.Lz = input_dict['length']
 		self.surfaces.append(surface.disc('d1'))
@@ -214,6 +215,10 @@ class nonuniform_cylinder(base_volume):
 			'radius' : self.Rd,
 			'length' : self.Lz }
 		self.surfaces[2].Initialize(surf_dict)
+
+class nonuniform_volume(base_volume):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
 		self.vol_dict = input_dict
 	def OrbitPoints(self):
 		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
@@ -225,7 +230,22 @@ class nonuniform_cylinder(base_volume):
 		self.RaysLocalToGlobal(xp,eikonal)
 		self.Transition(xp,eikonal,orb,self.disp_in)
 
-class PlasmaChannel(nonuniform_cylinder):
+class grid_volume(base_volume):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.vol_dict = input_dict
+		self.ne = np.zeros(1)
+	def OrbitPoints(self):
+		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
+	def Propagate(self,xp,eikonal,orb):
+		self.Transition(xp,eikonal,orb,self.disp_out)
+		self.RaysGlobalToLocal(xp,eikonal)
+		ray_kernel.track_RIC(self.queue,self.kernel,xp,eikonal,self.ne,self.vol_dict,orb)
+		# need to transform orbits
+		self.RaysLocalToGlobal(xp,eikonal)
+		self.Transition(xp,eikonal,orb,self.disp_in)
+
+class PlasmaChannel(nonuniform_volume,Cylinder):
 	def InitializeCL(self,cl,input_dict):
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
@@ -262,7 +282,74 @@ class PlasmaChannel(nonuniform_cylinder):
 		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
 		return coeff[0] + coeff[1]*r2 + coeff[2]*r2**2 + coeff[3]*r2**3
 
-class AxisymmetricGrid(nonuniform_cylinder):
+class Grid(grid_volume,Box):
+	def LoadMap(self,input_dict):
+		temp = input_dict['density multiplier']*np.load(input_dict['file'])
+		self.ne = np.zeros((temp.shape[0]+4,temp.shape[1]+4,temp.shape[2]+4))
+		self.ne[2:-2,2:-2,2:-2] = temp
+
+		self.ne[0,:,:] = self.ne[2,:,:]
+		self.ne[1,:,:] = self.ne[2,:,:]
+		self.ne[-1,:,:] = self.ne[-3,:,:]
+		self.ne[-2,:,:] = self.ne[-3,:,:]
+
+		self.ne[:,0,:] = self.ne[:,2,:]
+		self.ne[:,1,:] = self.ne[:,2,:]
+		self.ne[:,-1,:] = self.ne[:,-3,:]
+		self.ne[:,-2,:] = self.ne[:,-3,:]
+
+		self.ne[:,:,0] = self.ne[:,:,2]
+		self.ne[:,:,1] = self.ne[:,:,2]
+		self.ne[:,:,-1] = self.ne[:,:,-3]
+		self.ne[:,:,-2] = self.ne[:,:,-3]
+
+		self.dx = self.size[0]/(self.ne.shape[0]-4)
+		self.dy = self.size[1]/(self.ne.shape[1]-4)
+		self.dz = self.size[2]/(self.ne.shape[2]-4)
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.LoadMap(input_dict)
+	def InitializeCL(self,cl,input_dict):
+		# Set up the dispersion function in OpenCL kernel
+		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
+
+		plugin_str += '\n__constant double cart = 1.0;\n'
+		plugin_str += '\n__constant double cyl = 0.0;\n'
+		plugin_str += '\n__constant double4 spacing = (double4)(0.0,'+str(self.dx)+','+str(self.dy)+','+str(self.dz)+');\n'
+		plugin_str += '\n__constant double4 size = (double4)(0.0,'+str(self.size[0])+','+str(self.size[1])+','+str(self.size[2])+');\n'
+		plugin_str += '\n__constant int num[4] = { 1,'+str(self.ne.shape[0])+','+str(self.ne.shape[1])+','+str(self.ne.shape[2])+' };\n'
+
+		plugin_str += '\ninline double outside(const double4 x)\n'
+		plugin_str += '{\n'
+		plugin_str += 'const double Lx = ' + str(self.size[0]) + ';\n'
+		plugin_str += 'const double Ly = ' + str(self.size[1]) + ';\n'
+		plugin_str += 'const double Lz = ' + str(self.size[2]) + ';\n'
+		plugin_str += 'return (double)(x.s1*x.s1>0.25*Lx*Lx || x.s2*x.s2>0.25*Ly*Ly || x.s3*x.s3>0.25*Lz*Lz);\n}\n'
+
+		program = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
+		kernel_dict = { 'symplectic' : program.Symplectic }
+		self.kernel = kernel_dict[input_dict['integrator']]
+		self.get_density_k = program.GetDensity
+		self.queue = cl.queue()
+	def GetDensity(self,xp):
+		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)
+
+class TestGrid(Grid):
+	def LoadMap(self,input_dict):
+		N = input_dict['mesh points']
+		N = (N[0]+4,N[1]+4,N[2]+4)
+		self.dx = self.size[0]/(N[0]-4)
+		self.dy = self.size[1]/(N[1]-4)
+		self.dz = self.size[2]/(N[2]-4)
+		x = grid_tools.cell_centers(-2*self.dx-self.size[0]/2,2*self.dx+self.size[0]/2,N[0])
+		y = grid_tools.cell_centers(-2*self.dy-self.size[1]/2,2*self.dy+self.size[1]/2,N[1])
+		z = grid_tools.cell_centers(-2*self.dz-self.size[2]/2,2*self.dz+self.size[2]/2,N[2])
+		rho2 = np.outer(x**2,np.ones(N[1])) + np.outer(np.ones(N[0]),y**2)
+		coeff = self.vol_dict['radial coefficients']
+		fr = coeff[0] + coeff[1]*rho2 + coeff[2]*rho2**2 + coeff[3]*rho2**4
+		self.ne = input_dict['density multiplier']*np.einsum('ij,k->ijk',fr,np.ones(N[2]))
+
+class AxisymmetricGrid(grid_volume,Cylinder):
 	def LoadMap(self,input_dict):
 		temp = input_dict['density multiplier']*np.load(input_dict['file'])
 		self.ne = np.zeros((temp.shape[0]+4,temp.shape[1]+4))
@@ -276,14 +363,16 @@ class AxisymmetricGrid(nonuniform_cylinder):
 		self.dr = self.Rd/(self.ne.shape[0]-4)
 		self.dz = self.Lz/(self.ne.shape[1]-4)
 	def Initialize(self,input_dict):
-		nonuniform_cylinder.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.LoadMap(input_dict)
 	def InitializeCL(self,cl,input_dict):
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
 
-		plugin_str += '\n__constant double4 spacing = (double4)(0.0,'+str(self.dr)+',0.0,'+str(self.dz)+');\n'
-		plugin_str += '\n__constant double4 size = (double4)(0.0,'+str(self.Rd)+',0.0,'+str(self.Lz)+');\n'
+		plugin_str += '\n__constant double cart = 0.0;\n'
+		plugin_str += '\n__constant double cyl = 1.0;\n'
+		plugin_str += '\n__constant double4 spacing = (double4)(0.0,'+str(self.dr)+',1.0,'+str(self.dz)+');\n'
+		plugin_str += '\n__constant double4 size = (double4)(0.0,'+str(self.Rd)+',1.0,'+str(self.Lz)+');\n'
 		plugin_str += '\n__constant int num[4] = { 1,'+str(self.ne.shape[0])+',1,'+str(self.ne.shape[1])+' };\n'
 
 		plugin_str += '\ninline double outside(const double4 x)\n'
@@ -301,15 +390,8 @@ class AxisymmetricGrid(nonuniform_cylinder):
 		self.queue = cl.queue()
 	def GetDensity(self,xp):
 		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)
-	def Propagate(self,xp,eikonal,orb):
-		self.Transition(xp,eikonal,orb,self.disp_out)
-		self.RaysGlobalToLocal(xp,eikonal)
-		ray_kernel.track_RIC(self.queue,self.kernel,xp,eikonal,self.ne,self.vol_dict,orb)
-		# need to transform orbits
-		self.RaysLocalToGlobal(xp,eikonal)
-		self.Transition(xp,eikonal,orb,self.disp_in)
 
-class TestGrid(AxisymmetricGrid):
+class AxisymmetricTestGrid(AxisymmetricGrid):
 	def LoadMap(self,input_dict):
 		N = input_dict['mesh points']
 		N = (N[0]+4,N[1]+4)
@@ -321,4 +403,4 @@ class TestGrid(AxisymmetricGrid):
 		fr = coeff[0] + coeff[1]*rho**2 + coeff[2]*rho**4 + coeff[3]*rho**6
 		fz = np.ones(N[1])
 		#fz = np.exp(-z**2/self.Lz**2)
-		self.ne = np.outer(fr,fz)
+		self.ne = input_dict['density multiplier']*np.outer(fr,fz)

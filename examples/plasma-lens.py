@@ -98,7 +98,7 @@ for i in range(1):
 			'origin' : (0.,0.,f-eik_to_caustic)},
 
 		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (1/mks_length,1/mks_length),
+			'size' : (.01/mks_length,.01/mks_length),
 			'grid points' : (128,128,1),
 			'origin' : (0.,0.,2*f)}
 		])

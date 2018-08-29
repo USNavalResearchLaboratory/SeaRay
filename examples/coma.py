@@ -71,7 +71,7 @@ for i in range(1):
 			'euler angles' : (0.,np.pi,0.)},
 
 		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (1/mks_length,1/mks_length),
+			'size' : (0.5/mks_length,0.5/mks_length),
 			'grid points' : (128,128,1),
 			'origin' : (0.,0.,-1/mks_length)}
 		])
