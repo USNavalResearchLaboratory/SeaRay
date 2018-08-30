@@ -25,20 +25,22 @@ inline double ComputeRayVolume(int vidx,__global double *xp)
 
 inline double Gather(__global double *dens,const double4 x)
 {
-	// cart,cyl are constant doubles installed dynamically
-	// spacing,size are constant double4's installed dynamically
-	// num is a constant int[4] installed dynamically
+	// macros are installed dynamically
 	// Assumes coordinate lies in the interior grid
+	const double cart = MAC_CART;
+	const double cyl = MAC_CYL;
+	const double4 spacing = MAC_DX4;
+	const int4 N = MAC_NUM4;
 	double ans = 0.0;
 	const double x1 = (cart*x.s1 + cyl*sqrt(x.s1*x.s1 + x.s2*x.s2))/spacing.s1;
 	const double x2 = cart*x.s2/spacing.s2;
 	const double x3 = x.s3/spacing.s3;
-	const int c1 = 2 + ((int)cart)*(num[1]-4)/2 + (int)x1 - (x1<0);
-	const int c2 = 2 + (num[2]-4)/2 + (int)x2 - (x2<0);
-	const int c3 = 2 + (num[3]-4)/2 + (int)x3 - (x3<0);
-	const int s1 = (c1>0)*(c1<num[1]-1)*num[2]*num[3];
-	const int s2 = (c2>0)*(c2<num[2]-1)*num[3];
-	const int s3 = (c3>0)*(c3<num[3]-1);
+	const int c1 = 2 + ((int)cart)*(N.s1-4)/2 + (int)x1 - (x1<0);
+	const int c2 = 2 + (N.s2-4)/2 + (int)x2 - (x2<0);
+	const int c3 = 2 + (N.s3-4)/2 + (int)x3 - (x3<0);
+	const int s1 = (c1>0)*(c1<N.s1-1)*N.s2*N.s3;
+	const int s2 = (c2>0)*(c2<N.s2-1)*N.s3;
+	const int s3 = (c3>0)*(c3<N.s3-1);
 	const double q1 = x1 - (int)x1 + (x1<0) - 0.5;
 	const double q2 = cart*(x2 - (int)x2 + (x2<0) - 0.5);
 	const double q3 = x3 - (int)x3 + (x3<0) - 0.5;
@@ -50,11 +52,6 @@ inline double Gather(__global double *dens,const double4 x)
 			for (int i3=0;i3<3;i3++)
 				ans += w1[i1]*w2[i2]*w3[i3]*dens[(c1+i1-1)*s1 + (c2+i2-1)*s2 + (c3+i3-1)*s3];
 	return ans;
-}
-
-inline double D_alpha(__global double *dens,const double4 x,const double4 k)
-{
-	return Gather(dens,x) - dot4(k,k);
 }
 
 inline double4 D_alpha_x(__global double *dens,const double4 x,const double4 k)

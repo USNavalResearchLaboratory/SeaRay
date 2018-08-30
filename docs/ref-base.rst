@@ -1,6 +1,8 @@
 Reference
 ===============
 
+.. automodule:: dispersion
+
 .. automodule:: surface
 	:members: base_surface
 

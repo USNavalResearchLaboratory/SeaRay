@@ -9,7 +9,7 @@ All input dictionaries for volumes have the following in common:
 #. :samp:`origin` is the location of a reference point which differs by type of volume.
 #. :samp:`euler angles` rotates the volume from the default orientation.
 
-This module uses multiple inheritance resulting in a diamond problem.  All volumes inherit from ``base_volume``.  This branches into some objects that describe a region, and others that describe a nonuniformity inside the region.  Nonuniform volumes are derived from both, hence the diamond problem.  This is resolved by using the ``super()`` function in the initialization chain.
+This module uses multiple inheritance resulting in a diamond structure.  All volumes inherit from ``base_volume``.  This branches into some objects that describe a region, and others that describe a nonuniformity inside the region.  Nonuniform volumes are derived from both, hence the diamond structure.  It is important to use the ``super()`` function in the initialization chain.
 '''
 import numpy as np
 import scipy.spatial
@@ -270,7 +270,7 @@ class PlasmaChannel(nonuniform_volume,Cylinder):
 
 		plugin_str += '\ninline double D_alpha(const double4 x,const double4 k)\n'
 		plugin_str += '{\n'
-		plugin_str += 'return ' + self.disp_in.Dxk + ';\n'
+		plugin_str += self.disp_in.Dxk('wp2(x)')
 		plugin_str += '}\n\n'
 
 		program = init.setup_cl_program(cl,'ray_integrator.cl',plugin_str)
@@ -311,13 +311,13 @@ class Grid(grid_volume,Box):
 		self.LoadMap(input_dict)
 	def InitializeCL(self,cl,input_dict):
 		# Set up the dispersion function in OpenCL kernel
-		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
+		plugin_str = '\n#define MAC_CART 1.0;\n'
+		plugin_str += '\n#define MAC_CYL 0.0;\n'
+		plugin_str += '\n#define MAC_DX4 (double4)(0.0,'+str(self.dx)+','+str(self.dy)+','+str(self.dz)+');\n'
+		plugin_str += '\n#define MAC_NUM4 (int4)(1,'+str(self.ne.shape[0])+','+str(self.ne.shape[1])+','+str(self.ne.shape[2])+');\n'
 
-		plugin_str += '\n__constant double cart = 1.0;\n'
-		plugin_str += '\n__constant double cyl = 0.0;\n'
-		plugin_str += '\n__constant double4 spacing = (double4)(0.0,'+str(self.dx)+','+str(self.dy)+','+str(self.dz)+');\n'
-		plugin_str += '\n__constant double4 size = (double4)(0.0,'+str(self.size[0])+','+str(self.size[1])+','+str(self.size[2])+');\n'
-		plugin_str += '\n__constant int num[4] = { 1,'+str(self.ne.shape[0])+','+str(self.ne.shape[1])+','+str(self.ne.shape[2])+' };\n'
+		plugin_str += '\ninline double dot4(const double4 x,const double4 y);'
+		plugin_str += '\ninline double Gather(__global double *dens,const double4 x);'
 
 		plugin_str += '\ninline double outside(const double4 x)\n'
 		plugin_str += '{\n'
@@ -325,6 +325,11 @@ class Grid(grid_volume,Box):
 		plugin_str += 'const double Ly = ' + str(self.size[1]) + ';\n'
 		plugin_str += 'const double Lz = ' + str(self.size[2]) + ';\n'
 		plugin_str += 'return (double)(x.s1*x.s1>0.25*Lx*Lx || x.s2*x.s2>0.25*Ly*Ly || x.s3*x.s3>0.25*Lz*Lz);\n}\n'
+
+		plugin_str += '\ninline double D_alpha(__global double *dens,const double4 x,const double4 k)\n'
+		plugin_str += '{\n'
+		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
+		plugin_str += '}\n\n'
 
 		program = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
 		kernel_dict = { 'symplectic' : program.Symplectic }
@@ -367,13 +372,13 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 		self.LoadMap(input_dict)
 	def InitializeCL(self,cl,input_dict):
 		# Set up the dispersion function in OpenCL kernel
-		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
+		plugin_str = '\n#define MAC_CART 0.0;\n'
+		plugin_str += '\n#define MAC_CYL 1.0;\n'
+		plugin_str += '\n#define MAC_DX4 (double4)(0.0,'+str(self.dr)+',1.0,'+str(self.dz)+');\n'
+		plugin_str += '\n#define MAC_NUM4 (int4)(1,'+str(self.ne.shape[0])+',1,'+str(self.ne.shape[1])+');\n'
 
-		plugin_str += '\n__constant double cart = 0.0;\n'
-		plugin_str += '\n__constant double cyl = 1.0;\n'
-		plugin_str += '\n__constant double4 spacing = (double4)(0.0,'+str(self.dr)+',1.0,'+str(self.dz)+');\n'
-		plugin_str += '\n__constant double4 size = (double4)(0.0,'+str(self.Rd)+',1.0,'+str(self.Lz)+');\n'
-		plugin_str += '\n__constant int num[4] = { 1,'+str(self.ne.shape[0])+',1,'+str(self.ne.shape[1])+' };\n'
+		plugin_str += '\ninline double dot4(const double4 x,const double4 y);'
+		plugin_str += '\ninline double Gather(__global double *dens,const double4 x);'
 
 		plugin_str += '\ninline double outside(const double4 x)\n'
 		plugin_str += '{\n'
@@ -382,6 +387,11 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 		plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
 						return (double)(r2>Rd*Rd || x.s3*x.s3>0.25*Lz*Lz);
 						}\n'''
+
+		plugin_str += '\ninline double D_alpha(__global double *dens,const double4 x,const double4 k)\n'
+		plugin_str += '{\n'
+		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
+		plugin_str += '}\n\n'
 
 		program = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
 		kernel_dict = { 'symplectic' : program.Symplectic }

@@ -1,13 +1,19 @@
 from scipy import constants as C
 import numpy as np
-from scipy.optimize import brentq
 import dispersion
 import surface
 import volume
 
-# Example input file for ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a grid.
-# The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
+# Example of focusing with an extra-thick bi-convex spherical lens
+# Illustrates difficulty of full wave reconstruction for highly aberrated beams
+# Requires at least 16384^2 grid points for reasonable results; more tends to stress system memory.
+
+# The input file must do one thing:
+#   create dictionaries sim[i], wave[i], ray[i], optics[i], diagnostics[i].
+# Here, i is a list index, used to handle batch jobs.
+# The dictionaries can be created using any means available in python
+# SeaRay will only look at the dictionaries
+# Best practice in post-processing is also to look only at the dictionaries
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -18,31 +24,24 @@ diagnostics = []
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
-# Use thick lens theory to set up channel parameters for given focal length
 
-ideal_form = True
-f = 0.01/mks_length
-Rlens = 0.75*f
-if ideal_form:
-	Lch = 1.5*f
-	lens_object = volume.Grid('plasma')
-else:
-	Lch = 0.2*f
-	lens_object = volume.TestGrid('plasma')
-Fnum = 1.0
-r00 = 0.5*f/Fnum # spot size of radiation
+nrefr = np.sqrt(1+dispersion.BK7(mks_length).chi(1.0)[0])
+mess = mess + '  BK7 Refractive index at {:.0f} nm = {:.3f}\n'.format(2*np.pi*mks_length*1e9,nrefr)
+lens_D = 0.1/mks_length
+lens_R = 0.1/mks_length
+lens_t = 0.03/mks_length
+# note sign convention differs from some common references
+lens_f = 1/(nrefr-1)/(1/lens_R + 1/lens_R - (nrefr-1)*lens_t/(nrefr*lens_R*lens_R))
+mess = mess + '  thick lens focal length = {:.2f} meters\n'.format(lens_f*mks_length)
+r00 = .01/mks_length # spot size of radiation
 t00 = 1e-6*C.c/mks_length # pulse width (not important)
-c0 = 0.01
-h0 = np.sqrt(1-c0)
-t = Lch/np.sqrt(1-c0)
-Omega = brentq(lambda q : q*np.tan(q) - t/(f-Lch/2), 0.0, 0.999*np.pi/2) / t
-c2 = Omega**2
-c4 = -Omega**4/4
-x0 = 100*r00
-c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
-c6 = 0.0
-eik_to_caustic = 0.001/mks_length
-a00 = 1e-3*Fnum
+theta = 0 # direction of propagation, 0 is +z
+f_num = lens_f/(2*r00)
+paraxial_e_size = 4.0*f_num/1.0
+paraxial_zR = 0.5*1.0*paraxial_e_size**2
+mess = mess + '  f/# = {:.2f}\n'.format(f_num)
+mess = mess + '  Theoretical paraxial spot size (mm) = {:.3f}\n'.format(1e3*mks_length*paraxial_e_size)
+mess = mess + '  Theoretical paraxial Rayleigh length (mm) = {:.2f}\n'.format(1e3*mks_length*paraxial_zR)
 
 # Set up dictionaries
 
@@ -53,48 +52,48 @@ for i in range(1):
 				'message' : mess})
 
 	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,a00,0.0,0.0) ,
+					'a0' : (0.0,np.cos(theta),0.0,-np.sin(theta)) ,
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (1.0,0.0,0.0,1.0) ,
+					'k0' : (1.0,np.sin(theta),0.0,np.cos(theta)) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (0.0,0.0,0.0,-f),
+					'focus' : (0.0,0.0,0.0,-.1/mks_length),
 					'pulse shape' : 'sech',
-					'supergaussian exponent' : 8})
+					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (64,64,1),
+	ray.append({	'number' : (128,128,1),
 					'loading coordinates' : 'cartesian',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (-1.4*r00,1.4*r00,-1.4*r00,1.4*r00,-2*t00,2*t00)})
+					'box' : (-3*r00,3*r00,-3*r00,3*r00,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : lens_object,
-			'radial coefficients' : (c0,c2,c4,c6), # only used for test grid
-			'mesh points' : (400,400,2), # only used for test grid
-			'file' : 'extras/ideal-form-3d.npy',
-			'density multiplier' : 1.0,
-			'dispersion inside' : dispersion.ColdPlasma(),
+		{	'object' : volume.SphericalLens('lens'),
+			'dispersion inside' : dispersion.BK7(mks_length),
 			'dispersion outside' : dispersion.Vacuum(),
-			'size' : (2*Rlens,2*Rlens,Lch),
+			'thickness' : lens_t,
+			'rcurv beneath' : lens_R,
+			'rcurv above' : lens_R,
+			'aperture radius' : lens_D/2,
 			'origin' : (0.,0.,0.),
-			'euler angles' : (0.,0.,0.),
-			'integrator' : 'symplectic',
-			'dt' : Lch/1000,
-			'steps' : 1500,
-			'subcycles' : 10},
+			'euler angles' : (0.,0.,0.)},
+
+		{	'object' : surface.FullWaveProfiler('det'),
+			'size' : (.02/mks_length,.02/mks_length,.001/mks_length),
+			'grid points' : (1024,1024,1),
+			'distance to caustic' : .057/mks_length,
+			'origin' : (0.,0.,0.05/mks_length)},
 
 		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (.01/mks_length,.01/mks_length),
+			'size' : (.1/mks_length,.1/mks_length),
 			'grid points' : (128,128,1),
-			'euler angles' : (0.0,0.0,0.0),
-			'origin' : (0.,0.,.015/mks_length)}
+			'origin' : (0.,0.,.15/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (8,8,1),
+						'orbit rays' : (5,5,1),
 						'base filename' : 'out/test'})

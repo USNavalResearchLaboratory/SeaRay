@@ -251,7 +251,8 @@ class PhaseSpace:
 					else:
 						y = self.eikonal[:,j-8]
 					weights = self.eikonal[:,1]**2 + self.eikonal[:,2]**2 + self.eikonal[:,3]**2
-					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x,normalization[j]*y,weights,(self.res,self.res))
+					sel = np.logical_and(np.logical_not(np.isnan(x)),np.logical_not(np.isnan(y)))
+					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],(self.res,self.res))
 					harray = grid_tools.Smooth1D(harray,4,0)
 					harray = grid_tools.Smooth1D(harray,4,1)
 					if dynamic_range!=0.0:

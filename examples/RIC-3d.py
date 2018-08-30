@@ -5,8 +5,8 @@ import dispersion
 import surface
 import volume
 
-# Example input file for ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a grid.
+# Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
+# The alternate test case creates a quartic lens on a 3D grid.
 # The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
 
 mks_length = 0.8e-6 / (2*np.pi)
@@ -88,7 +88,7 @@ for i in range(1):
 			'subcycles' : 10},
 
 		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (.01/mks_length,.01/mks_length),
+			'size' : (.04/mks_length,.04/mks_length),
 			'grid points' : (128,128,1),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.015/mks_length)}
