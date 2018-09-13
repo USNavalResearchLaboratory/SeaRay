@@ -166,13 +166,22 @@ class base_surface:
 		# Remaining code updates the polarization
 		u1 = np.copy(xp[...,0,5:8])
 		u1 /= np.sqrt(np.einsum('...i,...i',u1,u1))[...,np.newaxis]
-		sigma = 0.5*np.cross(u0,u1)
-		sigma2 = np.einsum('...i,...i',sigma,sigma)[...,np.newaxis]
-		e0 = eikonal[...,1:4]
-		eikonal[...,1:4] = e0*(1-sigma2)
-		eikonal[...,1:4] += 2*np.cross(sigma,e0)
-		eikonal[...,1:4] += 2*sigma*np.einsum('...i,...i',sigma,e0)[...,np.newaxis]
-		eikonal[...,1:4] /= 1 + sigma2
+		w = np.cross(u0,u1)
+		q = np.sqrt(np.einsum('...i,...i',w,w))
+		cosq = np.cos(q)
+		sinq = np.sin(q)
+		M = np.zeros((eikonal.shape[0],3,3))
+		M[...,0,0] = w[...,0]**2 + cosq*(w[...,1]**2 + w[...,2]**2)
+		M[...,1,1] = w[...,1]**2 + cosq*(w[...,0]**2 + w[...,2]**2)
+		M[...,2,2] = w[...,2]**2 + cosq*(w[...,0]**2 + w[...,1]**2)
+		M[...,0,1] = w[...,0]*w[...,1]*(1-cosq) - w[...,2]*q*sinq
+		M[...,0,2] = w[...,0]*w[...,2]*(1-cosq) + w[...,1]*q*sinq
+		M[...,1,2] = w[...,1]*w[...,2]*(1-cosq) - w[...,0]*q*sinq
+		M[...,1,0] = w[...,0]*w[...,1]*(1-cosq) + w[...,2]*q*sinq
+		M[...,2,0] = w[...,0]*w[...,2]*(1-cosq) - w[...,1]*q*sinq
+		M[...,2,1] = w[...,1]*w[...,2]*(1-cosq) + w[...,0]*q*sinq
+		filter = np.where(q**2>1e-20)[0]
+		eikonal[filter,1:4] = np.einsum('...ij,...j',M[filter,:]/q[filter,np.newaxis,np.newaxis]**2,eikonal[filter,1:4])
 	def GetRawImpactTimes(self,xp,vg):
 		return -xp[...,3]/vg[...,3]
 	def ClipImpact(self,xp):
@@ -676,7 +685,7 @@ class BeamProfiler(rectangle):
 		vgroup = self.disp2.vg(self.xps)
 		zf = caustic_tools.ParaxialFocus(self.xps,vgroup)
 		print('    Relative paraxial ray focal position (mm) =',zf*l1)
-		print('    Conserved micro action =',self.micro_action)
+		print('    Conserved micro-action = {:.3g}'.format(self.micro_action))
 		return xc,yc,zc,xrms,yrms,zrms
 	def Propagate(self,xp,eikonal,vg,orb={'idx':0}):
 		self.RaysGlobalToLocal(xp,eikonal,vg)

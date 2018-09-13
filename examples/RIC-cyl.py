@@ -6,7 +6,7 @@ import surface
 import volume
 
 # Example input file for ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a grid.
+# The alternate test case creates a quartic lens on a grid (will have caustics).
 # The ideal form lens data must be in ./extras.  Generate with synth-lens.py.
 
 mks_length = 0.8e-6 / (2*np.pi)
@@ -65,7 +65,7 @@ for i in range(1):
 					'pulse shape' : 'sech',
 					'supergaussian exponent' : 8})
 
-	ray.append({	'number' : (512,4,1),
+	ray.append({	'number' : (512,16,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin

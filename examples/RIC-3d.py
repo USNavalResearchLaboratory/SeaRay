@@ -6,7 +6,7 @@ import surface
 import volume
 
 # Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a 3D grid.
+# The alternate test case creates a quartic lens on a 3D grid (will give messy results).
 # The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
 
 mks_length = 0.8e-6 / (2*np.pi)

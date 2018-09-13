@@ -61,10 +61,12 @@ for irun in range(len(inputs.sim)):
 	# Create rays and orbits and save initial state
 	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun])
 	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,inputs.ray[irun],inputs.diagnostics[irun],inputs.optics[irun])
+	micro_action_0 = ray_kernel.GetMicroAction(xp,eikonal,vg)
 	xp0 = np.copy(xp)
 	eikonal0 = np.copy(eikonal)
 
 	print('\nStart ray propagation...\n')
+	print('Initial micro-action = {:.3g}\n'.format(micro_action_0))
 
 	for opt_dict in inputs.optics[irun]:
 		opt_dict['object'].Propagate(xp,eikonal,vg,orb=orbit_dict)
