@@ -13,9 +13,11 @@ All input dictionaries for surfaces have the following in common:
 
 Applicable to all surfaces:
 
-#. The default orientation is always such that a typical surface normal is in the z-direction.
-#. Below the surface means negative z-side.
+#. The default orientation is always such that a typical surface normal is in the positive z-direction.
+#. Beneath the surface means negative z-side.
 #. Above the surface means positive z-side.
+#. If the surface bounds a volume, it should be oriented so that beneath resolves to inside and above resolves to outside.
+#. A corollary to the above is that the normals point outward with respect to a volume.
 #. Typical member functions assume arguments are given in local frame, i.e., the frame of the default orientation and position.
 '''
 import warnings
@@ -34,6 +36,7 @@ class base_surface:
 	'''Base class for deriving surfaces.'''
 	def __init__(self,name):
 		self.name = name
+		self.clip = -0.1
 		# orientation vector w is the surface normal
 		self.orientation = v3.basis()
 		# a reference point somewhere on the surface
@@ -72,19 +75,35 @@ class base_surface:
 			self.reflective = input_dict['reflective']
 		except KeyError:
 			print('INFO: defaulting to transmissive')
-	def RaysGlobalToLocal(self,xp,eikonal):
-		'''Transform the ray coordinates from the global system to the local system associated with this surface.
+	def PositionGlobalToLocal(self,xp):
+		'''Transform position vectors only'''
+		xp[...,1:4] -= self.P_ref
+		self.orientation.ExpressInBasis(xp[...,1:4])
+	def xvGlobalToLocal(self,xp,vg):
+		xp[...,1:4] -= self.P_ref
+		self.orientation.ExpressInBasis(xp[...,1:4])
+		self.orientation.ExpressInBasis(vg[...,1:4])
+	def RaysGlobalToLocal(self,xp,eikonal,vg):
+		'''Transform all ray data from the global system to the local system associated with this surface.
 
 		:param numpy.array xp: phase space data
 		:param numpy.array eikonal: eikonal amplitude and phase'''
 		xp[...,1:4] -= self.P_ref
-		self.orientation.ExpressRaysInBasis(xp,eikonal)
-	def RaysLocalToGlobal(self,xp,eikonal):
-		'''Transform the ray coordinates from the system associated with this surface to the global system.
+		self.orientation.ExpressRaysInBasis(xp,eikonal,vg)
+	def PositionLocalToGlobal(self,xp):
+		'''Transform position vectors only'''
+		self.orientation.ExpressInStdBasis(xp[...,1:4])
+		xp[...,1:4] += self.P_ref
+	def xvLocalToGlobal(self,xp,vg):
+		self.orientation.ExpressInStdBasis(xp[...,1:4])
+		self.orientation.ExpressInStdBasis(vg[...,1:4])
+		xp[...,1:4] += self.P_ref
+	def RaysLocalToGlobal(self,xp,eikonal,vg):
+		'''Transform all ray data from the system associated with this surface to the global system.
 
 		:param numpy.array xp: phase space data
 		:param numpy.array eikonal: eikonal amplitude and phase'''
-		self.orientation.ExpressRaysInStdBasis(xp,eikonal)
+		self.orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
 		xp[...,1:4] += self.P_ref
 	def UpdateOrbits(self,xp,eikonal,orb):
 		'''Append a time level to the orbits data and advance the index.'''
@@ -92,123 +111,134 @@ class base_surface:
 			orb['data'][orb['idx'],:,:8] = xp[orb['xpsel']]
 			orb['data'][orb['idx'],:,8:] = eikonal[orb['eiksel']]
 			orb['idx'] += 1
-	def GetRgn(self,xp):
-		''':returns: rays below the surface , rays above the surface
-		:rtype: index array , index array'''
-		return np.where(xp[:,0,3]<0) , np.where(xp[:,0,3]>0)
-	def DispersionData(self,xp):
-		''':returns: ray local susceptibility , ray velocity
-		:rtype: numpy.array , numpy.array'''
-		inRgn1,inRgn2 = self.GetRgn(xp)
-		# Compute vg on current side and susceptibility on opposite side
-		chi1 = self.disp1.chi(xp[...,4])
-		chi2 = self.disp2.chi(xp[...,4])
-		chi1[inRgn1] *= 0
-		chi2[inRgn2] *= 0
-		chi = chi1 + chi2
-		vg1 = self.disp1.vg(xp)
-		vg2 = self.disp2.vg(xp)
-		vg2[inRgn1] *= 0
-		vg1[inRgn2] *= 0
-		vg = vg1 + vg2
-		return chi,vg
-	def PropagateTo(self,xp,eikonal,vg,t,impact):
-		xpsub = xp[impact,...]
-		eiksub = eikonal[impact,...]
-		ray_kernel.FullStep(t[impact],xpsub,eiksub,vg[impact,...])
-		xp[impact,...] = xpsub
-		eikonal[impact,...] = eiksub
-	def SafetyNudge(self,xp,eikonal,vg,impact):
-		xpsub = xp[impact,...]
-		eiksub = eikonal[impact,...]
-		t = np.ones(impact.shape[0])
-		ray_kernel.FullStep(t,xpsub,eiksub,vg[impact,...])
-		xp[impact,...] = xpsub
-		eikonal[impact,...] = eiksub
-	def Deflect(self,xp,eikonal,impact,normals,chi):
-		# Reflect or Refract and update polarization
-		# Only the index on the outgoing side is needed because xp implicitly contains the incidence dispersion.
-		u0 = xp[impact,0,5:8]
+	def GetNormals(self,xp):
+		normals = np.zeros(xp[...,1:4].shape)
+		normals[...,2] = 1
+		return normals
+	def GetDownstreamSusceptibility(self,xp,kdotn):
+		upward = np.where(kdotn>0)
+		downward = np.where(kdotn<0)
+		chi_beneath = self.disp1.chi(xp[...,4])
+		chi_above = self.disp2.chi(xp[...,4])
+		chi_beneath[upward] *= 0
+		chi_above[downward] *= 0
+		return chi_beneath + chi_above
+	def GetDownstreamVelocity(self,xp,kdotn):
+		upward = np.where(kdotn>0)
+		downward = np.where(kdotn<0)
+		vg_beneath = self.disp1.vg(xp)
+		vg_above = self.disp2.vg(xp)
+		vg_beneath[upward] *= 0
+		vg_above[downward] *= 0
+		return vg_beneath + vg_above
+	def GetDensity(self,xp,vol_obj):
+		'''Get the density at the ray position from the enclosed volume object'''
+		if type(vol_obj)==int:
+			return 1.0
+		else:
+			self.PositionLocalToGlobal(xp)
+			dens = vol_obj.GetDensity(xp)
+			self.PositionGlobalToLocal(xp)
+			return dens
+	def SafetyNudge(self,xp,vg):
+		xp[...,:4] += vg
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		'''The main SeaRay function handling reflection and refraction.
+		Called from within Propagate().
+		Updates both the momentum and polarization.'''
+		# Save the starting ray direction for use in polarization update
+		u0 = np.copy(xp[...,0,5:8])
 		u0 /= np.sqrt(np.einsum('...i,...i',u0,u0))[...,np.newaxis]
-		kdotn = np.einsum('...i,...i',xp[impact,:,5:8],normals)
+		# Turn the momentum vector.
+		# Only the downstream susceptibility is needed because xp implicitly contains the incidence dispersion.
+		normals = self.GetNormals(xp)
+		kdotn = np.einsum('...i,...i',xp[...,5:8],normals)
 		if self.reflective:
 			dkmag = -2*kdotn
 		else:
-			k2diff = (1+chi[impact,:])*xp[impact,:,4]**2 - np.einsum('...i,...i',xp[impact,:,5:8],xp[impact,:,5:8])
+			chi = self.GetDownstreamSusceptibility(xp,kdotn)
+			chi *= self.GetDensity(xp,vol_obj)
+			k2diff = (1+chi)*xp[...,4]**2 - np.einsum('...i,...i',xp[...,5:8],xp[...,5:8])
 			dkmag = np.sign(kdotn)*np.sqrt(kdotn**2+k2diff)-kdotn
-		xp[impact,:,5:8] += np.einsum('ij,ijk->ijk',dkmag,normals)
+		xp[...,5:8] += np.einsum('ij,ijk->ijk',dkmag,normals)
+		kdotn = np.einsum('...i,...i',xp[...,5:8],normals)
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 		# Remaining code updates the polarization
-		u1 = xp[impact,0,5:8]
+		u1 = np.copy(xp[...,0,5:8])
 		u1 /= np.sqrt(np.einsum('...i,...i',u1,u1))[...,np.newaxis]
 		sigma = 0.5*np.cross(u0,u1)
 		sigma2 = np.einsum('...i,...i',sigma,sigma)[...,np.newaxis]
-		e0 = eikonal[impact,1:4]
-		eikonal[impact,1:4] = e0*(1-sigma2)
-		eikonal[impact,1:4] += 2*np.cross(sigma,e0)
-		eikonal[impact,1:4] += 2*sigma*np.einsum('...i,...i',sigma,e0)[...,np.newaxis]
-		eikonal[impact,1:4] /= 1 + sigma2
-	def GetNormals(self,xp,impact):
-		normals = np.zeros(xp[impact,:,1:4].shape)
-		normals[...,2] = 1
-		return normals
+		e0 = eikonal[...,1:4]
+		eikonal[...,1:4] = e0*(1-sigma2)
+		eikonal[...,1:4] += 2*np.cross(sigma,e0)
+		eikonal[...,1:4] += 2*sigma*np.einsum('...i,...i',sigma,e0)[...,np.newaxis]
+		eikonal[...,1:4] /= 1 + sigma2
+	def GetRawImpactTimes(self,xp,vg):
+		return -xp[...,3]/vg[...,3]
+	def ClipImpact(self,xp):
+		''':returns: booleans of shape (bundles,rays) where true indicates a clipped ray
+		:rtype: numpy.array'''
+		return np.zeros(xp[...,0].shape).astype(bool)
 	def Detect(self,xp,vg):
-		# Returns 1D arrays over primary rays
-		# time_to_surface = time of impact with the surface
-		# impact_filter = indices of primary rays intersecting the surface
-		time_to_surface = -xp[:,0,3]/vg[:,0,3]
-		time_to_surface[np.where(np.isinf(time_to_surface))] = -1.0
-		time_to_surface[np.where(np.isnan(time_to_surface))] = -1.0
-		impact_filter = np.where(time_to_surface>0)[0]
+		'''Determine which bundles should interact with the surface.
+
+		:returns: time of ray impact, indices of impacting bundles
+		:rtype: numpy.array, numpy.array, numpy.array'''
+		# Encode no impact with a negative time
+		time_to_surface = self.GetRawImpactTimes(xp,vg)
+		time_to_surface[np.where(np.isinf(time_to_surface))] = self.clip
+		time_to_surface[np.where(np.isnan(time_to_surface))] = self.clip
+		# Include the effect of non-analytical clipping functions
+		xp1 = np.copy(xp)
+		ray_kernel.TestStep(time_to_surface,xp1,vg)
+		cond_table = self.ClipImpact(xp1)
+		time_to_surface[np.where(cond_table)] = self.clip
+		# If a satellite misses, but the primary hits, deflect the satellite
+		# based on extrapolation of surface data and approximate synchronism.
+		ray_kernel.RepairSatellites(time_to_surface)
+		impact_filter = np.where(time_to_surface[...,0]>0)[0]
 		return time_to_surface,impact_filter
-	def FullDetect(self,xp,eikonal,disp):
-		# Detect in the enclosing coordinate system
-		self.RaysGlobalToLocal(xp,eikonal)
-		vg = disp.vg(xp)
+	def GlobalDetect(self,xp,eikonal,vg):
+		# Detect in the enclosing coordinate system, return primary times
+		self.RaysGlobalToLocal(xp,eikonal,vg)
 		time_to_surface,impact = self.Detect(xp,vg)
-		self.RaysLocalToGlobal(xp,eikonal)
-		return time_to_surface
-	def Propagate(self,xp,eikonal,orb={'idx':0},vol_obj=0):
-		#print(self.name,'propagating...')
-		self.RaysGlobalToLocal(xp,eikonal)
-		chi,vg = self.DispersionData(xp)
-		time_to_surface,impact = self.Detect(xp,vg)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		return time_to_surface[...,0]
+	def Propagate(self,xp,eikonal,vg,orb={'idx':0},vol_obj=0):
+		'''The main function to propagate ray bundles through the surface.
+		Rays are left slightly downstream of the surface.'''
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		dt,impact = self.Detect(xp,vg)
 		if impact.shape[0]>0:
-			self.PropagateTo(xp,eikonal,vg,time_to_surface,impact)
-			self.RaysLocalToGlobal(xp,eikonal)
-			try:
-				dens = vol_obj.GetDensity(xp)
-			except AttributeError:
-				dens = 1.0
-			self.RaysGlobalToLocal(xp,eikonal)
-			self.Deflect(xp,eikonal,impact,self.GetNormals(xp,impact),dens*chi)
-			chi,vg = self.DispersionData(xp)
-			self.SafetyNudge(xp,eikonal,vg,impact)
-		self.RaysLocalToGlobal(xp,eikonal)
+			dts = dt[impact,...]
+			xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
+			ray_kernel.FullStep(dts,xps,eiks,vgs)
+			self.Deflect(xps,eiks,vgs,vol_obj)
+			self.SafetyNudge(xps,vgs)
+			ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
 		return impact.shape[0]
 	def GetPackedMesh(self):
+		return np.zeros(1)
+	def GetSimplices(self):
 		return np.zeros(1)
 	def Report(self,basename,mks_length):
 		print(self.name,': write surface mesh...')
 		packed_data = self.GetPackedMesh()
 		if packed_data.shape[0]>1:
 			np.save(basename+'_'+self.name+'_mesh',packed_data)
+		simplices = self.GetSimplices()
+		if simplices.shape[0]>1:
+			np.save(basename+'_'+self.name+'_simplices',simplices)
 
 class rectangle(base_surface):
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.Lx = input_dict['size'][0]
 		self.Ly = input_dict['size'][1]
-	def Detect(self,xp0,vg):
-		xp = np.copy(xp0)
-		time_to_surface = -xp[:,0,3]/vg[:,0,3]
-		time_to_surface[np.where(np.isinf(time_to_surface))] = -1.0
-		time_to_surface[np.where(np.isnan(time_to_surface))] = -1.0
-		ray_kernel.TestStep(time_to_surface,xp,vg)
-		cond_table = np.logical_or(xp[:,0,1]**2>(self.Lx/2)**2,xp[:,0,2]**2>(self.Ly/2)**2)
-		time_to_surface[np.where(cond_table)] = -1.0
-		impact_filter = np.where(time_to_surface>0)[0]
-		return time_to_surface,impact_filter
+	def ClipImpact(self,xp):
+		return np.logical_or(xp[...,1]**2>(self.Lx/2)**2,xp[...,2]**2>(self.Ly/2)**2)
 	def GetPackedMesh(self):
 		# Component 0 is the "color"
 		packed_data = np.zeros((2,2,4))
@@ -223,18 +253,10 @@ class rectangle(base_surface):
 
 class disc(base_surface):
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.Rd = input_dict['radius']
-	def Detect(self,xp0,vg):
-		xp = np.copy(xp0)
-		time_to_surface = -xp[:,0,3]/vg[:,0,3]
-		time_to_surface[np.where(np.isinf(time_to_surface))] = -1.0
-		time_to_surface[np.where(np.isnan(time_to_surface))] = -1.0
-		ray_kernel.TestStep(time_to_surface,xp,vg)
-		cond_table = xp[:,0,1]**2 + xp[:,0,2]**2 > self.Rd**2
-		time_to_surface[np.where(cond_table)] = -1.0
-		impact_filter = np.where(time_to_surface>0)[0]
-		return time_to_surface,impact_filter
+	def ClipImpact(self,xp):
+		return xp[...,1]**2 + xp[...,2]**2 > self.Rd**2
 	def GetPackedMesh(self):
 		# Component 0 is the "color"
 		res = 64
@@ -249,8 +271,12 @@ class disc(base_surface):
 		return packed_data
 
 class triangle(base_surface):
-	# Building block class, not accessible from input file
+	'''Building block class, does not respond to input file dictionaries.
+	Meant to be used as an element in surface_mesh class.'''
 	def __init__(self,a,b,c,n0,n1,n2,disp1,disp2):
+		'''Arguments are given in the owner's coordinate system.
+		The reference point and orientation matrix for the triangle are derived from these.
+		In the local system the triangle is in xy plane. '''
 		base_surface.__init__(self,'tri')
 		self.disp1 = disp1
 		self.disp2 = disp2
@@ -268,28 +294,17 @@ class triangle(base_surface):
 		# v1 and v2 point from the reference point to the 2 other vertices
 		self.v1 = b-a
 		self.v2 = c-a
-		# put v1 and v2 in the local coordinate system
+		# put triangle and normals the local coordinate system
 		# in this system v1 = (+,0,0) and v2 = (*,+,0)
 		self.orientation.ExpressInBasis(self.v1)
 		self.orientation.ExpressInBasis(self.v2)
 		self.orientation.ExpressInBasis(self.n0)
 		self.orientation.ExpressInBasis(self.n1)
 		self.orientation.ExpressInBasis(self.n2)
-	def EulerRotate(self,alpha,beta,gamma):
-		# Rotate the triangle and create basis aligned with v1.
-		# Typically this is never needed.
-		self.orientation.ExpressInStdBasis(self.v1)
-		self.orientation.ExpressInStdBasis(self.v2)
-		v3.EulerRotate(self.v1,alpha,beta,gamma)
-		v3.EulerRotate(self.v2,alpha,beta,gamma)
-		normal = np.cross(self.v1,self.v2-self.v1)
-		self.orientation.Create(self.v1,normal)
-		self.orientation.ExpressInBasis(self.v1)
-		self.orientation.ExpressInBasis(self.v2)
-	def GetNormals(self,xp,impact):
+	def GetNormals(self,xp):
 		# Get barycentric coordinates
-		x = xp[impact,:,1]
-		y = xp[impact,:,2]
+		x = xp[...,1]
+		y = xp[...,2]
 		x1 = self.v1[0]
 		x2 = self.v2[0]
 		y2 = self.v2[1]
@@ -303,43 +318,27 @@ class triangle(base_surface):
 		normals += np.einsum('...i,j',w2,self.n2)
 		normals /= np.sqrt(np.einsum('...i,...i',normals,normals))[...,np.newaxis]
 		return normals
-	def Detect(self,xp0,vg):
-		xp = np.copy(xp0)
-		time_to_surface = -xp[:,0,3]/vg[:,0,3]
-		time_to_surface[np.where(np.isinf(time_to_surface))] = -1.0
-		time_to_surface[np.where(np.isnan(time_to_surface))] = -1.0
-		ray_kernel.TestStep(time_to_surface,xp,vg)
+	def ClipImpact(self,xp):
 		safety = 1e-3*self.v1[0]
 		lb = lambda y : self.v2[0]*y/self.v2[1] - safety
 		ub = lambda y : self.v1[0] + (self.v2[0]-self.v1[0])*y/self.v2[1] + safety
-		cond_table1 = np.logical_and(xp[:,0,1]>lb(xp[:,0,2]) , xp[:,0,1]<ub(xp[:,0,2]))
-		cond_table2 = np.logical_and(xp[:,0,2]>-safety , xp[:,0,2]<self.v2[1]+safety)
-		cond_table = np.logical_and(cond_table1,cond_table2)
-		time_to_surface[np.where(np.logical_not(cond_table))] = -1.0
-		impact_filter = np.where(time_to_surface>0)[0]
-		return time_to_surface,impact_filter
+		cond_table1 = np.logical_and(xp[...,1]>lb(xp[...,2]) , xp[...,1]<ub(xp[...,2]))
+		cond_table2 = np.logical_and(xp[...,2]>-safety , xp[...,2]<self.v2[1]+safety)
+		return np.logical_not(np.logical_and(cond_table1,cond_table2))
 
-class LevelMap(rectangle):
-	def LoadMap(self,input_dict):
-		# z is expected in C-order, i.e., vertical axis is packed.
-		self.z = input_dict['level multiplier']*np.genfromtxt(input_dict['file'],skip_header=input_dict['header lines'])
-		#self.z = self.z[::16,::16]
-		Nx = self.z.shape[0]
-		Ny = self.z.shape[1]
-		Lx = input_dict['size'][0]
-		Ly = input_dict['size'][1]
-		self.x = np.outer( np.linspace(-Lx/2,Lx/2,Nx) , np.ones(Ny) )
-		self.y = np.outer( np.ones(Nx) , np.linspace(-Ly/2,Ly/2,Ny) )
-		# Set boundaries which exclude the edge cells.
-		# Data is known at the corners of the cells.
-		# There are Nx*Ny corners and (Nx-1)*(Ny-1) cells.
-		self.Lx = Lx - 2*Lx/(Nx-1)
-		self.Ly = Ly - 2*Ly/(Ny-1)
-		return Nx,Ny
+class surface_mesh(base_surface):
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
-		Nx,Ny = self.LoadMap(input_dict)
-		# Work out surface normals at each mesh point.
+		super().Initialize(input_dict)
+		Nx,Ny = self.CreateMeshPointsAndNormals(input_dict)
+		# Create the triangular mesh
+		self.pts = np.zeros((Nx*Ny,2))
+		self.pts[:,0] = self.x.flatten()
+		self.pts[:,1] = self.y.flatten()
+		self.pts_z = self.z.flatten()
+		self.tri = scipy.spatial.Delaunay(self.pts)
+	def ComputeNormalsFromOrderedMesh(self,Nx,Ny):
+		# Default is to estimate normals using the mesh itself.
+		# This should not be used if the mesh has degenerate nodes.
 		# Average over the 4 possible ways to form the normal.
 		self.normals = np.zeros((Nx,Ny,3))
 		v1 = np.zeros((Nx,Ny,3))
@@ -355,12 +354,6 @@ class LevelMap(rectangle):
 				self.normals += di*dj*np.cross(v1,v2)
 		self.normals = (self.normals/4).reshape((Nx*Ny,3))
 		self.normals /= np.sqrt(np.einsum('...i,...i',self.normals,self.normals))[...,np.newaxis]
-		# Create the triangular mesh
-		self.pts = np.zeros((Nx*Ny,2))
-		self.pts[:,0] = self.x.flatten()
-		self.pts[:,1] = self.y.flatten()
-		self.pts_z = self.z.flatten()
-		self.tri = scipy.spatial.Delaunay(self.pts)
 	def ExpandSearch(self,searched_set,last_set):
 		# searched_set contains all indices that have been searched previously.
 		# last_set contains indices of the most recent search.
@@ -369,58 +362,89 @@ class LevelMap(rectangle):
 		idx_list = self.tri.neighbors[last_set].flatten()
 		idx_list = np.unique(idx_list[np.where(idx_list>-1)])
 		return idx_list[np.isin(idx_list,searched_set,invert=True)]
-	def Propagate(self,xp,eikonal,orb={'idx':0}):
-		self.RaysGlobalToLocal(xp,eikonal)
-		chi,vg = self.DispersionData(xp)
+	def GetStartingSimplices(self,dt,xp,vg):
+		ray_kernel.TestStep(dt,xp,vg)
+		tri_list = self.tri.find_simplex(xp[...,0,1:3])
+		ray_kernel.TestStep(-dt,xp,vg)
+		return tri_list
+	def GetTriangle(self,idx):
+		ia = self.tri.simplices[idx,0]
+		ib = self.tri.simplices[idx,1]
+		ic = self.tri.simplices[idx,2]
+		a = np.array([self.pts[ia,0],self.pts[ia,1],self.pts_z[ia]])
+		b = np.array([self.pts[ib,0],self.pts[ib,1],self.pts_z[ib]])
+		c = np.array([self.pts[ic,0],self.pts[ic,1],self.pts_z[ic]])
+		n0 = self.normals[ia]
+		n1 = self.normals[ib]
+		n2 = self.normals[ic]
+		return triangle(a,b,c,n0,n1,n2,self.disp1,self.disp2)
+	def Detect(self,xp,vg):
+		'''Performs an efficient search for the target simplex.
+		Assumes linear trajectory cannot cross more than one simplex.'''
 		# Compute ray intersection with flattened surface
-		t,impact = self.Detect(xp,vg)
-		xpsub = xp[impact,...]
-		eiksub = eikonal[impact,...]
-		ray_kernel.TestStep(t[impact],xpsub,vg[impact,...])
-		# Associate each primary ray with a triangle projected onto flattened surface.
-		# This will serve as the starting point for the local search.
-		tri_list = self.tri.find_simplex(xpsub[:,0,1:3])
-		ray_kernel.TestStep(-t[impact],xpsub,vg[impact,...])
-		for ray in range(xpsub.shape[0]):
-			if tri_list[ray]!=-1:
-				xp1 = xpsub[([ray],)]
-				eik1 = eiksub[([ray],)]
-
-				new_set = np.array([tri_list[ray]]).astype(np.int)
+		self.simplices = np.ones(xp.shape[0]).astype(np.int)
+		dt,impact = super().Detect(xp,vg)
+		dts = dt[impact,...]
+		xps,vgs = ray_kernel.extract_rays(impact,xp,vg)
+		# Search for the simplex that goes with each primary ray
+		simps = self.GetStartingSimplices(dts,xps,vgs)
+		for bundle in range(xps.shape[0]):
+			idx0 = simps[bundle]
+			if idx0!=-1:
+				xp1,vg1 = ray_kernel.extract_rays([bundle],xps,vgs)
+				new_set = np.array([idx0]).astype(np.int)
 				searched_set = np.array([]).astype(np.int)
-				num_deflected = 0
-				while len(new_set)>0:
-					i = 0
-					while num_deflected==0 and i<len(new_set):
-						idx = new_set[i]
-						ia = self.tri.simplices[idx,0]
-						ib = self.tri.simplices[idx,1]
-						ic = self.tri.simplices[idx,2]
-						a = np.array([self.pts[ia,0],self.pts[ia,1],self.pts_z[ia]])
-						b = np.array([self.pts[ib,0],self.pts[ib,1],self.pts_z[ib]])
-						c = np.array([self.pts[ic,0],self.pts[ic,1],self.pts_z[ic]])
-						n0 = self.normals[ia]
-						n1 = self.normals[ib]
-						n2 = self.normals[ic]
-						tri = triangle(a,b,c,n0,n1,n2,self.disp1,self.disp2)
-						num_deflected = tri.Propagate(xp1,eik1)
-						i += 1
-					if num_deflected==0:
+				search_complete = False
+				while not search_complete:
+					for idx in new_set:
+						simplex = self.GetTriangle(idx)
+						simplex.xvGlobalToLocal(xp1,vg1)
+						dt1,impact1 = simplex.Detect(xp1,vg1)
+						simplex.xvLocalToGlobal(xp1,vg1)
+						if dt1[0,0]!=self.clip:
+							# if dt1>0 we found the interaction.
+							# if dt1<0 we proved there is no interaction.
+							# either way the search should stop.
+							simps[bundle] = idx
+							dts[bundle,...] = dt1[0]
+							search_complete = True
+							break
+					else: # yes, it lines up with for
 						searched_set = np.union1d(searched_set,new_set)
 						new_set = self.ExpandSearch(searched_set,new_set)
-					else:
-						new_set = np.array([]).astype(np.int)
-
-				xpsub[([ray],)] = xp1
-				eiksub[([ray],)] = eik1
-		xp[impact,...] = xpsub
-		eikonal[impact,...] = eiksub
-		self.RaysLocalToGlobal(xp,eikonal)
+						if new_set.shape[0]==0:
+							dts[bundle,...] = self.clip
+							search_complete = True
+		ray_kernel.RepairSatellites(dts)
+		# Update the simplices and times with the restriction estimate
+		self.simplices[impact] = simps
+		dt[impact,...] = dts
+		# Restrict the impact further
+		impact = np.where(dt[...,0]>0)[0]
+		return dt,impact
+	def Propagate(self,xp,eikonal,vg,orb={'idx':0},vol_obj=0):
+		'''Propagate rays through a surface mesh.  The medium on either side must be uniform.'''
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		dt,impact = self.Detect(xp,vg)
+		dts = dt[impact,...]
+		simps = self.simplices[impact]
+		xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
+		# propagate bundles one at a time
+		for bundle in range(xps.shape[0]):
+			dt1 = dts[[bundle],...]
+			xp1,eik1,vg1 = ray_kernel.ExtractRays([bundle],xps,eiks,vgs)
+			ray_kernel.FullStep(dt1,xp1,eik1,vg1)
+			simplex = self.GetTriangle(simps[bundle])
+			simplex.RaysGlobalToLocal(xp1,eik1,vg1)
+			simplex.Deflect(xp1,eik1,vg1,vol_obj)
+			simplex.SafetyNudge(xp1,vg1)
+			simplex.RaysLocalToGlobal(xp1,eik1,vg1)
+			ray_kernel.UpdateRays([bundle],xps,eiks,vgs,xp1,eik1,vg1)
+		ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
-	def Report(self,basename,mks_length):
-		print(self.name,': writing mesh data...')
-		# Repack so we can transform to standard basis and save in single file
-		# The z-coordinate in the local basis is saved in the 0-component as the "color"
+	def GetPackedMesh(self):
+		# Component 0 is the "color"
 		packed_data = np.zeros((self.x.shape[0],self.x.shape[1],4))
 		packed_data[:,:,0] = self.z
 		packed_data[:,:,1] = self.x
@@ -428,22 +452,56 @@ class LevelMap(rectangle):
 		packed_data[:,:,3] = self.z
 		self.orientation.ExpressInStdBasis(packed_data[...,1:])
 		packed_data[...,1:] += self.P_ref
-		np.save(basename+'_'+self.name+'_mesh',packed_data)
-		np.save(basename+'_'+self.name+'_simplices',self.tri.simplices)
+		return packed_data
+	def GetSimplices(self):
+		return self.tri.simplices
 
-class TestMap(LevelMap):
-	def LoadMap(self,input_dict):
-		# Make a lens out of triangles for testing purposes.
-		Nx = input_dict['mesh points'][0]
-		Ny = input_dict['mesh points'][1]
+class LevelMap(surface_mesh,rectangle):
+	def CreateMeshPointsAndNormals(self,input_dict):
+		# z is expected in C-order, i.e., vertical axis is packed.
+		self.z = input_dict['level multiplier']*np.genfromtxt(input_dict['file'],skip_header=input_dict['header lines'])
+		#self.z = self.z[::16,::16]
+		Nx = self.z.shape[0]
+		Ny = self.z.shape[1]
 		Lx = input_dict['size'][0]
 		Ly = input_dict['size'][1]
-		R = input_dict['curvature radius']
 		self.x = np.outer( np.linspace(-Lx/2,Lx/2,Nx) , np.ones(Ny) )
 		self.y = np.outer( np.ones(Nx) , np.linspace(-Ly/2,Ly/2,Ny) )
-		self.z = -R+R*np.sqrt(1 - self.x**2/R**2 - self.y**2/R**2)
+		# Create an inset to insure all simplices within the clipping boundary
+		# Data is known at the corners of the cells.
+		# There are Nx*Ny corners and (Nx-1)*(Ny-1) cells.
 		self.Lx = Lx - 2*Lx/(Nx-1)
 		self.Ly = Ly - 2*Ly/(Ny-1)
+		self.ComputeNormalsFromOrderedMesh(Nx,Ny)
+		return Nx,Ny
+
+class AsphericCap(surface_mesh,disc):
+	'''Positive radius has concavity in +z direction, parallel to normals'''
+	def CreateMeshPointsAndNormals(self,input_dict):
+		# Make an aspheric surface out of triangles
+		Nx = input_dict['mesh points'][0]
+		Ny = input_dict['mesh points'][1]
+		C = 1.0/input_dict['radius of sphere']
+		k = input_dict['conic constant']
+		A = input_dict['aspheric coefficients']
+		chi = lambda rho2 : np.sqrt(1-(1+k)*C**2*rho2)
+		sag = lambda rho2 : C*rho2/(1+chi(rho2)) + A[0]*rho2**2 + A[1]*rho2**3 + A[2]*rho2**4 + A[3]*rho2**5
+		dzdr = lambda rho : C*rho/chi(rho**2) + 4*A[0]*rho**3 + 6*A[1]*rho**5 + 8*A[2]*rho**7 + 10*A[3]*rho**9
+		rho = np.linspace(0.0,self.Rd,Nx)
+		phi = np.linspace(0.0,2*np.pi,Ny)
+		self.x = np.outer(rho,np.cos(phi))
+		self.y = np.outer(rho,np.sin(phi))
+		self.z = sag(self.x**2 + self.y**2)
+		# Create an inset to insure all simplices within the clipping boundary
+		self.Rd = self.Rd - self.Rd/(Nx-1)
+		self.cap_thickness = sag(self.Rd**2)
+		# Compute the normals
+		self.normals = np.zeros((Nx,Ny,3))
+		self.normals[:,:,0] = -np.outer(dzdr(rho),np.cos(phi))
+		self.normals[:,:,1] = -np.outer(dzdr(rho),np.sin(phi))
+		self.normals[:,:,2] = 1.0
+		self.normals = self.normals.reshape((Nx*Ny,3))
+		self.normals /= np.sqrt(np.einsum('...i,...i',self.normals,self.normals))[...,np.newaxis]
 		return Nx,Ny
 
 class quadratic(base_surface):
@@ -455,25 +513,24 @@ class quadratic(base_surface):
 			t1 = q/A
 			t2 = C/q
 		# Encode no impact as being at an arbitrary time in the past
-		t1[np.where(np.isinf(t1))] = -1.0
-		t1[np.where(np.isnan(t1))] = -1.0
-		t1[np.where(dsc<0.0)] = -1.0
-		t2[np.where(np.isinf(t2))] = -1.0
-		t2[np.where(np.isnan(t2))] = -1.0
-		t2[np.where(dsc<0.0)] = -1.0
+		t1[np.where(np.isinf(t1))] = self.clip
+		t1[np.where(np.isnan(t1))] = self.clip
+		t1[np.where(dsc<0.0)] = self.clip
+		t2[np.where(np.isinf(t2))] = self.clip
+		t2[np.where(np.isnan(t2))] = self.clip
+		t2[np.where(dsc<0.0)] = self.clip
 		return t1,t2
 	def Detect(self,xp0,vg):
 		A,B,C = self.GetQuadraticEqCoefficients(xp0,vg)
 		t1,t2 = self.QuadraticTime(A,B,C)
 		xp = np.copy(xp0)
 		ray_kernel.TestStep(t1,xp,vg)
-		t1_good = self.ClipImpact(xp)
+		t1_bad = self.ClipImpact(xp)
+		t1[np.where(t1_bad)] = self.clip
 		xp = np.copy(xp0)
 		ray_kernel.TestStep(t2,xp,vg)
-		t2_good = self.ClipImpact(xp)
-		# Impacts outside clipped region encoded as in the past
-		t1[np.where(np.logical_not(t1_good))] = -1.0
-		t2[np.where(np.logical_not(t2_good))] = -1.0
+		t2_bad = self.ClipImpact(xp)
+		t2[np.where(t2_bad)] = self.clip
 		# Choose the earlier event provided it is in the future
 		# Magnitude of negative times is incorrect, but we only need the fact that they are negative.
 		t1[np.where( np.logical_and(t2<t1,t2>0.0) )] = 0.0
@@ -481,7 +538,10 @@ class quadratic(base_surface):
 		t1[np.where( np.logical_and(t1<0.0,t2>0.0) )] = 0.0
 		t2[np.where( np.logical_and(t2<0.0,t1>0.0) )] = 0.0
 		time_to_surface = t1 + t2
-		impact_filter = np.where(time_to_surface>0.0)[0]
+		# If a satellite misses but the primary hits, still deflect the satellite
+		ray_kernel.RepairSatellites(time_to_surface)
+		#time_to_surface[np.where(time_to_surface<0)] = time_to_surface[...,0:1]
+		impact_filter = np.where(time_to_surface[...,0]>0)[0]
 		return time_to_surface,impact_filter
 
 class cylindrical_shell(quadratic):
@@ -489,29 +549,23 @@ class cylindrical_shell(quadratic):
 	Default orientation : cylinder axis is z-axis
 	Dispersion beneath means inside the cylinder, above is outside'''
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.Rc = input_dict['radius']
 		self.dz = input_dict['length']
-	def GetRgn(self,xp):
-		rho2 = np.einsum('...i,...i',xp[:,0,1:3],xp[:,0,1:3])
-		beneath_test = rho2<self.Rc
-		inRgn1 = np.where(beneath_test)
-		inRgn2 = np.where(np.logical_not(beneath_test))
-		return inRgn1,inRgn2
-	def GetNormals(self,xp,impact):
-		normals = xp[impact,:,1:4]
+	def GetNormals(self,xp):
+		normals = xp[...,1:4]
 		normals[...,2] = 0.0
 		normals /= np.sqrt(np.einsum('...i,...i',normals,normals))[...,np.newaxis]
 		return normals
 	def GetQuadraticEqCoefficients(self,xp0,vg):
-		vrho2 = np.einsum('...i,...i',vg[:,0,1:3],vg[:,0,1:3])
-		rho2 = np.einsum('...i,...i',xp0[:,0,1:3],xp0[:,0,1:3])
+		vrho2 = np.einsum('...i,...i',vg[...,1:3],vg[...,1:3])
+		rho2 = np.einsum('...i,...i',xp0[...,1:3],xp0[...,1:3])
 		A = vrho2
-		B = 2*(vg[:,0,1]*xp0[:,0,1]+vg[:,0,2]*xp0[:,0,2])
+		B = 2*(vg[...,1]*xp0[...,1]+vg[...,2]*xp0[...,2])
 		C = rho2-self.Rc**2
 		return A,B,C
 	def ClipImpact(self,xp):
-		return xp[:,0,3]**2<self.dz**2/4
+		return xp[...,3]**2>self.dz**2/4
 	def GetPackedMesh(self):
 		# Component 0 is the "color"
 		res = 64
@@ -530,25 +584,16 @@ class SphericalCap(quadratic):
 	'''Default position: center of sphere is at +Rs
 	Default orientation: cap centroid is at origin'''
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.Rs = input_dict['radius of sphere']
 		self.Re = input_dict['radius of edge']
-	def GetRgn(self,xp):
-		xc = xp[:,0,1:4] - np.array([0.,0.,self.Rs])
-		rc = np.sqrt(np.einsum('...i,...i',xc,xc))
-		cap_angle = np.arcsin(self.Re/self.Rs)
-		cap_thickness = self.Rs*(1-np.cos(cap_angle))
-		beneath_test = np.logical_and(rc>self.Rs,xc[:,2]<cap_thickness-self.Rs)
-		inRgn1 = np.where(beneath_test)
-		inRgn2 = np.where(np.logical_not(beneath_test))
-		return inRgn1,inRgn2
-	def GetNormals(self,xp,impact):
-		normals = xp[impact,:,1:4] - np.array([0.,0.,self.Rs])
+	def GetNormals(self,xp):
+		normals = xp[...,1:4] - np.array([0.,0.,self.Rs])
 		normals /= np.sqrt(np.einsum('...i,...i',normals,normals))[...,np.newaxis]
-		return -normals
+		return -np.sign(self.Rs)*normals
 	def GetQuadraticEqCoefficients(self,xp0,vg):
-		vc = vg[:,0,1:4]
-		xc = xp0[:,0,1:4] - np.array([0.,0.,self.Rs])
+		vc = vg[...,1:4]
+		xc = xp0[...,1:4] - np.array([0.,0.,self.Rs])
 		A = np.einsum('...i,...i',vc,vc)
 		r2 = np.einsum('...i,...i',xc,xc)
 		B = 2*np.einsum('...i,...i',xc,vc)
@@ -557,14 +602,14 @@ class SphericalCap(quadratic):
 	def ClipImpact(self,xp):
 		cap_angle = np.arcsin(self.Re/self.Rs)
 		cap_thickness = self.Rs*(1-np.cos(cap_angle))
-		return xp[:,0,3]<cap_thickness
+		return np.sign(cap_thickness)*xp[...,3]>np.abs(cap_thickness)
 	def GetPackedMesh(self):
 		# Component 0 is the "color"
-		res = 64
+		res = (32,8)
 		cap_angle = np.arcsin(self.Re/self.Rs)
-		packed_data = np.zeros((res,4,4))
-		phi = np.outer(np.linspace(0.0,2*np.pi,res),np.ones(4))
-		theta = np.outer(np.ones(res),np.linspace(0.0,cap_angle,4))
+		packed_data = np.zeros((res[0],res[1],4))
+		phi = np.outer(np.linspace(0.0,2*np.pi,res[0]),np.ones(res[1]))
+		theta = np.outer(np.ones(res[0]),np.linspace(0.0,cap_angle,res[1]))
 		packed_data[...,0] = 1.0
 		packed_data[...,1] = self.Rs*np.cos(phi)*np.sin(theta)
 		packed_data[...,2] = self.Rs*np.sin(phi)*np.sin(theta)
@@ -578,34 +623,27 @@ class Paraboloid(quadratic):
 	Default orientation: paraboloid vertex is at -f
 	Acceptance angle defines angle between focused marginal ray and z-axis'''
 	def Initialize(self,input_dict):
-		base_surface.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.f = input_dict['focal length']
 		self.theta0 = input_dict['off axis angle']
 		self.acc = input_dict['acceptance angle']
-	def GetRgn(self,xp):
-		rho2 = np.einsum('...i,...i',xp[:,0,1:3],xp[:,0,1:3])
-		zpar = rho2/(4*self.f) - self.f
-		beneath_test = xp[:,0,3]<zpar
-		inRgn1 = np.where(beneath_test)
-		inRgn2 = np.where(np.logical_not(beneath_test))
-		return inRgn1,inRgn2
-	def GetNormals(self,xp,impact):
-		normals = xp[impact,:,1:4]
+	def GetNormals(self,xp):
+		normals = np.copy(xp[...,1:4])
 		normals /= np.sqrt(np.einsum('...i,...i',normals,normals))[...,np.newaxis]
 		normals -= np.array([0.,0.,1.])
 		normals /= np.sqrt(np.einsum('...i,...i',normals,normals))[...,np.newaxis]
 		return -normals
 	def GetQuadraticEqCoefficients(self,xp0,vg):
-		vrho2 = np.einsum('...i,...i',vg[:,0,1:3],vg[:,0,1:3])
-		rho2 = np.einsum('...i,...i',xp0[:,0,1:3],xp0[:,0,1:3])
+		vrho2 = np.einsum('...i,...i',vg[...,1:3],vg[...,1:3])
+		rho2 = np.einsum('...i,...i',xp0[...,1:3],xp0[...,1:3])
 		A = vrho2
-		B = 2*(vg[:,0,1]*xp0[:,0,1]+vg[:,0,2]*xp0[:,0,2]-2*self.f*vg[:,0,3])
-		C = rho2-4*self.f*(self.f+xp0[:,0,3])
+		B = 2*(vg[...,1]*xp0[...,1]+vg[...,2]*xp0[...,2]-2*self.f*vg[...,3])
+		C = rho2-4*self.f*(self.f+xp0[...,3])
 		return A,B,C
 	def ClipImpact(self,xp):
 		hmax = 2*self.f*(1-np.cos(self.acc))/np.sin(self.acc)**2 # hypotenuse
 		zmax = -hmax*np.cos(self.acc)
-		return np.logical_and(xp[:,0,3]>=-self.f , xp[:,0,3]<zmax)
+		return np.logical_or(xp[...,3]<-self.f , xp[...,3]>zmax)
 	def GetPackedMesh(self):
 		# Component 0 is the "color"
 		res = 64
@@ -638,17 +676,20 @@ class BeamProfiler(rectangle):
 		vgroup = self.disp2.vg(self.xps)
 		zf = caustic_tools.ParaxialFocus(self.xps,vgroup)
 		print('    Relative paraxial ray focal position (mm) =',zf*l1)
+		print('    Conserved micro action =',self.micro_action)
 		return xc,yc,zc,xrms,yrms,zrms
-	def Propagate(self,xp,eikonal,orb={'idx':0}):
-		#print(self.name,'propagating...')
-		self.RaysGlobalToLocal(xp,eikonal)
-		chi,vg = self.DispersionData(xp)
-		time_to_surface,impact = self.Detect(xp,vg)
-		self.PropagateTo(xp,eikonal,vg,time_to_surface,impact)
+	def Propagate(self,xp,eikonal,vg,orb={'idx':0}):
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		dt,impact = self.Detect(xp,vg)
+		xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
+		ray_kernel.FullStep(dt[impact,...],xps,eiks,vgs)
+		ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
 		self.xps = np.copy(xp[impact,0,:])
 		self.eiks = np.copy(eikonal[impact,...])
-		self.RaysLocalToGlobal(xp,eikonal)
+		self.micro_action = ray_kernel.GetMicroAction(xp,eikonal,vg)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
+		return impact.shape[0]
 	def PackVector(self,Ax,Ay,Az):
 		Axyz = np.zeros(Ax.shape+(3,)).astype(np.complex)
 		Axyz[...,0] = Ax
@@ -665,7 +706,7 @@ class EikonalProfiler(BeamProfiler):
 
 class FullWaveProfiler(BeamProfiler):
 	def Initialize(self,input_dict):
-		rectangle.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
 		self.N = input_dict['grid points']
@@ -673,22 +714,22 @@ class FullWaveProfiler(BeamProfiler):
 		xc,yc,zc,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
 		field_tool = caustic_tools.FourierTool(self.N,(self.Lx,self.Ly,self.Lz))
 		print('    constructing fields in eikonal plane...')
-		dom,Ax = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
-		dom,Ay = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
-		dom,Az = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
+		Ax,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
+		Ay,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
+		Az,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
 		np.save(basename+'_'+self.name+'_plane_eik',self.PackVector(Ax,Ay,Az))
 		print('    constructing fields in wave zone...')
 		# Form k00 using the first ray; assume monochromatic rays.
 		k00 = np.sqrt(self.xps[0,5]**2 + self.xps[0,6]**2 + self.xps[0,7]**2)
-		dom3d,Ax = field_tool.GetFields(k00,self.dz,Ax)
-		dom3d,Ay = field_tool.GetFields(k00,self.dz,Ay)
-		dom3d,Az = field_tool.GetFields(k00,self.dz,Az)
+		Ax,dom3d = field_tool.GetFields(k00,self.dz,Ax)
+		Ay,dom3d = field_tool.GetFields(k00,self.dz,Ay)
+		Az,dom3d = field_tool.GetFields(k00,self.dz,Az)
 		np.save(basename+'_'+self.name+'_plane_wave',self.PackVector(Ax,Ay,Az))
 		np.save(basename+'_'+self.name+'_plane_plot_ext',dom3d)
 
 class CylindricalProfiler(BeamProfiler):
 	def Initialize(self,input_dict):
-		rectangle.Initialize(self,input_dict)
+		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
 		self.N = input_dict['grid points']
@@ -703,15 +744,15 @@ class CylindricalProfiler(BeamProfiler):
 		print('    diagonalizing matrix...')
 		field_tool = caustic_tools.BesselBeamTool(self.N,(self.Lx/2,2*np.pi,self.Lz),self.queue,self.kernel)
 		print('    constructing fields in eikonal plane...')
-		dom,Ax = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
-		dom,Ay = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
-		dom,Az = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
+		Ax,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
+		Ay,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
+		Az,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
 		np.save(basename+'_'+self.name+'_bess_eik',self.PackVector(Ax,Ay,Az))
 		print('    constructing fields in wave zone...')
 		# Form k00 using the first ray; assume monochromatic rays.
 		k00 = np.sqrt(self.xps[0,5]**2 + self.xps[0,6]**2 + self.xps[0,7]**2)
-		dom3d,Ax = field_tool.GetFields(k00,self.dz,Ax)
-		dom3d,Ay = field_tool.GetFields(k00,self.dz,Ay)
-		dom3d,Az = field_tool.GetFields(k00,self.dz,Az)
+		Ax,dom3d = field_tool.GetFields(k00,self.dz,Ax)
+		Ay,dom3d = field_tool.GetFields(k00,self.dz,Ay)
+		Az,dom3d = field_tool.GetFields(k00,self.dz,Az)
 		np.save(basename+'_'+self.name+'_bess_wave',self.PackVector(Ax,Ay,Az))
 		np.save(basename+'_'+self.name+'_bess_plot_ext',dom3d)

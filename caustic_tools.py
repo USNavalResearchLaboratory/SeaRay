@@ -41,15 +41,23 @@ class FourierTool:
 		sgn[np.int(num/2)+1:] = -1.0
 		return sgn*np.sqrt(2.0*dti*dti*(1.0 - np.cos(2.0*np.pi*i_list/num)));
 
+	def GetGridInfo(self):
+		x_nodes = grid_tools.cell_centers(-self.size[0]/2,self.size[0]/2,self.pts[0])
+		y_nodes = grid_tools.cell_centers(-self.size[1]/2,self.size[1]/2,self.pts[1])
+		x_walls = grid_tools.cell_walls(x_nodes[0],x_nodes[-1],self.pts[0])
+		y_walls = grid_tools.cell_walls(y_nodes[0],y_nodes[-1],self.pts[1])
+		plot_ext = np.array([x_walls[0],x_walls[-1],y_walls[0],y_walls[-1]])
+		return x_nodes,y_nodes,plot_ext
+
 	def GetBoundaryFields(self,center,xps,eiks,c):
 		'''Get eikonal field component c on a flat surface.
 		Surface is defined by the rays (xps,eiks).  Rays must be propagated to the surface externally.'''
 		xp0 = xps[:,1:4] - center
 		kr = eiks[:,0] + xps[:,4]*xps[:,0]
-		clip_rect = [-self.size[0]/2,self.size[0]/2,-self.size[1]/2,self.size[1]/2]
-		A,plot_ext = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],eiks[:,c],(self.pts[0],self.pts[1]),clip_rgn=clip_rect)
-		psi,plot_ext = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],kr,(self.pts[0],self.pts[1]),clip_rgn=clip_rect)
-		return plot_ext , A*np.exp(1j*psi)
+		x_nodes,y_nodes,plot_ext = self.GetGridInfo()
+		A,ignore = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],eiks[:,c],x_nodes,y_nodes)
+		psi,ignore = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],kr,x_nodes,y_nodes)
+		return A*np.exp(1j*psi) , plot_ext
 
 	def GetFields(self,k00,dz,A):
 		'''dz = distance from eikonal plane to center of interrogation region
@@ -64,112 +72,10 @@ class FourierTool:
 		#for i in range(self.pts[2]):
 		#	phase_adv[...,i] -= np.min(phase_adv[...,i])
 		Ak = np.einsum('ij,ijk->ijk',Ak,np.exp(1j*phase_adv))
-		dom3d = np.array([-self.size[0]/2,self.size[0]/2,-self.size[1]/2,self.size[1]/2,-self.size[2]/2,self.size[2]/2])
-		return dom3d , np.fft.ifft(np.fft.ifft(Ak,axis=0),axis=1)
-
-class SphericalHarmonicTool:
-
-	def __init__(self,m,q_pts_in,q_pts_out,modes,r_pts,queue,kernel):
-		'''m = azimuthal mode number
-		q_pts_in = number of samples along polar angle in the input data
-		q_pts_out = number of samples along polar angle to produce in the output data
-		modes = number polar modes (Legendre polynomials)
-		r_pts = number of radial points to produce in the output data
-		queue = OpenCL queue
-		kernel = OpenCL kernel function to perform matrix multiplication'''
-		q_list_in = grid_tools.cell_centers(0,np.pi,q_pts_in)
-		q_list_out = grid_tools.cell_centers(0,np.pi,q_pts_out)
-		mode_list = np.array(range(modes))
-		dq = q_list_in[1] - q_list_in[0]
-		T_pts = (q_pts_in,modes,q_pts_out)
-		self.m = m
-		self.T_pts = T_pts
-		self.q_pts = (q_pts_in,q_pts_out)
-		self.r_pts = r_pts
-		self.modes = modes
-		self.T = np.zeros((T_pts[1],T_pts[0])).astype(np.complex)
-		self.Ti = np.zeros((T_pts[2],T_pts[1])).astype(np.complex)
-		self.v = (np.zeros((T_pts[0],r_pts)).astype(np.complex) , np.zeros((T_pts[1],r_pts)).astype(np.complex) , np.zeros((T_pts[2],r_pts)).astype(np.complex))
-
-		# Set up forward transform
-		for i in range(q_pts_in):
-			self.T[:,i] = 2*np.pi*dq*np.sin(q_list_in[i])*sph_harm(m,mode_list,0.0,q_list_in[i])
-
-		# Set up reverse transform
-		for i in range(modes):
-			self.Ti[:,i] = sph_harm(m,i,0.0,q_list_out)
-
-		# Set up OpenCL for fast transforms
-		self.queue = queue
-		self.kernel = kernel
-		self.T_dev = pyopencl.array.to_device(queue,self.T)
-		self.Ti_dev = pyopencl.array.to_device(queue,self.Ti)
-		self.v_dev = (pyopencl.array.to_device(queue,self.v[0]),pyopencl.array.to_device(queue,self.v[1]),pyopencl.array.to_device(queue,self.v[2]))
-		queue.finish()
-
-	def Transform(self,T,v,inv):
-		ans = np.zeros((self.T_pts[inv+1],self.r_pts)).astype(np.complex)
-		self.v_dev[inv].set(v)
-		self.kernel(	self.queue,
-						(self.T_pts[inv+1],self.r_pts),
-						None,
-						T,
-						self.v_dev[inv].data,
-						self.v_dev[inv+1].data,
-						np.int32(self.T_pts[inv]))
-		self.queue.finish()
-		self.v_dev[inv+1].get(ary=ans)
-		return ans
-
-	def GetGaussianFields(self,E0_mks,r00,f,k00,rs,rd):
-		q_list_in = grid_tools.cell_centers(0,np.pi,self.q_pts[0])
-		# sgn goes from -1 to 1 as z goes from + to -
-		sgn = np.tanh((q_list_in-np.pi/2)/(np.pi/128))
-		qh = q_list_in/2
-		# Amplitude of x-component of incoming wave with m=0
-		# Neglecting m>0 modes means the incident wave is elliptical
-		ax = 0j+(E0_mks*f/rs)*np.exp(-4*f**2*np.tan(qh)**2/r00**2)/np.cos(qh)**2
-		ax += ax[::-1]
-		ax *= np.exp(1j*sgn*np.pi/4)
-		# k00*rs is eliminated from the phase by rounding to the nearest multiple of 2*pi + pi/4
-		# Phases that give pure real or imaginary values give underdetermined results, hence the pi/4
-		az = -ax*np.tan(q_list_in)
-		return ax,az
-
-	def GetBoundaryFields(self,center,xps,eiks,max_modes):
-		# Get the polar function defined by Integrate(dphi*exp(i*m*phi)*A(theta,phi))
-		# i.e., extract the particular azimuthal mode considered
-		xp0 = xps[:,1:4] - center
-		phase = eiks[:,0] + xps[:,4]*xps[:,0]
-		theta = np.arccos(xp0[:,2]/np.sqrt(np.einsum('ij,ij->i',xp0,xp0)))
-		phi = np.arctan2(xp0[:,1],xp0[:,0])
-		ax,plot_ext = grid_tools.GridFromBinning(theta,phi,eiks[:,1],(self.q_pts[0],max_modes),clip_rgn=[0,np.pi,-np.pi-np.pi/max_modes,np.pi-np.pi/max_modes])
-		psi,plot_ext = grid_tools.GridFromBinning(theta,phi,phase,(self.q_pts[0],max_modes),clip_rgn=[0,np.pi,-np.pi-np.pi/max_modes,np.pi-np.pi/max_modes])
-		q = np.arange(0,max_modes)
-		f = 2*np.pi*np.exp(-2j*np.pi*self.m*q/max_modes)/max_modes
-		return grid_tools.cell_centers(0,np.pi,self.q_pts[0]),np.sum(ax*np.exp(1j*psi)*f,axis=1)
-
-	def GetFields(self,k00,rs,r1,r2,A):
-		# A is expected to be a 1D array representing a function of polar angle
-		# which is known at r=rs
-		if rs<r1 or r2<r1 or rs<r2:
-			print('WARNING: r positions out of order in GetFields')
-		q_list_out = grid_tools.cell_centers(0,np.pi,self.q_pts[1])
-		r_list = grid_tools.cell_centers(r1,r2,self.r_pts)
-
-		# Get the polar angle mode coefficients
-		# This is done for each r, for programming convenience
-		# It is r-pts fold redundant
-		A_l = self.Transform(self.T_dev.data,np.outer(A,np.ones(self.r_pts)),0)
-		# Get the modes at any r (they are all the same) for diagnostic return values
-		A_modes = np.array(A_l[:,0])
-		# Recover fields in r-theta plane
-		# Asymptotic jn is used on boundary sphere to minimize numerical errors
-		for l in range(self.modes):
-			A_l[l,:] *= spherical_jn(l,k00*r_list)*k00*rs/np.cos(np.pi/4-(l+1)*np.pi/2)
-		A = self.Transform(self.Ti_dev.data,A_l,1)
-
-		return q_list_out,r_list,A,A_modes
+		x_nodes,y_nodes,plot_ext = self.GetGridInfo()
+		z_ext = np.array([-self.size[2]/2,self.size[2]/2])
+		dom3d = np.concatenate((plot_ext,z_ext))
+		return np.fft.ifft(np.fft.ifft(Ak,axis=0),axis=1) , dom3d
 
 class BesselBeamTool:
 
@@ -179,6 +85,14 @@ class BesselBeamTool:
 		self.mmax = np.int(pts[1]/2)
 		self.H = grid_tools.HankelTransformTool(self.pts[0],self.size[0]/self.pts[0],self.mmax,queue,kernel)
 
+	def GetGridInfo(self):
+		rho_nodes = grid_tools.cell_centers(0.0,self.size[0],self.pts[0])
+		phi_nodes = np.linspace(-np.pi,np.pi-2*np.pi/self.pts[1],self.pts[1])
+		rho_walls = grid_tools.cell_walls(rho_nodes[0],rho_nodes[-1],self.pts[0])
+		phi_walls = grid_tools.cell_walls(phi_nodes[0],phi_nodes[-1],self.pts[1])
+		plot_ext = np.array([rho_walls[0],rho_walls[-1],phi_walls[0],phi_walls[-1]])
+		return rho_nodes,phi_nodes,plot_ext
+
 	def GetBoundaryFields(self,center,xps,eiks,c):
 		'''Eikonal field component c on (rho,phi) grid.
 		The radial points do not include the origin.
@@ -187,14 +101,12 @@ class BesselBeamTool:
 		kr = eiks[:,0] + xps[:,4]*xps[:,0]
 		rho = np.sqrt(xp0[:,0]**2 + xp0[:,1]**2)
 		phi = np.arctan2(xp0[:,1],xp0[:,0])
-		# Remove ambiguity in angle by changing any occurence of pi to -pi
-		phi[np.where(phi>=0.99999*np.pi)] -= 2*np.pi
-		rho_nodes = grid_tools.cell_centers(0.0,self.size[0],self.pts[0])
-		clip_rect = [rho_nodes[0],rho_nodes[-1],-np.pi,np.pi-2*np.pi/self.pts[1]]
-		grid_pts = (self.pts[0],self.pts[1])
-		A,plot_ext = grid_tools.GridFromInterpolation(rho,1.0001*phi,eiks[:,c],grid_pts,clip_rgn=clip_rect)
-		psi,plot_ext = grid_tools.GridFromInterpolation(rho,1.0001*phi,kr,grid_pts,clip_rgn=clip_rect)
-		return plot_ext , A*np.exp(1j*psi)
+		# Keep angles in range pi to -pi, and favor -pi over +pi
+		phi[np.where(phi>0.9999*np.pi)] -= 2*np.pi
+		rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
+		A,ignore = grid_tools.CylGridFromInterpolation(rho,phi,eiks[:,c],rho_nodes,phi_nodes)
+		psi,ignore = grid_tools.CylGridFromInterpolation(rho,phi,kr,rho_nodes,phi_nodes)
+		return A*np.exp(1j*psi),plot_ext
 
 	def GetFields(self,k00,dz,A):
 		'''dz = distance from eikonal plane to center of interrogation region
@@ -210,8 +122,10 @@ class BesselBeamTool:
 		ans *= np.exp(1j*phase_adv)
 		ans = self.H.rspace(ans)
 		ans = np.fft.ifft(ans,axis=1)
-		dom3d = np.array([0.0,self.size[0],-np.pi,np.pi-2*np.pi/self.pts[1],-self.size[2]/2,self.size[2]/2])
-		return dom3d , ans
+		rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
+		z_ext = np.array([-self.size[2]/2,self.size[2]/2])
+		dom3d = np.concatenate((plot_ext,z_ext))
+		return ans,dom3d
 
 
 def get_waist(rho_list,intensity,which_axis):

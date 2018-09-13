@@ -4,11 +4,8 @@ import dispersion
 import surface
 import volume
 
-# Example of focusing with an extra-thick bi-convex spherical lens
-# Illustrates difficulty of full wave reconstruction for highly aberrated beams
-# Requires at least 16384^2 grid points for reasonable results; more tends to stress system memory.
-# A trick that can be used is to put the eikonal plane after the focus and reverse the Helmholtz propagator,
-# but this input file does not do that.
+# Example of aspheric lens focusing and chromatic aberration
+# The aspheric surface is modeled using a surface mesh
 
 # The input file must do one thing:
 #   create dictionaries sim[i], wave[i], ray[i], optics[i], diagnostics[i].
@@ -18,6 +15,7 @@ import volume
 # Best practice in post-processing is also to look only at the dictionaries
 
 mks_length = 0.8e-6 / (2*np.pi)
+bundle_scale = 1e-6
 sim = []
 wave = []
 ray = []
@@ -30,12 +28,13 @@ mess = 'Processing input file...\n'
 nrefr = np.sqrt(1+dispersion.BK7(mks_length).chi(1.0)[0])
 mess = mess + '  BK7 Refractive index at {:.0f} nm = {:.3f}\n'.format(2*np.pi*mks_length*1e9,nrefr)
 lens_D = 0.1/mks_length
-lens_R = 0.1/mks_length
-lens_t = 0.03/mks_length
-lens_f = 1/(nrefr-1)/(1/lens_R + 1/lens_R - (nrefr-1)*lens_t/(nrefr*lens_R*lens_R))
+lens_R = 0.055/mks_length
+lens_t = 0.04/mks_length
+lens_f = lens_R/(nrefr-1)
 mess = mess + '  thick lens focal length = {:.2f} meters\n'.format(lens_f*mks_length)
-r00 = .01/mks_length # spot size of radiation
-t00 = 1e-6*C.c/mks_length # pulse width (not important)
+r00 = .02/mks_length # spot size of radiation
+rb = r00*bundle_scale
+t00 = 1e-14*C.c/mks_length # pulse width
 theta = 0 # direction of propagation, 0 is +z
 f_num = lens_f/(2*r00)
 paraxial_e_size = 4.0*f_num/1.0
@@ -65,34 +64,37 @@ for i in range(1):
 					'pulse shape' : 'sech',
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (128,128,1),
-					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cartesian',
+	ray.append({	'number' : (512,4,1),
+					'bundle radius' : (rb,rb,rb,rb),
+					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (-3*r00,3*r00,-3*r00,3*r00,-2*t00,2*t00)})
+					'box' : (0.0,0.45*lens_D,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : volume.SphericalLens('lens'),
+		{	'object' : volume.AsphericLens('lens'),
 			'dispersion inside' : dispersion.BK7(mks_length),
 			'dispersion outside' : dispersion.Vacuum(),
 			'thickness' : lens_t,
 			'rcurv beneath' : lens_R,
-			'rcurv above' : -lens_R,
+			#'rcurv above' : lens_R*10000,
 			'aperture radius' : lens_D/2,
+			# The mesh is spherical.
+			# Poor azimuthal resolution will lead to numerical astigmatism.
+			# Poor radial resolution will lead to inaccurate intensity
+			'mesh points' : (128,512),
+			'conic constant' : 0.0,
+			'aspheric coefficients' : (-28000/lens_R**4,-24000/lens_R**6,-10000/lens_R**8,-32000/lens_R**10),
+			#'aspheric coefficients' : (0.0,0.0,0.0,0.0),
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.)},
 
-		{	'object' : surface.FullWaveProfiler('det'),
-			'size' : (.02/mks_length,.02/mks_length,.001/mks_length),
-			'grid points' : (1024,1024,1),
-			'distance to caustic' : .057/mks_length,
-			'origin' : (0.,0.,0.05/mks_length)},
-
-		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (.1/mks_length,.1/mks_length),
-			'grid points' : (128,128,1),
-			'origin' : (0.,0.,.15/mks_length)}
+		{	'object' : surface.CylindricalProfiler('det'),
+			'integrator' : 'transform',
+			'size' : (.0025/mks_length,.0025/mks_length,.0015/mks_length),
+			'grid points' : (4096,4,1),
+			'distance to caustic' : -.0038/mks_length,
+			'origin' : (0.,0.,0.105/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,

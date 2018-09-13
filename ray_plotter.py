@@ -6,11 +6,16 @@ from scipy import constants as C
 import grid_tools
 import inputs
 
+plotter_defaults = {	'image colors' : 'viridis' ,
+						'level colors' : 'ocean' ,
+						'length' : 'mm' ,
+						'time' : 'ps' }
+
 try:
 	import matplotlib as mpl
 	import matplotlib.pyplot as plt
 	from mpl_toolkits.mplot3d import Axes3D
-	mpl.rcParams['text.usetex'] = True
+	#mpl.rcParams['text.usetex'] = True
 	mpl.rcParams['font.size'] = 13
 	mpl_loaded = True
 except:
@@ -22,27 +27,30 @@ try:
 except:
 	maya_loaded = False
 
-dynamic_range = 5
-my_color_map = 'magma'
-
 if len(sys.argv)==1:
 	print('==============BEGIN HELP FOR SEARAY PLOTTER==============')
 	print('Usage: ray_plotter.py base_filename [optional arguments...]')
 	print('Example: ray_plotter.py out/test units=ps,mm o31 o3d')
 	print('NOTE: plotter expects input file for run to be analyzed to be in working directory.')
-	print('Arguments:')
+	print('-----------------General Argument Format-----------------')
 	print('Arguments with values take form key=val1,val2,val3... (NO spaces)')
-	print('In the following optional values are in brackets, key[=opt1,opt2,...].')
+	print('In this document,optional values are in brackets, key[=opt1,opt2,...].')
+	print('(Do not type out the brackets)')
+	print('-----------------Required Argument-----------------')
 	print('base_filename: path and prefix for data files, e.g., out/test')
+	print('-----------------Formatting Options-----------------')
 	print('units=time,length: time may be fs,ps,ns,us,s; length may be um,mm,cm,m,in.')
 	print('labels=system: system may be indexed,cart,cyl,sph')
-	print('origin=x1,x2,x3')
+	print('drange=dr: if dr=0, use linear color scale, otherwise log10 scale with dynamic range = dr')
+	print('color=cmap: cmap is a string naming any colormap understood by Matplotlib or Mayavi')
+	print('origin=x1,x2,x3: reference all spatial coordinates to this point')
 	print('res: resolution points for eikonal fields, no spaces, e.g., res=200')
-	print('oij, hij, and fijk:')
+	print('-----------------Indexing-----------------')
 	print('i,j,k should be replaced by a 1-digit hexidecimal number from 0-b.')
 	print('0-3 maps to (ct,x,y,z).')
 	print('4-7 maps to (w/c,kx,ky,kz).')
 	print('8-b maps to (phase,ax,ay,az).')
+	print('-----------------Plot Types-----------------')
 	print('oij[=h0,h1,v0,v1]: plot orbits in ij plane, e.g., o31')
 	print('hij: scatter plot in Hamiltonian phase space of the final state, e.g., h15')
 	print('fijk: field reconstruction for component k in the ij plane (requires detailed orbits)')
@@ -68,6 +76,16 @@ for arg in sys.argv:
 	except:
 		arg_dict[arg.split('=')[0]] = 'default'
 
+try:
+	my_color_map = arg_dict['color']
+except:
+	my_color_map = plotter_defaults['image colors']
+
+try:
+	dynamic_range = np.float(arg_dict['drange'])
+except:
+	dynamic_range = 0.0
+
 def SliceAxis(h,v):
 	if h!=1 and v!=1:
 		return 1
@@ -75,6 +93,15 @@ def SliceAxis(h,v):
 		return 2
 	if h!=3 and v!=3:
 		return 3
+
+def TransformColorScale(array,dyn_rng):
+	if dyn_rng!=0.0:
+		low_bound = np.max(array)/10**dyn_rng
+		array[np.where(array<low_bound)] = low_bound
+		array[...] = np.log10(array)
+		return r'${\rm log}_{10}$'
+	else:
+		return r''
 
 def FractionalPowerScale(array,order):
 	idxneg = np.where(array<0)
@@ -114,8 +141,8 @@ class Units:
 			t_str = arg_dict['units'].split(',')[0]
 			l_str = arg_dict['units'].split(',')[1]
 		except:
-			t_str = 'ps'
-			l_str = 'mm'
+			t_str = plotter_defaults['time']
+			l_str = plotter_defaults['length']
 
 		carrier = inputs.wave[0]['k0'][0]
 
@@ -219,7 +246,7 @@ class MeshViewer:
 				y = mesh[:,:,2].flatten()
 				z = mesh[:,:,3].flatten()
 				tri = mpl.tri.Triangulation(normalization[1]*x,normalization[2]*y,triangles=self.simplex[j])
-				surf.append(ax.plot_trisurf(tri,normalization[3]*z,cmap='ocean'))
+				surf.append(ax.plot_trisurf(tri,normalization[3]*z,cmap=plotter_defaults['level colors']))
 				#ax.set_zlim(-5,5)
 			ax.set_xlabel(lab_str[1])
 			ax.set_ylabel(lab_str[2])
@@ -234,7 +261,10 @@ class PhaseSpace:
 		self.eikonal = np.load(simname+'_eikonal.npy')
 		self.eikonal[:,0] += self.xp[:,0,4]*self.xp[:,0,0]
 		self.eikonal[:,0] -= np.min(self.eikonal[:,0])
-		self.res = 200
+		try:
+			self.res = np.int(arg_dict['res'])
+		except:
+			self.res = 200
 	def Plot(self,mpl_plot_count,maya_plot_count):
 		for i in range(12):
 			for j in range(12):
@@ -252,19 +282,13 @@ class PhaseSpace:
 						y = self.eikonal[:,j-8]
 					weights = self.eikonal[:,1]**2 + self.eikonal[:,2]**2 + self.eikonal[:,3]**2
 					sel = np.logical_and(np.logical_not(np.isnan(x)),np.logical_not(np.isnan(y)))
-					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],(self.res,self.res))
+					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],self.res,self.res)
 					harray = grid_tools.Smooth1D(harray,4,0)
 					harray = grid_tools.Smooth1D(harray,4,1)
-					if dynamic_range!=0.0:
-						low_bound = np.max(harray)/10**dynamic_range
-						harray[np.where(harray<low_bound)] = low_bound
-						harray = np.log10(harray)
+					pre_str = TransformColorScale(harray,dynamic_range)
 					plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=plot_ext)
 					b=plt.colorbar()
-					if dynamic_range!=0.0:
-						b.set_label(r'${\rm log}_{10}|a|^2$',size=18)
-					else:
-						b.set_label(r'$|a|^2$',size=18)
+					b.set_label(pre_str+r'$|a|^2$',size=18)
 					plt.xlabel(lab_str[i],size=18)
 					plt.ylabel(lab_str[j],size=18)
 					plt.tight_layout()
@@ -287,10 +311,11 @@ class Orbits:
 					if plot_key in sys.argv:
 						mpl_plot_count += 1
 						plt.figure(mpl_plot_count,figsize=(7,6))
-						harray,plot_ext = grid_tools.GridFromInterpolation(self.xpo[:,i],self.xpo[:,j],self.xpo[:,k],(self.res,self.res))
+						harray,plot_ext = grid_tools.GridFromInterpolation(self.xpo[:,i],self.xpo[:,j],self.xpo[:,k],self.res,self.res)
+						cbar_str = TransformColorScale(harray,dynamic_range)
 						plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,i,j))
 						b=plt.colorbar()
-						b.set_label(lab_str[k],size=18)
+						b.set_label(cbar_str+lab_str[k],size=18)
 						plt.xlabel(lab_str[i],size=18)
 						plt.ylabel(lab_str[j],size=18)
 						plt.tight_layout()
@@ -318,7 +343,7 @@ class Orbits:
 					x = mesh[:,:,1]
 					y = mesh[:,:,2]
 					z = mesh[:,:,3]
-					mlab.mesh(x*normalization[1],y*normalization[2],z*normalization[3],color=(0.5,1,0.5),opacity=0.1)
+					mlab.mesh(x*normalization[1],y*normalization[2],z*normalization[3],color=(0.5,1,0.5),opacity=0.5)
 			if mpl_loaded and not maya_loaded:
 				mpl_plot_count += 1
 				fig = plt.figure(mpl_plot_count,figsize=(7,6))
@@ -326,7 +351,7 @@ class Orbits:
 				for j in range(self.orbits.shape[1]):
 					ax.plot(normalization[1]*self.orbits[:,j,1],normalization[2]*self.orbits[:,j,2],normalization[3]*self.orbits[:,j,3])
 				surf = []
-				cmap = mpl.cm.ScalarMappable(cmap='ocean')
+				cmap = mpl.cm.ScalarMappable(cmap=plotter_defaults['level colors'])
 				for mesh in self.mesh_list:
 					c = cmap.to_rgba(mesh[:,:,0]*normalization[3])
 					x = mesh[:,:,1]
@@ -389,18 +414,19 @@ class EikonalWaveProfiler:
 				phase -= np.min(phase)
 
 				plt.subplot(211)
-				a1,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,1],(self.res,self.res))
-				a2,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,2],(self.res,self.res))
-				a3,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,3],(self.res,self.res))
+				a1,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,1],self.res,self.res)
+				a2,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,2],self.res,self.res)
+				a3,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,3],self.res,self.res)
 				intens = units.GetWcm2(a1**2+a2**2+a3**2,1.0)
+				cbar_str = TransformColorScale(intens,dynamic_range)
 				plt.imshow(intens.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,1,2))
 				b=plt.colorbar()
-				b.set_label(r'Intensity (W/cm$^2$)',size=18)
+				b.set_label(cbar_str + r'Intensity (W/cm$^2$)',size=18)
 				plt.xlabel(lab_str[1],size=18)
 				plt.ylabel(lab_str[2],size=18)
 
 				plt.subplot(212)
-				psi,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],phase,(self.res,self.res),fill=np.min(phase))
+				psi,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],phase,self.res,self.res,fill=np.min(phase))
 				plt.imshow(psi.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,1,2))
 				b=plt.colorbar()
 				b.set_label(r'$\psi + \omega t$',size=18)
@@ -443,9 +469,10 @@ class PlaneWaveProfiler:
 				plt.subplot(211)
 				A = self.eik[det_idx]
 				A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
+				cbar_str = TransformColorScale(A2,dynamic_range)
 				plt.imshow(A2.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(dom,1,2))
 				b=plt.colorbar()
-				b.set_label(r'$|a|^2(z_{\rm eik})$',size=18)
+				b.set_label(cbar_str+r'$|a|^2(z_{\rm eik})$',size=18)
 				plt.xlabel(lab_str[1],size=18)
 				plt.ylabel(lab_str[2],size=18)
 				plt.subplot(212)
@@ -455,11 +482,12 @@ class PlaneWaveProfiler:
 				A2 = np.squeeze(np.take(A2,[slice_idx],axis=SliceAxis(haxis,vaxis)-1),axis=SliceAxis(haxis,vaxis)-1)
 				if haxis<vaxis:
 					A2 = A2.swapaxes(0,1)
+				cbar_str = TransformColorScale(A2,dynamic_range)
 				plt.imshow(A2,origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(dom,haxis,vaxis))
 				plt.xlabel(lab_str[haxis],size=18)
 				plt.ylabel(lab_str[vaxis],size=18)
 				b=plt.colorbar()
-				b.set_label(r'$|a|^2$',size=18)
+				b.set_label(cbar_str+r'$|a|^2$',size=18)
 				plt.tight_layout()
 			except KeyError:
 				print('INFO:',pw,'not used.')
@@ -490,6 +518,7 @@ class BesselBeamProfiler:
 					A = self.wave[det_idx]
 					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
 					A2,plot_ext = RadialReduce(A2,dom[:4],wave_zone_fraction)
+					cbar_str = TransformColorScale(A2,dynamic_range)
 					fig = plt.figure(mpl_plot_count,figsize=(8,8))
 					ax = fig.add_subplot(111,projection='3d')
 					z_list = np.linspace(dom[4],dom[5],A2.shape[2])
@@ -504,7 +533,7 @@ class BesselBeamProfiler:
 						c = cmap.to_rgba(A2[:,i,:])
 						surf.append(ax.plot_surface(x*normalization[1],y*normalization[2],z*normalization[3],facecolors=c))
 					cmap.set_array(A2[:,i,:])
-					plt.colorbar(cmap,shrink=0.5, aspect=10, label=r'$|a|^2$')
+					plt.colorbar(cmap,shrink=0.5, aspect=10, label=cbar_str+r'$|a|^2$')
 					ax.set_xlabel(lab_str[1])
 					ax.set_ylabel(lab_str[2])
 					ax.set_zlabel(lab_str[3])
@@ -526,9 +555,10 @@ class BesselBeamProfiler:
 					plt.subplot(211)
 					A = self.eik[det_idx]
 					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
+					cbar_str = TransformColorScale(A2,dynamic_range)
 					plt.imshow(A2.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=cunits.PlotExt(dom,1,2))
 					b=plt.colorbar()
-					b.set_label(r'$|a|^2(z_E)$',size=18)
+					b.set_label(cbar_str+r'$|a|^2(z_E)$',size=18)
 					plt.xlabel(lab_str[1],size=18)
 					plt.ylabel(lab_str[2],size=18)
 					plt.subplot(212)
@@ -538,11 +568,12 @@ class BesselBeamProfiler:
 					A2 = np.squeeze(np.take(A2,[slice_idx],axis=SliceAxis(haxis,vaxis)-1),axis=SliceAxis(haxis,vaxis)-1)
 					if haxis<vaxis:
 						A2 = A2.swapaxes(0,1)
+					cbar_str = TransformColorScale(A2,dynamic_range)
 					plt.imshow(A2,origin='lower',cmap=my_color_map,aspect='auto',extent=cunits.PlotExt(dom,haxis,vaxis))
 					plt.xlabel(lab_str[haxis],size=18)
 					plt.ylabel(lab_str[vaxis],size=18)
 					b=plt.colorbar()
-					b.set_label(r'$|a|^2$',size=18)
+					b.set_label(cbar_str+r'$|a|^2$',size=18)
 					plt.tight_layout()
 			except KeyError:
 				print('INFO:',bess,'not used.')

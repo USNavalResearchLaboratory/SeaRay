@@ -50,7 +50,8 @@ for i in range(1):
 					'pulse shape' : 'sech',
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (128,128,1),
+	ray.append({	'number' : (64,64,1),
+					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cartesian',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
@@ -80,5 +81,5 @@ for i in range(1):
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (5,5,1),
+						'orbit rays' : (4,4,1),
 						'base filename' : 'out/test'})

@@ -42,14 +42,15 @@ class basis:
 		self.VectorTransformation(vec,'ij,...j')
 	def ExpressInStdBasis(self,vec):
 		self.VectorTransformation(vec,'ij,...i')
-	def RayTransformation(self,xp,eik,sumkey):
+	def RayTransformation(self,xp,eik,vg,sumkey):
 		xp[...,1:4] = np.einsum(sumkey,self.M,xp[...,1:4])
 		xp[...,5:8] = np.einsum(sumkey,self.M,xp[...,5:8])
 		eik[...,1:4] = np.einsum(sumkey,self.M,eik[...,1:4])
-	def ExpressRaysInBasis(self,xp,eik):
-		self.RayTransformation(xp,eik,'ij,...j')
-	def ExpressRaysInStdBasis(self,xp,eik):
-		self.RayTransformation(xp,eik,'ij,...i')
+		vg[...,1:4] = np.einsum(sumkey,self.M,vg[...,1:4])
+	def ExpressRaysInBasis(self,xp,eik,vg):
+		self.RayTransformation(xp,eik,vg,'ij,...j')
+	def ExpressRaysInStdBasis(self,xp,eik,vg):
+		self.RayTransformation(xp,eik,vg,'ij,...i')
 	def AboutX(self,q):
 		RotateX(self.M[0,:],q)
 		RotateX(self.M[1,:],q)

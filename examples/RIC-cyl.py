@@ -66,6 +66,7 @@ for i in range(1):
 					'supergaussian exponent' : 8})
 
 	ray.append({	'number' : (512,4,1),
+					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave

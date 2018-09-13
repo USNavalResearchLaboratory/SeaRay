@@ -51,39 +51,85 @@ def Smooth1D(dist,passes,ax=0):
 
 # To avoid confusion please swap the axes only within the imshow function call.
 
-def GridFromInterpolation(x,y,z,res,clip_rgn=0,fill=0.0):
-	'''res is the number of nodes = number of cells
-	clip_rgn bounds the nodes, not the cells
-	plot_ext returns the cell boundaries'''
+def PulseFromInterpolation(w,x,y,A,res,clip_rgn=0,fill=0.0):
+	'''Produce a pulse A(w,x,y) using ray data in a plane.
+	res is a tuple with the number of cells (Nw,Nx,Ny)
+	clip_rgn bounds the cells (cf. GridFromInterpolation)'''
 	if clip_rgn==0:
-		clip_rgn=[np.min(x),np.max(x),np.min(y),np.max(y)]
-	# Set up an MPL plot range that puts nodes at the center of the voxels
-	wx = cell_walls(clip_rgn[0],clip_rgn[1],res[0])
-	wy = cell_walls(clip_rgn[2],clip_rgn[3],res[1])
-	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
+		# If this is invoked then the extreme marginal data is put exactly on the domain boundary
+		clip_rgn=[np.min(w),np.max(w),np.min(x),np.max(x),np.min(y),np.max(y)]
 	# Interpolate data on the nodes
+	pts = np.zeros((len(w),3))
+	pts[:,0] = w
+	pts[:,1] = x
+	pts[:,2] = y
+	wg1 = cell_centers(clip_rgn[0],clip_rgn[1],res[0])
+	xg1 = cell_centers(clip_rgn[2],clip_rgn[3],res[1])
+	yg1 = cell_centers(clip_rgn[4],clip_rgn[5],res[2])
+	wg = np.einsum('i,j,k',wg1,np.ones(res[1]),np.ones(res[2]))
+	xg = np.einsum('i,j,k',np.ones(res[0]),xg1,np.ones(res[2]))
+	yg = np.einsum('i,j,k',np.ones(res[0]),np.ones(res[1]),yg1)
+	the_data = scipy.interpolate.griddata(pts,A,(wg,xg,yg),fill_value=fill)
+	return the_data
+
+def CylGridFromInterpolation(x,y,z,xn=100,yn=100,fill=0.0):
+	'''Special treatment for points that tend to lie on a cylindrical nodes.
+	x,y,z are the data points.
+	xn,yn are arrays of nodes, or numbers of nodes.
+	If numbers are given, the node boundaries are obtained from the points.'''
+	if type(xn) is int:
+		xn = np.linspace(np.min(x),np.max(x),xn)
+	if type(yn) is int:
+		yn = np.linspace(np.min(y),np.max(y),yn)
+	# Return the boundaries of the plotting voxels for convenience
+	wx = cell_walls(xn[0],xn[-1],xn.shape[0])
+	wy = cell_walls(yn[0],yn[-1],yn.shape[0])
+	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
+	the_data = np.zeros((xn.shape[0],yn.shape[0]))
+	for j in range(yn.shape[0]):
+		sel = np.where(np.logical_and(y>=wy[j],y<wy[j+1]))
+		idx = np.argmin(x[sel])
+		z0 = z[sel][idx]
+		f = scipy.interpolate.interp1d(x[sel],z[sel],kind='linear',bounds_error=False,fill_value=(z0,0.0))
+		the_data[:,j] = f(xn)
+	return the_data,plot_ext
+
+def GridFromInterpolation(x,y,z,xn=100,yn=100,fill=0.0):
+	'''x,y,z are the data points.
+	xn,yn are arrays of nodes, or numbers of nodes.
+	If numbers are given, the node boundaries are obtained from the points.'''
+	if type(xn) is int:
+		xn = np.linspace(np.min(x),np.max(x),xn)
+	if type(yn) is int:
+		yn = np.linspace(np.min(y),np.max(y),yn)
+	# Return the boundaries of the plotting voxels for convenience
+	wx = cell_walls(xn[0],xn[-1],xn.shape[0])
+	wy = cell_walls(yn[0],yn[-1],yn.shape[0])
+	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
 	pts = np.zeros((len(x),2))
 	pts[:,0] = x
 	pts[:,1] = y
-	xg = np.outer(np.linspace(clip_rgn[0],clip_rgn[1],res[0]),np.ones(res[1]))
-	yg = np.outer(np.ones(res[0]),np.linspace(clip_rgn[2],clip_rgn[3],res[1]))
+	xg = 0.9999*np.outer(xn,np.ones(yn.shape[0]))
+	yg = 0.9999*np.outer(np.ones(xn.shape[0]),yn)
 	the_data = scipy.interpolate.griddata(pts,z,(xg,yg),method='cubic',fill_value=fill)
 	return the_data,plot_ext
 
-def GridFromBinning(x,y,z,res,clip_rgn=0):
-	'''res is the number of nodes = number of cells
-	clip_rgn bounds the nodes, not the cells
-	plot_ext returns the cell boundaries'''
-	if clip_rgn==0:
-		clip_rgn=[np.min(x),np.max(x),np.min(y),np.max(y)]
-	# Set up an MPL plot range that puts nodes at the center of the voxels
-	wx = cell_walls(clip_rgn[0],clip_rgn[1],res[0])
-	wy = cell_walls(clip_rgn[2],clip_rgn[3],res[1])
+def GridFromBinning(x,y,z,xn=100,yn=100):
+	'''x,y,z are the data points.
+	xn,yn are arrays of nodes, or numbers of nodes.
+	If numbers are given, the node boundaries are obtained from the points.'''
+	if type(xn) is int:
+		xn = np.linspace(np.min(x),np.max(x),xn)
+	if type(yn) is int:
+		yn = np.linspace(np.min(y),np.max(y),yn)
+	# Return the boundaries of the plotting voxels for convenience
+	# The range for the histogram is the same, but packed differently
+	wx = cell_walls(xn[0],xn[-1],xn.shape[0])
+	wy = cell_walls(yn[0],yn[-1],yn.shape[0])
 	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
-	# The range for the histogram is the same as the plotting voxels
 	hist_range = [[wx[0],wx[-1]],[wy[0],wy[-1]]]
-	harray,hpts,vpts = np.histogram2d(x,y,weights=z,bins=res,range=hist_range)
-	harray_count,hpts,vpts = np.histogram2d(x,y,bins=res,range=hist_range)
+	harray,hpts,vpts = np.histogram2d(x,y,weights=z,bins=(xn.shape[0],yn.shape[0]),range=hist_range)
+	harray_count,hpts,vpts = np.histogram2d(x,y,bins=(xn.shape[0],yn.shape[0]),range=hist_range)
 	harray /= harray_count+.0001
 	return harray,plot_ext
 

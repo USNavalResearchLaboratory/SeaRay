@@ -13,8 +13,6 @@ Specific OS and Device Combinations
 .. toctree::
 	:maxdepth: 2
 
-	gpgpu-win-amd
-	gpgpu-ubuntu-amd
-	gpgpu-RHEL-amd
-	gpgpu-ubuntu-nvidia
-	gpgpu-RHEL-nvidia
+	gpgpu-RHEL
+	gpgpu-ubuntu
+	gpgpu-win

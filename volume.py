@@ -47,11 +47,11 @@ class base_volume:
 		self.disp_out = input_dict['dispersion outside']
 		self.Translate(input_dict['origin'])
 		self.EulerRotate(input_dict['euler angles'])
-	def RaysGlobalToLocal(self,xp,eikonal):
+	def RaysGlobalToLocal(self,xp,eikonal,vg):
 		xp[...,1:4] -= self.P_ref
-		self.orientation.ExpressRaysInBasis(xp,eikonal)
-	def RaysLocalToGlobal(self,xp,eikonal):
-		self.orientation.ExpressRaysInStdBasis(xp,eikonal)
+		self.orientation.ExpressRaysInBasis(xp,eikonal,vg)
+	def RaysLocalToGlobal(self,xp,eikonal,vg):
+		self.orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
 		xp[...,1:4] += self.P_ref
 	def SelectRaysForSurface(self,t_list,idx):
 		# select valid times of impact for surface idx
@@ -66,24 +66,35 @@ class base_volume:
 			orb['data'][orb['idx'],:,:8] = xp[orb['xpsel']]
 			orb['data'][orb['idx'],:,8:] = eikonal[orb['eiksel']]
 			orb['idx'] += 1
-	def Transition(self,xp,eikonal,orb,disp):
-		self.RaysGlobalToLocal(xp,eikonal)
+	def OrbitsLocalToGlobal(self,orb):
+		pts = self.OrbitPoints()
+		i1 = orb['idx'] - pts
+		i2 = orb['idx']
+		x = orb['data'][i1:i2,:,1:4]
+		p = orb['data'][i1:i2,:,5:8]
+		a = orb['data'][i1:i2,:,9:12]
+		self.orientation.ExpressInStdBasis(x)
+		self.orientation.ExpressInStdBasis(p)
+		self.orientation.ExpressInStdBasis(a)
+		x += self.P_ref
+	def Transition(self,xp,eikonal,vg,orb):
+		self.RaysGlobalToLocal(xp,eikonal,vg)
 		t = []
 		for surf in self.surfaces:
-			t.append(surf.FullDetect(xp,eikonal,disp))
+			t.append(surf.GlobalDetect(xp,eikonal,vg))
 		for idx,surf in enumerate(self.surfaces):
 			impact = self.SelectRaysForSurface(t,idx)
 			if impact.shape[0]>0:
-				xp1 = xp[impact,...]
-				eik1 = eikonal[impact,...]
-				surf.Propagate(xp1,eik1,vol_obj=self)
-				xp[impact,...] = xp1
-				eikonal[impact,...] = eik1
-		self.RaysLocalToGlobal(xp,eikonal)
+				xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
+				surf.Propagate(xps,eiks,vgs,vol_obj=self)
+				ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
-	def Propagate(self,xp,eikonal,orb):
-		self.Transition(xp,eikonal,orb,self.disp_out)
-		self.Transition(xp,eikonal,orb,self.disp_in)
+	def Propagate(self,xp,eikonal,vg,orb):
+		self.Transition(xp,eikonal,vg,orb)
+		self.Transition(xp,eikonal,vg,orb)
+	def GetDensity(self,xp):
+		return 1.0
 	def Report(self,basename,mks_length):
 		print(self.name,': write surface meshes...')
 		for idx,surf in enumerate(self.surfaces):
@@ -92,12 +103,16 @@ class base_volume:
 				packed_data[...,0] = 0.3
 				packed_data[...,1:] += self.P_ref
 				np.save(basename+'_'+self.name+str(idx)+'_mesh',packed_data)
+			simplices = surf.GetSimplices()
+			if simplices.shape[0]>1:
+				np.save(basename+'_'+self.name+str(idx)+'_simplices',simplices)
 
 class SphericalLens(base_volume):
 	'''rcurv beneath and above are signed radii of curvature.
-	Positive sign is convex, negative is concave.
+	Positive radius means concavity faces +z.
 	The thickness is measured along central axis of lens.
-	The extremities on axis are equidistant from the origin'''
+	The extremities on axis are equidistant from the origin.
+	Surfaces need to be carefully oriented so that normals are outward.'''
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
 		self.R1 = input_dict['rcurv beneath']
@@ -107,27 +122,19 @@ class SphericalLens(base_volume):
 		self.surfaces.append(surface.SphericalCap('s1'))
 		self.surfaces.append(surface.SphericalCap('s2'))
 		self.surfaces.append(surface.cylindrical_shell('shell'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
-			'origin' : (0.,0.,-self.Lz/2),
-			'euler angles' : (0.,0.,0.),
-			'radius of sphere' : abs(self.R1),
-			'radius of edge' : self.Re }
-		if self.R1<0.0:
-			surf_dict['euler angles'] = (0.,np.pi,0.)
-			surf_dict['dispersion beneath'] = self.disp_in
-			surf_dict['dispersion above'] = self.disp_out
-		self.surfaces[0].Initialize(surf_dict)
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
-			'origin' : (0.,0.,self.Lz/2),
+		surf_dict = { 'origin' : (0.,0.,-self.Lz/2),
+			'radius of sphere' : -self.R1,
+			'radius of edge' : self.Re,
 			'euler angles' : (0.,np.pi,0.),
-			'radius of sphere' : abs(self.R2),
-			'radius of edge' : self.Re }
-		if self.R2<0.0:
-			surf_dict['euler angles'] = (0.,0.,0.)
-			surf_dict['dispersion beneath'] = self.disp_in
-			surf_dict['dispersion above'] = self.disp_out
+			'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out }
+		self.surfaces[0].Initialize(surf_dict)
+		surf_dict = { 'origin' : (0.,0.,self.Lz/2),
+			'radius of sphere' : self.R2,
+			'radius of edge' : self.Re,
+			'euler angles' : (0.,0.,0.),
+			'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out }
 		self.surfaces[1].Initialize(surf_dict)
 		cap_angle1 = np.arcsin(self.Re/self.R1)
 		cap_thickness1 = self.R1*(1-np.cos(cap_angle1))
@@ -135,10 +142,49 @@ class SphericalLens(base_volume):
 		cap_thickness2 = self.R2*(1-np.cos(cap_angle2))
 		surf_dict = { 'dispersion beneath' : self.disp_in,
 			'dispersion above' : self.disp_out,
-			'origin' : (0.,0.,0.5*(cap_thickness1-cap_thickness2)),
+			'origin' : (0.,0.,0.5*(cap_thickness1+cap_thickness2)),
 			'euler angles' : (0.,0.,0.),
 			'radius' : self.Re,
-			'length' : self.Lz-cap_thickness1-cap_thickness2 }
+			'length' : self.Lz-cap_thickness1+cap_thickness2 }
+		self.surfaces[2].Initialize(surf_dict)
+
+class AsphericLens(base_volume):
+	'''Curved beneath, planar above.  curvature radius is signed.
+	Positive sign is convex, negative is concave.
+	The thickness is measured along central axis of lens.
+	The extremities on axis are equidistant from the origin'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		Lz = input_dict['thickness']
+		R1 = input_dict['rcurv beneath']
+		Re = input_dict['aperture radius']
+		self.surfaces.append(surface.AsphericCap('s1'))
+		self.surfaces.append(surface.disc('s2'))
+		self.surfaces.append(surface.cylindrical_shell('shell'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0.,0.,-Lz/2),
+			'euler angles' : (0.,np.pi,0.),
+			'radius' : Re,
+			'radius of sphere' : -R1,
+			'mesh points' : input_dict['mesh points'],
+			'conic constant' : input_dict['conic constant'],
+			'aspheric coefficients' : tuple(-np.array(input_dict['aspheric coefficients'])) }
+		self.surfaces[0].Initialize(surf_dict)
+		cap_thickness = -self.surfaces[0].cap_thickness
+		Rd = self.surfaces[0].Rd # reduced relative to Re
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0.,0.,Lz/2),
+			'euler angles' : (0.,0.,0.),
+			'radius' : Rd }
+		self.surfaces[1].Initialize(surf_dict)
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0.,0.,0.5*cap_thickness),
+			'euler angles' : (0.,0.,0.),
+			'radius' : Rd,
+			'length' : Lz-cap_thickness }
 		self.surfaces[2].Initialize(surf_dict)
 
 class Box(base_volume):
@@ -146,43 +192,44 @@ class Box(base_volume):
 		super().Initialize(input_dict)
 		self.size = input_dict['size']
 		self.surfaces.append(surface.rectangle('f1'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		yrot = lambda q : (-np.pi/2,-q,np.pi/2)
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (-self.size[0]/2,0,0),
-			'euler angles' : (np.pi/2,np.pi/2,0),
-			'size' : (self.size[1],self.size[2]) }
+			'euler angles' : yrot(-np.pi/2),
+			'size' : (self.size[2],self.size[1]) }
 		self.surfaces[-1].Initialize(surf_dict)
 		self.surfaces.append(surface.rectangle('f2'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (self.size[0]/2,0,0),
-			'euler angles' : (-np.pi/2,np.pi/2,0),
-			'size' : (self.size[1],self.size[2]) }
+			'euler angles' : yrot(np.pi/2),
+			'size' : (self.size[2],self.size[1]) }
 		self.surfaces[-1].Initialize(surf_dict)
 		self.surfaces.append(surface.rectangle('f3'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (0,-self.size[1]/2,0),
-			'euler angles' : (0,-np.pi/2,0),
-			'size' : (self.size[0],self.size[2]) }
-		self.surfaces[-1].Initialize(surf_dict)
-		self.surfaces.append(surface.rectangle('f4'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
-			'origin' : (0,self.size[1]/2,0),
 			'euler angles' : (0,np.pi/2,0),
 			'size' : (self.size[0],self.size[2]) }
 		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('f4'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0,self.size[1]/2,0),
+			'euler angles' : (0,-np.pi/2,0),
+			'size' : (self.size[0],self.size[2]) }
+		self.surfaces[-1].Initialize(surf_dict)
 		self.surfaces.append(surface.rectangle('f5'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (0,0,-self.size[2]/2),
-			'euler angles' : (0,0,0),
+			'euler angles' : (0,np.pi,0),
 			'size' : (self.size[0],self.size[1]) }
 		self.surfaces[-1].Initialize(surf_dict)
 		self.surfaces.append(surface.rectangle('f6'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (0,0,self.size[2]/2),
 			'euler angles' : (0,0,0),
 			'size' : (self.size[0],self.size[1]) }
@@ -196,10 +243,10 @@ class Cylinder(base_volume):
 		self.surfaces.append(surface.disc('d1'))
 		self.surfaces.append(surface.disc('d2'))
 		self.surfaces.append(surface.cylindrical_shell('shell'))
-		surf_dict = { 'dispersion beneath' : self.disp_out,
-			'dispersion above' : self.disp_in,
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
 			'origin' : (0.,0.,-self.Lz/2),
-			'euler angles' : (0.,0.,0.),
+			'euler angles' : (0.,np.pi,0.),
 			'radius' : self.Rd }
 		self.surfaces[0].Initialize(surf_dict)
 		surf_dict = { 'dispersion beneath' : self.disp_in,
@@ -222,13 +269,15 @@ class nonuniform_volume(base_volume):
 		self.vol_dict = input_dict
 	def OrbitPoints(self):
 		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
-	def Propagate(self,xp,eikonal,orb):
-		self.Transition(xp,eikonal,orb,self.disp_out)
-		self.RaysGlobalToLocal(xp,eikonal)
+	def Propagate(self,xp,eikonal,vg,orb):
+		self.Transition(xp,eikonal,vg,orb)
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		ray_kernel.SyncSatellites(xp,vg)
 		ray_kernel.track(self.queue,self.kernel,xp,eikonal,self.vol_dict,orb)
-		# need to transform orbits
-		self.RaysLocalToGlobal(xp,eikonal)
-		self.Transition(xp,eikonal,orb,self.disp_in)
+		vg[...] = self.disp_in.vg(xp)
+		self.OrbitsLocalToGlobal(orb)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		self.Transition(xp,eikonal,vg,orb)
 
 class grid_volume(base_volume):
 	def Initialize(self,input_dict):
@@ -237,13 +286,15 @@ class grid_volume(base_volume):
 		self.ne = np.zeros(1)
 	def OrbitPoints(self):
 		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
-	def Propagate(self,xp,eikonal,orb):
-		self.Transition(xp,eikonal,orb,self.disp_out)
-		self.RaysGlobalToLocal(xp,eikonal)
+	def Propagate(self,xp,eikonal,vg,orb):
+		self.Transition(xp,eikonal,vg,orb)
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		ray_kernel.SyncSatellites(xp,vg)
 		ray_kernel.track_RIC(self.queue,self.kernel,xp,eikonal,self.ne,self.vol_dict,orb)
-		# need to transform orbits
-		self.RaysLocalToGlobal(xp,eikonal)
-		self.Transition(xp,eikonal,orb,self.disp_in)
+		vg[...] = self.disp_in.vg(xp)
+		self.OrbitsLocalToGlobal(orb)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		self.Transition(xp,eikonal,vg,orb)
 
 class PlasmaChannel(nonuniform_volume,Cylinder):
 	def InitializeCL(self,cl,input_dict):
