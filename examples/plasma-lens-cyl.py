@@ -25,10 +25,10 @@ mess = 'Processing input file...\n'
 # Preprocessing calculations
 # Use thick lens theory to set up channel parameters for given focal length
 
-quartic_correction = False
+quartic_correction = True
 f = 0.01/mks_length
-Fnum = 3.0
-r00 = 0.5*f/Fnum # spot size of radiation
+f_num = 3.0
+r00 = 0.5*f/f_num # spot size of radiation
 t00 = 1e-6*C.c/mks_length # pulse width (not important)
 Rlens = 0.01/mks_length
 Lch = 0.002/mks_length
@@ -45,7 +45,13 @@ if quartic_correction:
 	x0 = 100*r00
 	c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
 	eik_to_caustic *= -1
-a00 = 1e-3*Fnum
+a00 = 1e-3*f_num
+
+paraxial_e_size = 4.0*f_num/1.0
+paraxial_zR = 0.5*1.0*paraxial_e_size**2
+mess = mess + '  f/# = {:.2f}\n'.format(f_num)
+mess = mess + '  Theoretical paraxial spot size (um) = {:.3f}\n'.format(1e6*mks_length*paraxial_e_size)
+mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
 
 # Set up dictionaries
 
@@ -66,14 +72,14 @@ for i in range(1):
 					# Thus in the paraxial case the pulse always starts at the waist.
 					'focus' : (0.0,0.0,0.0,-.006/mks_length),
 					'pulse shape' : 'sech',
-					'supergaussian exponent' : 8})
+					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (512,16,1),
+	ray.append({	'number' : (512,4,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (0,1.5*r00,0.0,2*np.pi,-2*t00,2*t00)})
+					'box' : (0,2*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
 		{	'object' : volume.PlasmaChannel('plasma'),
@@ -94,19 +100,18 @@ for i in range(1):
 
 		{	'object' : surface.CylindricalProfiler('det'),
 			'integrator' : 'transform',
-			'size' : (.0012/mks_length,.0012/mks_length,.0015/mks_length),
-			'grid points' : (1024,4,1),
+			'size' : (.0012/mks_length,.0012/mks_length,30e-6/mks_length),
+			'grid points' : (4096,4,1),
 			'distance to caustic' : eik_to_caustic,
 			'origin' : (0.,0.,f - eik_to_caustic)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
+		{	'object' : surface.EikonalProfiler('terminal'),
 			'size' : (.005/mks_length,.005/mks_length),
-			'grid points' : (128,128,1),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.02/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (5,4,1),
+						'orbit rays' : (4,4,1),
 						'base filename' : 'out/test'})

@@ -129,7 +129,7 @@ __kernel void Symplectic(	__global double * xp,
 		x0 += ds*raise(Dk)/Dk.s0;
 		k0 -= ds*raise(D_alpha_x(dens,x0,k0))/Dk.s0;
 		v00 = cross4(cross4(v00,k0),A);
-		v00.s0 = -ds*dot(k0,Dk)/Dk.s0;
+		v00.s0 = -ds*(k0.s1*Dk.s1+k0.s2*Dk.s2+k0.s3*Dk.s3)/Dk.s0;
 		A += v00;
 
 		x1 += ds*raise(D_alpha_k(dens,x1,k1))/Dk.s0;

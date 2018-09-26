@@ -73,7 +73,7 @@ for i in range(1):
 					'loading coordinates' : 'cartesian',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (-2*r00,2*r00,-2*r00,2*r00,-2*t00,2*t00)})
+					'box' : (-1.5*r00,1.5*r00,-1.5*r00,1.5*r00,-2*t00,2*t00)})
 
 	optics.append([
 		{	'object' : volume.PlasmaChannel('plasma'),
@@ -98,9 +98,8 @@ for i in range(1):
 			'distance to caustic' : eik_to_caustic,
 			'origin' : (0.,0.,f-eik_to_caustic)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
+		{	'object' : surface.EikonalProfiler('terminal'),
 			'size' : (.01/mks_length,.01/mks_length),
-			'grid points' : (128,128,1),
 			'origin' : (0.,0.,2*f)}
 		])
 

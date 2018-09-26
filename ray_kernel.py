@@ -9,6 +9,7 @@ import vec3 as v3
 import pyopencl
 import pyopencl.array as cl_array
 import numpy.random
+import grid_tools
 
 def SyncSatellites(xp,vg):
 	sync = (xp[...,0:1] - xp[...,0:1,0:1])*vg
@@ -61,16 +62,26 @@ def FullStep(ds,xp,eik,vg):
 	# len(ds.shape or eik.shape) = len(xp.shape or vg.shape)-1
 	V0 = ComputeRayVolumes(xp,vg)
 	xp[...,:4] += ds[...,np.newaxis]*vg
-	eik[...,0] += ds[...,0]*(xp[...,0,5]*vg[...,0,1] + xp[...,0,6]*vg[...,0,2] + xp[...,0,7]*vg[...,0,3] - xp[...,0,4]*vg[...,0,0])
+	eik[...,0] += ds[...,0]*(xp[...,0,5]*vg[...,0,1] + xp[...,0,6]*vg[...,0,2] + xp[...,0,7]*vg[...,0,3])
 	V1 = ComputeRayVolumes(xp,vg)
 	eik[...,1] *= np.sqrt(V0/V1)
 	eik[...,2] *= np.sqrt(V0/V1)
 	eik[...,3] *= np.sqrt(V0/V1)
 
 def GetMicroAction(xp,eik,vg):
+	'''Numerical accuracy metric, should be conserved.'''
 	volume = ComputeRayVolumes(xp,vg)
 	a2 = eik[...,1]**2 + eik[...,2]**2 + eik[...,3]**2
 	return np.sum(a2*volume)
+
+def GetTransversality(xp,eik):
+	'''Numerical accuracy metric, should be unity in isotropic media.'''
+	ans = np.cross(xp[...,0,5:8],eik[...,1:4])
+	ans = np.einsum('...i,...i',ans,ans) + np.finfo(np.double).tiny
+	ans /= np.einsum('...i,...i',xp[...,0,5:8],xp[...,0,5:8])
+	ans /= np.einsum('...i,...i',eik[...,1:4],eik[...,1:4]) + np.finfo(np.double).tiny
+	ans = np.sqrt(np.mean(ans))
+	return ans
 
 def AddFrequencyDimension(spatial_dims):
 	if len(spatial_dims)==3:
@@ -78,19 +89,21 @@ def AddFrequencyDimension(spatial_dims):
 	else:
 		return spatial_dims
 
-def AddFrequencyRange(freq_range,spatial_range):
+def AddFrequencyRange(carrier_freq,spatial_range):
 	if len(spatial_range)==6:
-		return freq_range + spatial_range
+		return (0.99*carrier_freq,1.01*carrier_freq) + spatial_range
 	else:
 		return spatial_range
 
 def PulseSpectrum(xp,eikonal,wave):
-	'''Weight the rays based their frequency.  Assume transform limited pulse.'''
-	dtau = wave['r0'][0]
+	'''Weight the rays based their frequency.  Assume transform limited pulse.
+	When inverse transforming a derived spectrum, multiply the amplitude by 1/dt
+	in order to obtain correct normalization.  1/dt = Nyquist/pi.'''
+	pulse_length = wave['r0'][0]
 	w0 = wave['k0'][0]
-	dw = 2.0/dtau
-	coeff = dtau/np.sqrt(2.0)
-	weights = coeff*np.exp(-(xp[:,0,4]-w0)**2/dw**2)
+	sigma_w = 2.0/pulse_length
+	coeff = np.sqrt(np.pi)*pulse_length
+	weights = coeff*np.exp(-(xp[:,0,4]-w0)**2/sigma_w**2)
 	eikonal[:,1] *= weights
 	eikonal[:,2] *= weights
 	eikonal[:,3] *= weights
@@ -142,7 +155,7 @@ def ParaxialWave(xp,eikonal,vg,wave):
 	# Set up in wave basis where propagation is +z and polarization is +x
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
 	xp[:,:,7] = xp[:,:,4]
-	eikonal[:,0] = xp[:,0,4]*(xp[:,0,3] - xp[:,0,0])
+	eikonal[:,0] = xp[:,0,7]*xp[:,0,3]
 	eikonal[:,1:4] = np.array([amag,0.0,0.0])
 	if SG!=2:
 		r2 = xp[:,0,1]**2 + xp[:,0,2]**2
@@ -158,7 +171,7 @@ def init(wave_dict,ray_dict):
 	"""Use dictionaries from input file to create initial ray distribution"""
 	w0 = wave_dict['k0'][0]
 	N = AddFrequencyDimension(ray_dict['number'])
-	box = AddFrequencyRange((0.9*w0,1.1*w0),ray_dict['box'])
+	box = AddFrequencyRange(w0,ray_dict['box'])
 
 	# Set up host storage
 	num_bundles = N[0]*N[1]*N[2]*N[3]
@@ -174,14 +187,14 @@ def init(wave_dict,ray_dict):
 	o1 = np.ones(N[1])
 	o2 = np.ones(N[2])
 	o3 = np.ones(N[3])
-	grid0 = np.linspace(box[0],box[1],N[0]+2)[1:-1]
+	# load frequencies to respect FFT conventions
+	grid0 = grid_tools.cyclic_nodes(box[0],box[1],N[0])
+	grid1 = grid_tools.cell_centers(box[2],box[3],N[1])
 	if ray_dict['loading coordinates']=='cartesian':
-		grid1 = np.linspace(box[2],box[3],N[1]+2)[1:-1]
-		grid2 = np.linspace(box[4],box[5],N[2]+2)[1:-1]
+		grid2 = grid_tools.cell_centers(box[4],box[5],N[2])
 	else:
-		grid1 = np.linspace(box[2]+(box[3]-box[2])/N[1]/1000,box[3],N[1])
-		grid2 = np.linspace(box[4],box[5]-(box[5]-box[4])/N[2],N[2])
-	grid3 = np.linspace(box[6],box[7],N[3]+2)[1:-1]
+		grid2 = grid_tools.cyclic_nodes(box[4],box[5],N[2])
+	grid3 = grid_tools.cell_centers(box[6],box[7],N[3])
 
 	# Load the primary rays in configuration+w space
 

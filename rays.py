@@ -2,21 +2,21 @@ from time import time
 import os
 import glob
 import sys
+import subprocess
 import numpy as np
 import pyopencl
 
-import inputs
 import init
 import dispersion
 import ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Usage: rays.py cmd [device=string] [platform=string] [iterations=n]')
+	print('Usage: rays.py cmd [file=name] [device=string] [platform=string] [iterations=n]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
 	print('cmd = run --- executes calculation')
-	print('  (inputs.py must be in working directory)')
+	print('  (if file not given, inputs.py must be in working directory)')
 	print('string = something in desired device/platform name, or numerical id')
 	print('large numbers (>10) are assumed to be part of a name rather than an id')
 	print('defaults are the last platform/device in the list')
@@ -24,17 +24,23 @@ if len(sys.argv)==1:
 	print('==========END HELP FOR SEARAY==========')
 	exit(1)
 
-# Pre-simulation cleaning
-if inputs.diagnostics[0]['clean old files']:
-	file_list = glob.glob(inputs.diagnostics[0]['base filename']+'*.npy')
-	for f in file_list:
-		os.remove(f)
-
 # Set up OpenCL
 print('--------------------')
 print('Accelerator Hardware')
 print('--------------------')
 cl,args = init.setup_opencl(sys.argv)
+
+# Get input file
+for arg in args:
+	if arg.split('=')[0]=='file':
+		subprocess.run(['cp',arg.split('=')[1],'inputs.py'])
+import inputs
+
+# Pre-simulation cleaning
+if inputs.diagnostics[0]['clean old files']:
+	file_list = glob.glob(inputs.diagnostics[0]['base filename']+'*.npy')
+	for f in file_list:
+		os.remove(f)
 
 # Run one case for each set of dictionaries
 # Typical use would be to change the frequency each time
@@ -51,14 +57,14 @@ for irun in range(len(inputs.sim)):
 		print('INFO: creating output directory',output_path)
 		os.mkdir(output_path)
 
-	# Initialize optical elements
+	print('\nSetting up optics...\n')
 	for opt_dict in inputs.optics[irun]:
 		print('Initializing',opt_dict['object'].name)
 		opt_dict['object'].Initialize(opt_dict)
 		if 'integrator' in opt_dict:
 			opt_dict['object'].InitializeCL(cl,opt_dict)
 
-	# Create rays and orbits and save initial state
+	print('\nSetting up rays and orbits...')
 	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun])
 	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,inputs.ray[irun],inputs.diagnostics[irun],inputs.optics[irun])
 	micro_action_0 = ray_kernel.GetMicroAction(xp,eikonal,vg)

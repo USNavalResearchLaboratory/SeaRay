@@ -96,9 +96,8 @@ for i in range(1):
 		# 	'distance to caustic' : eik_to_caustic,
 		# 	'origin' : (0.,0.,f - eik_to_caustic)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
+		{	'object' : surface.EikonalProfiler('terminal'),
 			'size' : (.01/mks_length,.01/mks_length),
-			'grid points' : (128,128,1),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.015/mks_length)}
 		])

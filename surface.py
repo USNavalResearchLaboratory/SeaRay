@@ -494,8 +494,8 @@ class AsphericCap(surface_mesh,disc):
 		k = input_dict['conic constant']
 		A = input_dict['aspheric coefficients']
 		chi = lambda rho2 : np.sqrt(1-(1+k)*C**2*rho2)
-		sag = lambda rho2 : C*rho2/(1+chi(rho2)) + A[0]*rho2**2 + A[1]*rho2**3 + A[2]*rho2**4 + A[3]*rho2**5
-		dzdr = lambda rho : C*rho/chi(rho**2) + 4*A[0]*rho**3 + 6*A[1]*rho**5 + 8*A[2]*rho**7 + 10*A[3]*rho**9
+		sag = lambda rho2 : C*rho2/(1+chi(rho2)) + A[0]*rho2**2 + A[1]*rho2**3 + A[2]*rho2**4 + A[3]*rho2**5 + A[4]*rho2**6
+		dzdr = lambda rho : C*rho/chi(rho**2) + 4*A[0]*rho**3 + 6*A[1]*rho**5 + 8*A[2]*rho**7 + 10*A[3]*rho**9 + 12*A[4]*rho**11
 		rho = np.linspace(0.0,self.Rd,Nx)
 		phi = np.linspace(0.0,2*np.pi,Ny)
 		self.x = np.outer(rho,np.cos(phi))
@@ -680,12 +680,14 @@ class BeamProfiler(rectangle):
 		xrms = np.sqrt(np.mean((self.xps[...,1]-xc)**2))
 		yrms = np.sqrt(np.mean((self.xps[...,2]-yc)**2))
 		zrms = np.sqrt(np.mean((self.xps[...,3]-zc)**2))
-		print('    ray centroid (mm) = {:.2f},{:.2f},{:.2f}'.format(l1*xc,l1*yc,l1*zc))
-		print('    ray rms spot (mm) = {:.2f},{:.2f},{:.2f}'.format(l1*xrms,l1*yrms,l1*zrms))
+		print('    ray centroid (mm) = {:.2g},{:.2g},{:.2g}'.format(l1*xc,l1*yc,l1*zc))
+		print('    ray rms spot (mm) = {:.2g},{:.2g},{:.2g}'.format(l1*xrms,l1*yrms,l1*zrms))
 		vgroup = self.disp2.vg(self.xps)
 		zf = caustic_tools.ParaxialFocus(self.xps,vgroup)
 		print('    Relative paraxial ray focal position (mm) =',zf*l1)
+		print('    Ray count =',self.hits)
 		print('    Conserved micro-action = {:.3g}'.format(self.micro_action))
+		print('    Transversality = {:.3g}'.format(self.transversality))
 		return xc,yc,zc,xrms,yrms,zrms
 	def Propagate(self,xp,eikonal,vg,orb={'idx':0}):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
@@ -696,15 +698,11 @@ class BeamProfiler(rectangle):
 		self.xps = np.copy(xp[impact,0,:])
 		self.eiks = np.copy(eikonal[impact,...])
 		self.micro_action = ray_kernel.GetMicroAction(xp,eikonal,vg)
+		self.transversality = ray_kernel.GetTransversality(xp,eikonal)
+		self.hits = impact.shape[0]
 		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
 		return impact.shape[0]
-	def PackVector(self,Ax,Ay,Az):
-		Axyz = np.zeros(Ax.shape+(3,)).astype(np.complex)
-		Axyz[...,0] = Ax
-		Axyz[...,1] = Ay
-		Axyz[...,2] = Az
-		return Axyz
 
 class EikonalProfiler(BeamProfiler):
 	def Report(self,basename,mks_length):
@@ -718,30 +716,32 @@ class FullWaveProfiler(BeamProfiler):
 		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
-		self.N = input_dict['grid points']
+		self.N = ray_kernel.AddFrequencyDimension(input_dict['grid points'])
+		try:
+			self.band = input_dict['frequency band']
+		except KeyError:
+			self.band = (0.99,1.01)
+			print('INFO: defaulting to detection bandwidth',self.band)
 	def Report(self,basename,mks_length):
 		xc,yc,zc,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
-		field_tool = caustic_tools.FourierTool(self.N,(self.Lx,self.Ly,self.Lz))
+		dw = self.band[1] - self.band[0]
+		wc = 0.5*(self.band[0] + self.band[1])
+		field_tool = caustic_tools.FourierTool(self.N,(dw,self.Lx,self.Ly,self.Lz))
 		print('    constructing fields in eikonal plane...')
-		Ax,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
-		Ay,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
-		Az,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
-		np.save(basename+'_'+self.name+'_plane_eik',self.PackVector(Ax,Ay,Az))
+		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
+		E[...,0],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,1)
+		E[...,1],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,2)
+		E[...,2],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,3)
+		np.save(basename+'_'+self.name+'_plane_eik',E)
 		print('    constructing fields in wave zone...')
-		# Form k00 using the first ray; assume monochromatic rays.
-		k00 = np.sqrt(self.xps[0,5]**2 + self.xps[0,6]**2 + self.xps[0,7]**2)
-		Ax,dom3d = field_tool.GetFields(k00,self.dz,Ax)
-		Ay,dom3d = field_tool.GetFields(k00,self.dz,Ay)
-		Az,dom3d = field_tool.GetFields(k00,self.dz,Az)
-		np.save(basename+'_'+self.name+'_plane_wave',self.PackVector(Ax,Ay,Az))
-		np.save(basename+'_'+self.name+'_plane_plot_ext',dom3d)
+		A = np.zeros(self.N+(3,)).astype(np.complex)
+		A[...,0],dom4d = field_tool.GetFields(wc,self.dz,E[...,0])
+		A[...,1],dom4d = field_tool.GetFields(wc,self.dz,E[...,1])
+		A[...,2],dom4d = field_tool.GetFields(wc,self.dz,E[...,2])
+		np.save(basename+'_'+self.name+'_plane_wave',A)
+		np.save(basename+'_'+self.name+'_plane_plot_ext',dom4d)
 
-class CylindricalProfiler(BeamProfiler):
-	def Initialize(self,input_dict):
-		super().Initialize(input_dict)
-		self.dz = input_dict['distance to caustic']
-		self.Lz = input_dict['size'][2]
-		self.N = input_dict['grid points']
+class CylindricalProfiler(FullWaveProfiler):
 	def InitializeCL(self,cl,input_dict):
 		plugin_str = ''
 		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
@@ -750,18 +750,20 @@ class CylindricalProfiler(BeamProfiler):
 		self.queue = cl.queue()
 	def Report(self,basename,mks_length):
 		xc,yc,zc,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
+		dw = self.band[1] - self.band[0]
+		wc = 0.5*(self.band[0] + self.band[1])
 		print('    diagonalizing matrix...')
-		field_tool = caustic_tools.BesselBeamTool(self.N,(self.Lx/2,2*np.pi,self.Lz),self.queue,self.kernel)
+		field_tool = caustic_tools.BesselBeamTool(self.N,(dw,self.Lx/2,2*np.pi,self.Lz),self.queue,self.kernel)
 		print('    constructing fields in eikonal plane...')
-		Ax,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,1)
-		Ay,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,2)
-		Az,dom3d = field_tool.GetBoundaryFields(np.array([xc,yc,zc]),self.xps,self.eiks,3)
-		np.save(basename+'_'+self.name+'_bess_eik',self.PackVector(Ax,Ay,Az))
+		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
+		E[...,0],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,1)
+		E[...,1],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,2)
+		E[...,2],dom3d = field_tool.GetBoundaryFields(np.array([wc,xc,yc,zc]),self.xps,self.eiks,3)
+		np.save(basename+'_'+self.name+'_bess_eik',E)
 		print('    constructing fields in wave zone...')
-		# Form k00 using the first ray; assume monochromatic rays.
-		k00 = np.sqrt(self.xps[0,5]**2 + self.xps[0,6]**2 + self.xps[0,7]**2)
-		Ax,dom3d = field_tool.GetFields(k00,self.dz,Ax)
-		Ay,dom3d = field_tool.GetFields(k00,self.dz,Ay)
-		Az,dom3d = field_tool.GetFields(k00,self.dz,Az)
-		np.save(basename+'_'+self.name+'_bess_wave',self.PackVector(Ax,Ay,Az))
-		np.save(basename+'_'+self.name+'_bess_plot_ext',dom3d)
+		A = np.zeros(self.N+(3,)).astype(np.complex)
+		A[...,0],dom4d = field_tool.GetFields(wc,self.dz,E[...,0])
+		A[...,1],dom4d = field_tool.GetFields(wc,self.dz,E[...,1])
+		A[...,2],dom4d = field_tool.GetFields(wc,self.dz,E[...,2])
+		np.save(basename+'_'+self.name+'_bess_wave',A)
+		np.save(basename+'_'+self.name+'_bess_plot_ext',dom4d)

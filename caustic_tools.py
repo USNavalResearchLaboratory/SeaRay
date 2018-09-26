@@ -1,8 +1,5 @@
 import numpy as np
-from scipy.special import jn
-from scipy.special import spherical_jn
-from scipy.special import struve
-from scipy.special import sph_harm
+import scipy.optimize
 import scipy.interpolate
 import pyopencl
 import pyopencl.array
@@ -31,7 +28,8 @@ class FourierTool:
 		size = tuple with (Lx,Ly,Lz)'''
 		self.pts = pts
 		self.size = size
-		self.dx = (size[0]/pts[0],size[1]/pts[1],size[2]/pts[2])
+		self.dx = (size[0]/pts[0],size[1]/pts[1],size[2]/pts[2],size[3]/pts[3])
+		self.default_band = size[0]
 
 	def FFT_w(self,dti,num):
 		# Square of this is the proper eigenvalue of the FD laplacian
@@ -42,90 +40,117 @@ class FourierTool:
 		return sgn*np.sqrt(2.0*dti*dti*(1.0 - np.cos(2.0*np.pi*i_list/num)));
 
 	def GetGridInfo(self):
-		x_nodes = grid_tools.cell_centers(-self.size[0]/2,self.size[0]/2,self.pts[0])
-		y_nodes = grid_tools.cell_centers(-self.size[1]/2,self.size[1]/2,self.pts[1])
-		x_walls = grid_tools.cell_walls(x_nodes[0],x_nodes[-1],self.pts[0])
-		y_walls = grid_tools.cell_walls(y_nodes[0],y_nodes[-1],self.pts[1])
-		plot_ext = np.array([x_walls[0],x_walls[-1],y_walls[0],y_walls[-1]])
-		return x_nodes,y_nodes,plot_ext
+		w_nodes = grid_tools.cyclic_nodes(-self.size[0]/2,self.size[0]/2,self.pts[0])
+		x_nodes = grid_tools.cell_centers(-self.size[1]/2,self.size[1]/2,self.pts[1])
+		y_nodes = grid_tools.cell_centers(-self.size[2]/2,self.size[2]/2,self.pts[2])
+		w_walls = grid_tools.cell_walls(w_nodes[0],w_nodes[-1],self.pts[0],self.default_band)
+		x_walls = grid_tools.cell_walls(x_nodes[0],x_nodes[-1],self.pts[1])
+		y_walls = grid_tools.cell_walls(y_nodes[0],y_nodes[-1],self.pts[2])
+		plot_ext = np.array([w_walls[0],w_walls[-1],x_walls[0],x_walls[-1],y_walls[0],y_walls[-1]])
+		return w_nodes,x_nodes,y_nodes,plot_ext
 
 	def GetBoundaryFields(self,center,xps,eiks,c):
 		'''Get eikonal field component c on a flat surface.
 		Surface is defined by the rays (xps,eiks).  Rays must be propagated to the surface externally.'''
-		xp0 = xps[:,1:4] - center
-		kr = eiks[:,0] + xps[:,4]*xps[:,0]
-		x_nodes,y_nodes,plot_ext = self.GetGridInfo()
-		A,ignore = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],eiks[:,c],x_nodes,y_nodes)
-		psi,ignore = grid_tools.GridFromInterpolation(xp0[:,0],xp0[:,1],kr,x_nodes,y_nodes)
+		dw = xps[:,4] - center[0]
+		dx = xps[:,1:4] - center[1:4]
+		# Reference time to the earliest ray
+		t0 = np.min(xps[:,0])
+		kr = eiks[:,0] - xps[:,4]*t0
+		w_nodes,x_nodes,y_nodes,plot_ext = self.GetGridInfo()
+		A,ignore = grid_tools.GridFromInterpolation(dw,dx[:,0],dx[:,1],eiks[:,c],w_nodes,x_nodes,y_nodes)
+		psi,ignore = grid_tools.GridFromInterpolation(dw,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
 		return A*np.exp(1j*psi) , plot_ext
 
-	def GetFields(self,k00,dz,A):
+	def GetFields(self,w0,dz,A):
 		'''dz = distance from eikonal plane to center of interrogation region
 		A = complex amplitude (any Cartesian component) in eikonal plane'''
-		z_list = grid_tools.cell_centers(dz-self.size[2]/2,dz+self.size[2]/2,self.pts[2])
-		Ak = np.fft.fft(np.fft.fft(A,axis=0),axis=1)
-		kx_list = self.FFT_w(1/self.dx[0],self.pts[0])
-		ky_list = self.FFT_w(1/self.dx[1],self.pts[1])
-		k_perp_2 = np.outer(kx_list**2,np.ones(self.pts[1])) + np.outer(np.ones(self.pts[0]),ky_list**2)
-		kz = np.sqrt(0j + k00**2 - k_perp_2)
-		phase_adv = np.einsum('ij,k',kz,z_list)
-		#for i in range(self.pts[2]):
-		#	phase_adv[...,i] -= np.min(phase_adv[...,i])
-		Ak = np.einsum('ij,ijk->ijk',Ak,np.exp(1j*phase_adv))
-		x_nodes,y_nodes,plot_ext = self.GetGridInfo()
-		z_ext = np.array([-self.size[2]/2,self.size[2]/2])
-		dom3d = np.concatenate((plot_ext,z_ext))
-		return np.fft.ifft(np.fft.ifft(Ak,axis=0),axis=1) , dom3d
+		w_nodes,x_nodes,y_nodes,plot_ext = self.GetGridInfo()
+		z_nodes = grid_tools.cell_centers(dz-self.size[3]/2,dz+self.size[3]/2,self.pts[3])
+		# Add z dimension and apply phase shift such that t --> t-z/c
+		ans = np.einsum('ijk,l->ijkl',A,np.ones(self.pts[3]))
+		galilean = np.einsum('i,j,k,l->ijkl',w0+w_nodes,np.ones(self.pts[1]),np.ones(self.pts[2]),z_nodes)
+		ans *= np.exp(-1j*galilean)
+		ans = np.fft.fft(np.fft.fft(ans,axis=1),axis=2)
+		kx_list = self.FFT_w(1/self.dx[1],self.pts[1])
+		ky_list = self.FFT_w(1/self.dx[2],self.pts[2])
+		w2 = (w0 + np.einsum('i,j,k->ijk',w_nodes,np.ones(self.pts[1]),np.ones(self.pts[2])))**2
+		kx2 = np.outer(kx_list**2,np.ones(self.pts[2]))
+		ky2 = np.outer(np.ones(self.pts[1]),ky_list**2)
+		kr2 = np.einsum('i,jk->ijk',np.ones(self.pts[0]),kx2+ky2)
+		kz = np.sqrt(0j + w2 - kr2)
+		phase_adv = np.einsum('ijk,l->ijkl',kz,z_nodes)
+		phase_adv[np.where(np.imag(phase_adv)<0)] *= -1
+		ans *= np.exp(1j*phase_adv)
+		ans = np.fft.ifft(np.fft.ifft(ans,axis=2),axis=1)
+		z_ext = np.array([-self.size[3]/2,self.size[3]/2])
+		dom4d = np.concatenate((plot_ext,z_ext))
+		return ans,dom4d
 
 class BesselBeamTool:
 
 	def __init__(self,pts,size,queue,kernel):
 		self.pts = pts
 		self.size = size
-		self.mmax = np.int(pts[1]/2)
-		self.H = grid_tools.HankelTransformTool(self.pts[0],self.size[0]/self.pts[0],self.mmax,queue,kernel)
+		self.mmax = np.int(self.pts[2]/2)
+		self.default_band = size[0]
+		self.H = grid_tools.HankelTransformTool(self.pts[1],self.size[1]/self.pts[1],self.mmax,queue,kernel)
 
 	def GetGridInfo(self):
-		rho_nodes = grid_tools.cell_centers(0.0,self.size[0],self.pts[0])
-		phi_nodes = np.linspace(-np.pi,np.pi-2*np.pi/self.pts[1],self.pts[1])
-		rho_walls = grid_tools.cell_walls(rho_nodes[0],rho_nodes[-1],self.pts[0])
-		phi_walls = grid_tools.cell_walls(phi_nodes[0],phi_nodes[-1],self.pts[1])
-		plot_ext = np.array([rho_walls[0],rho_walls[-1],phi_walls[0],phi_walls[-1]])
-		return rho_nodes,phi_nodes,plot_ext
+		w_nodes = grid_tools.cyclic_nodes(-self.size[0]/2,self.size[0]/2,self.pts[0])
+		rho_nodes = grid_tools.cell_centers(0.0,self.size[1],self.pts[1])
+		phi_nodes = grid_tools.cyclic_nodes(-np.pi,np.pi,self.pts[2])
+		w_walls = grid_tools.cell_walls(w_nodes[0],w_nodes[-1],self.pts[0],self.default_band)
+		rho_walls = grid_tools.cell_walls(rho_nodes[0],rho_nodes[-1],self.pts[1])
+		phi_walls = grid_tools.cell_walls(phi_nodes[0],phi_nodes[-1],self.pts[2])
+		plot_ext = np.array([w_walls[0],w_walls[-1],rho_walls[0],rho_walls[-1],phi_walls[0],phi_walls[-1]])
+		return w_nodes,rho_nodes,phi_nodes,plot_ext
 
 	def GetBoundaryFields(self,center,xps,eiks,c):
-		'''Eikonal field component c on (rho,phi) grid.
+		'''Eikonal field component c on (w,rho,phi) grid.
 		The radial points do not include the origin.
 		The azimuthal points are [-pi,...,pi-2*pi/N].'''
-		xp0 = xps[:,1:4] - center
-		kr = eiks[:,0] + xps[:,4]*xps[:,0]
-		rho = np.sqrt(xp0[:,0]**2 + xp0[:,1]**2)
-		phi = np.arctan2(xp0[:,1],xp0[:,0])
+		dw = xps[:,4] - center[0]
+		dx = xps[:,1:4] - center[1:4]
+		# Reference time to the earliest ray
+		t0 = np.min(xps[:,0])
+		kr = eiks[:,0] - xps[:,4]*t0
+		rho = np.sqrt(dx[:,0]**2 + dx[:,1]**2)
+		phi = np.arctan2(dx[:,1],dx[:,0])
 		# Keep angles in range pi to -pi, and favor -pi over +pi
 		phi[np.where(phi>0.9999*np.pi)] -= 2*np.pi
-		rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
-		A,ignore = grid_tools.CylGridFromInterpolation(rho,phi,eiks[:,c],rho_nodes,phi_nodes)
-		psi,ignore = grid_tools.CylGridFromInterpolation(rho,phi,kr,rho_nodes,phi_nodes)
+		w_nodes,rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
+		A,ignore = grid_tools.CylGridFromInterpolation(dw,rho,phi,eiks[:,c],w_nodes,rho_nodes,phi_nodes)
+		psi,ignore = grid_tools.CylGridFromInterpolation(dw,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
 		return A*np.exp(1j*psi),plot_ext
 
-	def GetFields(self,k00,dz,A):
+	def GetFields(self,w0,dz,A):
 		'''dz = distance from eikonal plane to center of interrogation region
-		A[rho,phi] = complex amplitude (any Cartesian component) in eikonal plane
+		A[w,rho,phi] = complex amplitude (any Cartesian component) in eikonal plane
 		mmax = highest azimuthal mode to keep [0,1,2,...]'''
-		z_list = grid_tools.cell_centers(dz-self.size[2]/2,dz+self.size[2]/2,self.pts[2])
-		ans = np.einsum('ij,k->ijk',A,np.ones(self.pts[2]))
+		w_nodes,rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
+		z_nodes = grid_tools.cell_centers(dz-self.size[3]/2,dz+self.size[3]/2,self.pts[3])
+		# Add z dimension and apply phase shift such that t --> t-z/c
+		ans = np.einsum('ijk,l->ijkl',A,np.ones(self.pts[3]))
+		galilean = np.einsum('i,j,k,l->ijkl',w0+w_nodes,np.ones(self.pts[1]),np.ones(self.pts[2]),z_nodes)
+		ans *= np.exp(-1j*galilean)
+		# Rearrange for Hankel transform routine
+		ans = ans.swapaxes(0,1).swapaxes(1,2).reshape((self.pts[1],self.pts[2],-1))
 		ans = np.fft.fft(ans,axis=1)
 		ans = self.H.kspace(ans)
-		kz = np.sqrt(0j + k00**2 - self.H.kr2())
-		phase_adv = np.einsum('ij,k',kz,z_list)
+		w2 = (w0 + np.einsum('i,j,k->ijk',np.ones(self.pts[1]),np.ones(self.pts[2]),w_nodes))**2
+		kr2 = np.einsum('ij,k->ijk',self.H.kr2(),np.ones(self.pts[0]))
+		kz = np.sqrt(0j + w2 - kr2)
+		phase_adv = np.einsum('ijk,l->ijkl',kz,z_nodes).reshape((self.pts[1],self.pts[2],-1))
 		phase_adv[np.where(np.imag(phase_adv)<0)] *= -1
 		ans *= np.exp(1j*phase_adv)
 		ans = self.H.rspace(ans)
 		ans = np.fft.ifft(ans,axis=1)
-		rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
-		z_ext = np.array([-self.size[2]/2,self.size[2]/2])
-		dom3d = np.concatenate((plot_ext,z_ext))
-		return ans,dom3d
+		ans = ans.reshape(self.pts[1],self.pts[2],self.pts[0],self.pts[3])
+		ans = ans.swapaxes(1,2).swapaxes(0,1)
+		z_ext = np.array([-self.size[3]/2,self.size[3]/2])
+		dom4d = np.concatenate((plot_ext,z_ext))
+		return ans,dom4d
 
 
 def get_waist(rho_list,intensity,which_axis):

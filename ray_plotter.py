@@ -1,6 +1,7 @@
 import os
 import glob
 import sys
+import subprocess
 import numpy as np
 from scipy import constants as C
 import grid_tools
@@ -55,11 +56,18 @@ if len(sys.argv)==1:
 	print('hij: scatter plot in Hamiltonian phase space of the final state, e.g., h15')
 	print('fijk: field reconstruction for component k in the ij plane (requires detailed orbits)')
 	print('o3d: 3D plot of ray orbits')
-	print('detector_name[=i,j,k,f]: field reconstruction in detection plane of the named detector')
-	print('  i,j optionally select a plane in case more than one is available, with k the slice')
-	print('  f is the fraction of the domain to display')
-	print('  (fields may be eikonal or full wave depending on detector)')
+	print('detector_name[=[modifiers]i,j/k,l[/f]]: field reconstruction in detection plane of the named detector')
+	print('  modifiers: t causes frequency slices to be transformed to the time domain.')
+	print('             e causes the eikonal plane data to be used.')
+	print('  The slashes separate plot axes from slice indices.  The number of plot axes determines the type of plot.')
+	print('  The first group of indices are the plotting axes, e.g. 1,2 or 1,2,3.')
+	print('  The next group of indices select slices of the remaining axes.')
+	print('  The last slash, if present, precedes the fraction of the domain to display.')
 	print('mesh: display all surface meshes (may be very slow)')
+	print('-----------------Animations-----------------')
+	print('Generate animations by replacing a slice index with a python range.')
+	print('E.g., det=t1,2/:5,0 generates a movie in the xy plane with the first 5 time levels at z slice 0.')
+	print('Please only make a single move at a time, and rename mov.gif before creating the next one.')
 	print('==============END HELP FOR SEARAY PLOTTER==============')
 	exit(1)
 
@@ -86,13 +94,79 @@ try:
 except:
 	dynamic_range = 0.0
 
-def SliceAxis(h,v):
-	if h!=1 and v!=1:
-		return 1
-	if h!=2 and v!=2:
-		return 2
-	if h!=3 and v!=3:
-		return 3
+def cleanup(wildcarded_path):
+	cleanstr = glob.glob(wildcarded_path)
+	if len(cleanstr)>0:
+		cleanstr.insert(0,'rm')
+		subprocess.run(cleanstr)
+
+def SliceAxes(plot_ax):
+	'''Deduce the slice axes from the plotting axes'''
+	ans = ()
+	for ax in range(4):
+		if ax not in plot_ax:
+			ans += (ax,)
+	return ans
+
+def ParseSlices(dims,plot_ax,cmd_str):
+	'''Function to generate a list of slice tuples for the movie.
+	plot_ax = tuple with the plotting axes.
+	cmd_str = string with comma delimited ranges or indices.
+	Returns slice_tuples,data_ax,movie.'''
+	sax = SliceAxes(plot_ax)
+	slice_tuples = []
+	range_tuples = []
+	movie = False
+	# Define data axes such that time and frequency have the same index
+	data_ax = ()
+	for ax in plot_ax:
+		if ax==4:
+			data_ax += (0,)
+		else:
+			data_ax += (ax,)
+	# Construct list of range tuples
+	for saxi,slice_str in enumerate(cmd_str.split(',')):
+		rng = slice_str.split(':')
+		tup = ()
+		for i,el in enumerate(rng):
+			if el=='' and i==0:
+				el = '0'
+			if el=='' and i==1:
+				el = str(dims[sax[saxi]])
+			if el=='' and i==2:
+				el = '1'
+			tup += (int(el),)
+		range_tuples.append(tup)
+	# Determine the range of the movie frames
+	frame_rng = range(1)
+	for rng in range_tuples:
+		movie = movie or len(rng)>1
+		if len(rng)==2:
+			frame_rng = range(rng[0],rng[1])
+		if len(rng)==3:
+			frame_rng = range(rng[0],rng[1],rng[2])
+	# Construct list of slice tuples
+	for r in frame_rng:
+		tup = ()
+		for rng in range_tuples:
+			if len(rng)>1:
+				tup += (r,)
+			else:
+				tup += rng
+		slice_tuples.append(tup)
+	return slice_tuples,data_ax,movie
+
+def ExtractSlice(A,plot_ax,slice_idx):
+	'''Slice the data using tuples of plotting axes and slice indices
+	The number of axes and indices should add to 4'''
+	sax = SliceAxes(plot_ax)
+	# Following assumes sax is sorted
+	for i in range(len(sax)-1,-1,-1):
+		if slice_idx[i]>=A.shape[sax[i]]:
+			A = np.take(A,-1,sax[i])
+		else:
+			A = np.take(A,slice_idx[i],sax[i])
+	return A
 
 def TransformColorScale(array,dyn_rng):
 	if dyn_rng!=0.0:
@@ -112,20 +186,20 @@ def FractionalPowerScale(array,order):
 	array[idxneg] *= -1
 	return array
 
-def CartesianReduce(ax,dom,hfrac,vfrac):
-	hc = np.int(ax.shape[0]/2)
-	vc = np.int(ax.shape[1]/2)
-	dh = np.int(ax.shape[0]*hfrac/2)
-	dv = np.int(ax.shape[1]*vfrac/2)
+def CartesianReduce(A,dom,frac):
+	hc = np.int(A.shape[1]/2)
+	vc = np.int(A.shape[2]/2)
+	dh = np.int(A.shape[1]*frac/2)
+	dv = np.int(A.shape[2]*frac/2)
 	dom = np.copy(dom)
-	dom[:4] *= np.array([hfrac,hfrac,vfrac,vfrac])
-	return ax[hc-dh:hc+dh,vc-dv:vc+dv,:],dom
+	dom[2:6] *= frac
+	return A[:,hc-dh:hc+dh,vc-dv:vc+dv,:],dom
 
-def RadialReduce(ax,dom,frac):
-	dh = np.int(ax.shape[0]*frac)
+def RadialReduce(A,dom,frac):
+	dh = np.int(A.shape[1]*frac)
 	dom = np.copy(dom)
-	dom[:2] *= frac
-	return ax[:dh,...],dom
+	dom[2:4] *= frac
+	return A[:,:dh,...],dom
 
 def GetPrefixList(postfix):
 	ans = []
@@ -174,11 +248,11 @@ class Units:
 		self.mks_length = mks_length
 		self.mks_time = mks_time
 
-		self.normalization = np.concatenate((np.ones(4)*l1,np.ones(4)/carrier,np.ones(4)))
+		self.normalization = np.concatenate(([t1],np.ones(3)*l1,np.ones(4)/carrier,np.ones(4)))
 		self.lab_str = [r'$x_0$ ',r'$x_1$ ',r'$x_2$ ',r'$x_3$ ',
-			r'$ck_0/\omega$',r'$ck_1/\omega$',r'$ck_2/\omega$',r'$ck_3/\omega$',
-			r'$\psi+\omega t$',r'$a_1$',r'$a_2$',r'$a_3$']
-		self.lab_str[0] += '('+l_str+')'
+			r'$\delta k_0/k_{00}$',r'$k_1/k_{00}$',r'$k_2/k_{00}$',r'$k_3/k_{00}$',
+			r'$\psi$',r'$a_1$',r'$a_2$',r'$a_3$']
+		self.lab_str[0] += '('+t_str+')'
 		self.lab_str[1] += '('+l_str+')'
 		self.lab_str[2] += '('+l_str+')'
 		self.lab_str[3] += '('+l_str+')'
@@ -201,18 +275,24 @@ class Units:
 			self.lab_str[3] = r'$\theta/\pi$'
 			self.normalization[2] = 1/np.pi
 			self.normalization[3] = 1/np.pi
+		if label_type=='cart' or label_type=='cyl' or label_type=='sph':
+			self.lab_str[4] = self.lab_str[4].replace('\delta k_0','\delta\omega').replace('k_{00}','\omega_0')
+			self.lab_str[5] = self.lab_str[5].replace('k_1','k_x').replace('k_{00}','\omega_0')
+			self.lab_str[6] = self.lab_str[6].replace('k_2','k_y').replace('k_{00}','\omega_0')
+			self.lab_str[7] = self.lab_str[3].replace('k_3','k_z').replace('k_{00}','\omega_0')
 	def GetNormalization(self):
 		return self.normalization
 	def GetLabels(self):
 		return self.lab_str
-	def PlotExt(self,dom,h,v):
-		h1 = 2*(h-1)
-		h2 = 2*(h-1)+1
-		v1 = 2*(v-1)
-		v2 = 2*(v-1)+1
-		return [dom[h1]*self.normalization[h],dom[h2]*self.normalization[h],dom[v1]*self.normalization[v],dom[v2]*self.normalization[v]]
+	def PlotExt(self,dom,plot_ax):
+		ans = []
+		for ax in plot_ax:
+			ans += [dom[2*ax]*self.normalization[ax],dom[2*ax+1]*self.normalization[ax]]
+		return ans
 	def LengthLabel(self):
 		return self.length_label
+	def TimeLabel(self):
+		return self.time_label
 	def GetWcm2(self,a2,w0):
 		w0_mks = w0/self.mks_time
 		E0_mks = np.sqrt(a2) * C.m_e * w0_mks * C.c / C.e
@@ -221,7 +301,8 @@ class Units:
 
 
 class MeshViewer:
-	def __init__(self):
+	def __init__(self,lab_sys):
+		self.label_system = lab_sys
 		self.structured_mesh = []
 		self.mesh = []
 		self.simplex = []
@@ -235,6 +316,8 @@ class MeshViewer:
 	def GetMeshList(self):
 		return self.structured_mesh
 	def Plot(self,mpl_plot_count,maya_plot_count):
+		lab_str = self.label_system.GetLabels()
+		normalization = self.label_system.GetNormalization()
 		if 'mesh' in sys.argv:
 			# For rotated meshes we have a problem here
 			mpl_plot_count += 1
@@ -255,7 +338,8 @@ class MeshViewer:
 		return mpl_plot_count,maya_plot_count
 
 class PhaseSpace:
-	def __init__(self):
+	def __init__(self,lab_sys):
+		self.label_system = lab_sys
 		self.xp0 = np.load(simname+'_xp0.npy')
 		self.xp = np.load(simname+'_xp.npy')
 		self.eikonal = np.load(simname+'_eikonal.npy')
@@ -266,6 +350,8 @@ class PhaseSpace:
 		except:
 			self.res = 200
 	def Plot(self,mpl_plot_count,maya_plot_count):
+		lab_str = self.label_system.GetLabels()
+		normalization = self.label_system.GetNormalization()
 		for i in range(12):
 			for j in range(12):
 				plot_key = 'h'+format(i,'01X').lower()+format(j,'01X').lower()
@@ -295,7 +381,8 @@ class PhaseSpace:
 		return mpl_plot_count,maya_plot_count
 
 class Orbits:
-	def __init__(self,mesh_list):
+	def __init__(self,mesh_list,lab_sys):
+		self.label_system = lab_sys
 		self.orbits = np.load(simname+'_orbits.npy')
 		# flatten orbit data for field reconstruction (time*ray,component)
 		self.xpo = self.orbits.reshape(self.orbits.shape[0]*self.orbits.shape[1],self.orbits.shape[2])
@@ -304,6 +391,8 @@ class Orbits:
 		self.mesh_list = mesh_list
 		self.res = 200
 	def Plot(self,mpl_plot_count,maya_plot_count):
+		lab_str = self.label_system.GetLabels()
+		normalization = self.label_system.GetNormalization()
 		for i in range(12):
 			for j in range(12):
 				for k in range(12):
@@ -389,7 +478,8 @@ class Orbits:
 		return mpl_plot_count,maya_plot_count
 
 class EikonalWaveProfiler:
-	def __init__(self):
+	def __init__(self,lab_sys):
+		self.label_system = lab_sys
 		self.name = []
 		self.xp = []
 		self.eik = []
@@ -408,26 +498,30 @@ class EikonalWaveProfiler:
 			if eik in sys.argv:
 				xps = self.xp[det_idx]
 				eiks = self.eik[det_idx]
+				if np.max(xps[:,4])-np.min(xps[:,4]) > 1e-10:
+					print('WARNING: finite bandwidth detected, consider filtering.')
 				mpl_plot_count += 1
 				plt.figure(eik,figsize=(6,7))
-				phase = eiks[:,0] + xps[:,4]*xps[:,0]
+				phase = eiks[:,0]
 				phase -= np.min(phase)
 
 				plt.subplot(211)
-				a1,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,1],self.res,self.res)
-				a2,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,2],self.res,self.res)
-				a3,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],eiks[:,3],self.res,self.res)
-				intens = units.GetWcm2(a1**2+a2**2+a3**2,1.0)
+				a1,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,1],1,self.res,self.res)
+				a2,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,2],1,self.res,self.res)
+				a3,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,3],1,self.res,self.res)
+				intens = self.label_system.GetWcm2(a1**2+a2**2+a3**2,1.0)
 				cbar_str = TransformColorScale(intens,dynamic_range)
-				plt.imshow(intens.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,1,2))
+				lab_str = self.label_system.GetLabels()
+				lab_range = self.label_system.PlotExt(list(plot_ext)+[0.0,1.0],(1,2))
+				plt.imshow(intens[0,...].swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=lab_range)
 				b=plt.colorbar()
 				b.set_label(cbar_str + r'Intensity (W/cm$^2$)',size=18)
 				plt.xlabel(lab_str[1],size=18)
 				plt.ylabel(lab_str[2],size=18)
 
 				plt.subplot(212)
-				psi,plot_ext = grid_tools.GridFromInterpolation(xps[:,1],xps[:,2],phase,self.res,self.res,fill=np.min(phase))
-				plt.imshow(psi.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,1,2))
+				psi,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],phase,1,self.res,self.res,fill=np.min(phase))
+				plt.imshow(psi[0,...].swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=lab_range)
 				b=plt.colorbar()
 				b.set_label(r'$\psi + \omega t$',size=18)
 				plt.xlabel(lab_str[1],size=18)
@@ -436,148 +530,132 @@ class EikonalWaveProfiler:
 				plt.tight_layout()
 		return mpl_plot_count,maya_plot_count
 
-class PlaneWaveProfiler:
-	def __init__(self):
+class FullWaveProfiler:
+	def __init__(self,type_key,lab_sys):
+		self.label_system = lab_sys
 		self.name = []
 		self.eik = []
 		self.wave = []
 		self.ext = []
-		l = GetPrefixList('plane_wave')
+		l = GetPrefixList(type_key+'_wave')
 		for prefix in l:
 			self.name.append(prefix.split('_')[-2])
-			self.wave.append(np.load(prefix+'plane_wave.npy'))
-			self.eik.append(np.load(prefix+'plane_eik.npy'))
-			self.ext.append(np.load(prefix+'plane_plot_ext.npy'))
-		print('plane wave detectors =',self.name)
+			self.wave.append(np.load(prefix+type_key+'_wave.npy'))
+			self.eik.append(np.load(prefix+type_key+'_eik.npy'))
+			self.ext.append(np.load(prefix+type_key+'_plot_ext.npy'))
 	def Plot(self,mpl_plot_count,maya_plot_count):
-		for det_idx,pw in enumerate(self.name):
+		for det_idx,det_name in enumerate(self.name):
 			try:
-				arg = arg_dict[pw]
+				arg = arg_dict[det_name]
 				dom = self.ext[det_idx]
+				E = self.eik[det_idx]
+				A = self.wave[det_idx]
+				dom = np.concatenate((dom,dom[:2]))
+				dw = (dom[1] - dom[0]) / A.shape[0]
+				dom[0] = 0.0
+				dom[1] = 2*np.pi/dw
+				time_domain = False
+				eikonal_plane = False
 				if arg=='default':
-					haxis=1
-					vaxis=2
-					slice_idx=0
+					plot_ax = (1,2)
+					slice_tuples,data_ax,movie = ParseSlices(A.shape,plot_ax,'0,0')
 					wave_zone_fraction = 1.0
 				else:
-					haxis = np.int(arg.split(',')[0])
-					vaxis = np.int(arg.split(',')[1])
-					slice_idx = np.int(arg.split(',')[2])
-					wave_zone_fraction = np.double(arg.split(',')[3])
-				mpl_plot_count += 1
-				plt.figure(mpl_plot_count,figsize=(5,7))
-				plt.subplot(211)
-				A = self.eik[det_idx]
+					while arg[0]=='t' or arg[0]=='e':
+						if arg[0]=='t':
+							time_domain = True
+						if arg[0]=='e':
+							eikonal_plane = True
+						arg = arg[1:]
+					plot_ax = tuple(map(int,arg.split('/')[0].split(',')))
+					if 0 in plot_ax:
+						time_domain = True
+					slice_tuples,data_ax,movie = ParseSlices(A.shape,plot_ax,arg.split('/')[1])
+					if len(arg.split('/'))>2:
+						wave_zone_fraction = np.double(arg.split('/')[2])
+					else:
+						wave_zone_fraction = 1.0
+				if eikonal_plane:
+					A = E[...,np.newaxis,:]
+				if A.shape[0]==1:
+					bar_label = r'$|a|^2$'
+				else:
+					if time_domain:
+						bar_label = r'$|a(t)|^2$'
+						coeff = (dom[9]-dom[8])/(2*np.pi)
+						A = coeff*np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
+					else:
+						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+r'$^2$)'
+						A *= self.label_system.GetNormalization()[0]
 				A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-				cbar_str = TransformColorScale(A2,dynamic_range)
-				plt.imshow(A2.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(dom,1,2))
-				b=plt.colorbar()
-				b.set_label(cbar_str+r'$|a|^2(z_{\rm eik})$',size=18)
-				plt.xlabel(lab_str[1],size=18)
-				plt.ylabel(lab_str[2],size=18)
-				plt.subplot(212)
-				A = self.wave[det_idx]
-				A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-				A2,dom = CartesianReduce(A2,dom,wave_zone_fraction,wave_zone_fraction)
-				A2 = np.squeeze(np.take(A2,[slice_idx],axis=SliceAxis(haxis,vaxis)-1),axis=SliceAxis(haxis,vaxis)-1)
-				if haxis<vaxis:
-					A2 = A2.swapaxes(0,1)
-				cbar_str = TransformColorScale(A2,dynamic_range)
-				plt.imshow(A2,origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(dom,haxis,vaxis))
-				plt.xlabel(lab_str[haxis],size=18)
-				plt.ylabel(lab_str[vaxis],size=18)
-				b=plt.colorbar()
-				b.set_label(cbar_str+r'$|a|^2$',size=18)
-				plt.tight_layout()
+				A2,rdom = self.reducer(A2,dom,wave_zone_fraction)
+				lab_str = self.label_system.GetLabels()
+				lab_str[0] = lab_str[0].replace('t','t-z/c')
+				lab_range_full = self.label_system.PlotExt(dom,plot_ax)
+				lab_range_red = self.label_system.PlotExt(rdom,plot_ax)
+				if movie:
+					cbar_str = TransformColorScale(A2,dynamic_range)
+					val_rng = (np.min(A2),np.max(A2))
+				for file_idx,slice_now in enumerate(slice_tuples):
+					data_slice = ExtractSlice(A2,data_ax,slice_now)
+					if not movie:
+						cbar_str = TransformColorScale(data_slice,dynamic_range)
+						val_rng = (np.min(data_slice),np.max(data_slice))
+					if len(plot_ax)==3:
+						maya_plot_count += 1
+						dv = val_rng[1]-val_rng[0]
+						contour_list = []
+						for x in [0.25,0.75,0.9]:
+							contour_list.append(val_rng[0]+x*dv)
+						#mlab.clf()
+						# CAUTION: the extent key has to appear in just the right places or we get confusing results
+						#src = mlab.pipeline.scalar_field(x1,x2,x3,data_slice,extent=ext)
+						src = mlab.pipeline.scalar_field(data_slice)
+						obj = mlab.pipeline.iso_surface(src,contours=contour_list,opacity=0.3)
+						#mlab.outline(extent=ext)
+						#mlab.view(azimuth=-80,elevation=30,distance=3*np.max(sizes),focalpoint=origin)
+						if movie:
+							mlab.savefig('tempfile{:03d}.png'.format(file_idx))
+					else:
+						mpl_plot_count += 1
+						plt.figure(mpl_plot_count,figsize=(5,4))
+						if data_ax[0]<data_ax[1]:
+							data_slice = data_slice.swapaxes(0,1)
+						plt.imshow(data_slice,origin='lower',vmin=val_rng[0],vmax=val_rng[1],cmap=my_color_map,aspect='auto',extent=lab_range_red)
+						plt.xlabel(lab_str[plot_ax[0]],size=18)
+						plt.ylabel(lab_str[plot_ax[1]],size=18)
+						b=plt.colorbar()
+						b.set_label(cbar_str+bar_label,size=18)
+						plt.tight_layout()
+						if movie:
+							img_file = 'frame{:03d}.png'.format(file_idx)
+							print('saving',img_file,'...')
+							plt.savefig(img_file)
+							plt.close()
+				if movie:
+					try:
+						print('Consolidating into movie file...')
+						subprocess.run(["convert","-delay","30","frame*.png","mov.gif"])
+						cleanup('frame*.png')
+						print('Done.')
+					except:
+						cleanup('frame*.png')
+						raise OSError("The convert program from ImageMagick may not be installed.")
 			except KeyError:
-				print('INFO:',pw,'not used.')
+				print('INFO:',det_name,'not used.')
 		return mpl_plot_count,maya_plot_count
 
-class BesselBeamProfiler:
-	def __init__(self):
-		self.name = []
-		self.eik = []
-		self.wave = []
-		self.ext = []
-		l = GetPrefixList('bess_wave')
-		for prefix in l:
-			self.name.append(prefix.split('_')[-2])
-			self.wave.append(np.load(prefix+'bess_wave.npy'))
-			self.eik.append(np.load(prefix+'bess_eik.npy'))
-			self.ext.append(np.load(prefix+'bess_plot_ext.npy'))
+class PlaneWaveProfiler(FullWaveProfiler):
+	def __init__(self,lab_sys):
+		super().__init__('plane',lab_sys)
+		self.reducer = CartesianReduce
+		print('plane wave detectors =',self.name)
+
+class BesselBeamProfiler(FullWaveProfiler):
+	def __init__(self,lab_sys):
+		super().__init__('bess',lab_sys)
+		self.reducer = RadialReduce
 		print('Bessel beam detectors =',self.name)
-	def Plot(self,mpl_plot_count,maya_plot_count):
-		for det_idx,bess in enumerate(self.name):
-			try:
-				arg = arg_dict[bess]
-				dom = self.ext[det_idx]
-				if arg.split(',')[0]=='3d':
-					lab_str = cunits.GetLabels()
-					wave_zone_fraction = np.double(arg.split(',')[1])
-					mpl_plot_count += 1
-					A = self.wave[det_idx]
-					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-					A2,plot_ext = RadialReduce(A2,dom[:4],wave_zone_fraction)
-					cbar_str = TransformColorScale(A2,dynamic_range)
-					fig = plt.figure(mpl_plot_count,figsize=(8,8))
-					ax = fig.add_subplot(111,projection='3d')
-					z_list = np.linspace(dom[4],dom[5],A2.shape[2])
-					rho_list = np.linspace(dom[0],dom[1],A2.shape[0])
-					phi_list = np.linspace(0,2*np.pi*(1-1/A2.shape[1]),A2.shape[1])
-					surf = []
-					cmap = mpl.cm.ScalarMappable(cmap=my_color_map)
-					for i,phi in enumerate(phi_list):
-						x = np.outer(rho_list*np.cos(phi),np.ones(A2.shape[2]))
-						y = np.outer(rho_list*np.sin(phi),np.ones(A2.shape[2]))
-						z = np.outer(np.ones(A2.shape[0]),z_list)
-						c = cmap.to_rgba(A2[:,i,:])
-						surf.append(ax.plot_surface(x*normalization[1],y*normalization[2],z*normalization[3],facecolors=c))
-					cmap.set_array(A2[:,i,:])
-					plt.colorbar(cmap,shrink=0.5, aspect=10, label=cbar_str+r'$|a|^2$')
-					ax.set_xlabel(lab_str[1])
-					ax.set_ylabel(lab_str[2])
-					ax.set_zlabel(lab_str[3])
-					plt.tight_layout()
-				else:
-					if arg=='default':
-						haxis=1
-						vaxis=2
-						slice_idx=0
-						wave_zone_fraction = 1.0
-					else:
-						haxis = np.int(arg.split(',')[0])
-						vaxis = np.int(arg.split(',')[1])
-						slice_idx = np.int(arg.split(',')[2])
-						wave_zone_fraction = np.double(arg.split(',')[3])
-					lab_str = cunits.GetLabels()
-					mpl_plot_count += 1
-					plt.figure(mpl_plot_count,figsize=(5,7))
-					plt.subplot(211)
-					A = self.eik[det_idx]
-					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-					cbar_str = TransformColorScale(A2,dynamic_range)
-					plt.imshow(A2.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=cunits.PlotExt(dom,1,2))
-					b=plt.colorbar()
-					b.set_label(cbar_str+r'$|a|^2(z_E)$',size=18)
-					plt.xlabel(lab_str[1],size=18)
-					plt.ylabel(lab_str[2],size=18)
-					plt.subplot(212)
-					A = self.wave[det_idx]
-					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-					A2,dom = RadialReduce(A2,dom,wave_zone_fraction)
-					A2 = np.squeeze(np.take(A2,[slice_idx],axis=SliceAxis(haxis,vaxis)-1),axis=SliceAxis(haxis,vaxis)-1)
-					if haxis<vaxis:
-						A2 = A2.swapaxes(0,1)
-					cbar_str = TransformColorScale(A2,dynamic_range)
-					plt.imshow(A2,origin='lower',cmap=my_color_map,aspect='auto',extent=cunits.PlotExt(dom,haxis,vaxis))
-					plt.xlabel(lab_str[haxis],size=18)
-					plt.ylabel(lab_str[vaxis],size=18)
-					b=plt.colorbar()
-					b.set_label(cbar_str+r'$|a|^2$',size=18)
-					plt.tight_layout()
-			except KeyError:
-				print('INFO:',bess,'not used.')
-		return mpl_plot_count,maya_plot_count
 
 mpl_plot_count = 0
 maya_plot_count = 0
@@ -593,27 +671,22 @@ try:
 except:
 	origin = np.zeros(12)
 
-units = Units(label_type)
-normalization = units.GetNormalization()
-lab_str = units.GetLabels()
-cunits = Units('cyl')
-
-meshPlots = MeshViewer()
+meshPlots = MeshViewer(Units(label_type))
 mpl_plot_count,maya_plot_count = meshPlots.Plot(mpl_plot_count,maya_plot_count)
 
-orbitPlots = Orbits(meshPlots.GetMeshList())
+orbitPlots = Orbits(meshPlots.GetMeshList(),Units(label_type))
 mpl_plot_count,maya_plot_count = orbitPlots.Plot(mpl_plot_count,maya_plot_count)
 
-phaseSpacePlots = PhaseSpace()
+phaseSpacePlots = PhaseSpace(Units(label_type))
 mpl_plot_count,maya_plot_count = phaseSpacePlots.Plot(mpl_plot_count,maya_plot_count)
 
-eikonalPlots = EikonalWaveProfiler()
+eikonalPlots = EikonalWaveProfiler(Units(label_type))
 mpl_plot_count,maya_plot_count = eikonalPlots.Plot(mpl_plot_count,maya_plot_count)
 
-planePlots = PlaneWaveProfiler()
+planePlots = PlaneWaveProfiler(Units(label_type))
 mpl_plot_count,maya_plot_count = planePlots.Plot(mpl_plot_count,maya_plot_count)
 
-besselPlots = BesselBeamProfiler()
+besselPlots = BesselBeamProfiler(Units('cyl'))
 mpl_plot_count,maya_plot_count = besselPlots.Plot(mpl_plot_count,maya_plot_count)
 
 if maya_loaded and maya_plot_count>0:

@@ -1,13 +1,29 @@
+'''
+Module: :samp:`grid_tools`
+--------------------------
+
+Tools for transforming between structured and unstructured grids.
+Ray data can be viewed as known on the nodes of an unstructured grid.
+Our notion of a structured grid is that the data is known at the cell center.
+The set of cell centers are the nodes.  The nodes are separated by cell walls.
+Plotting voxels can be considered visualizations of a cell.
+'''
 import numpy as np
 import scipy.interpolate
 from scipy.linalg import eig_banded
 import pyopencl
 import pyopencl.array
 
-# Notion of a cell is that data is known at the cell center.
-# The set of cell centers are the nodes.
-# The nodes are separated by cell walls.
-# Voxels used in plotting can be considered visualizations of a cell.
+def cyclic_nodes(node_low,node_high,num_nodes):
+	'''Generate nodes suitable for periodic functions.
+	The requested low node is included, the high node is excluded.
+	The low and high nodes should resolve to the same point, e.g. 0 and 2*pi.
+	Frequency nodes are arranged in unrolled FFT fashion, e.g., [+-2,-1,0,1].'''
+	if num_nodes==1:
+		return np.array([0.5*node_low + 0.5*node_high])
+	else:
+		dx = (node_high - node_low)/num_nodes
+		return np.linspace(node_low,node_high-dx,num_nodes)
 
 def cell_centers(wall_pos_low,wall_pos_high,cells_between):
 	'''Generate nodes between two cell wall positions.
@@ -15,10 +31,13 @@ def cell_centers(wall_pos_low,wall_pos_high,cells_between):
 	dx = (wall_pos_high - wall_pos_low)/cells_between
 	return np.linspace(wall_pos_low+0.5*dx,wall_pos_high-0.5*dx,cells_between)
 
-def cell_walls(node_low,node_high,nodes_between):
+def cell_walls(node_low,node_high,nodes_between,default_voxel_width=1.0):
 	'''Generate cell walls bracketing two nodes.
 	Number of nodes between the walls must be given.'''
-	dx = (node_high - node_low)/(nodes_between-1)
+	if nodes_between==1:
+		dx = default_voxel_width
+	else:
+		dx = (node_high - node_low)/(nodes_between-1)
 	return np.linspace(node_low-0.5*dx,node_high+0.5*dx,nodes_between+1)
 
 def hypersurface_idx(ary,axis,cell):
@@ -51,67 +70,67 @@ def Smooth1D(dist,passes,ax=0):
 
 # To avoid confusion please swap the axes only within the imshow function call.
 
-def PulseFromInterpolation(w,x,y,A,res,clip_rgn=0,fill=0.0):
-	'''Produce a pulse A(w,x,y) using ray data in a plane.
-	res is a tuple with the number of cells (Nw,Nx,Ny)
-	clip_rgn bounds the cells (cf. GridFromInterpolation)'''
-	if clip_rgn==0:
-		# If this is invoked then the extreme marginal data is put exactly on the domain boundary
-		clip_rgn=[np.min(w),np.max(w),np.min(x),np.max(x),np.min(y),np.max(y)]
-	# Interpolate data on the nodes
-	pts = np.zeros((len(w),3))
-	pts[:,0] = w
-	pts[:,1] = x
-	pts[:,2] = y
-	wg1 = cell_centers(clip_rgn[0],clip_rgn[1],res[0])
-	xg1 = cell_centers(clip_rgn[2],clip_rgn[3],res[1])
-	yg1 = cell_centers(clip_rgn[4],clip_rgn[5],res[2])
-	wg = np.einsum('i,j,k',wg1,np.ones(res[1]),np.ones(res[2]))
-	xg = np.einsum('i,j,k',np.ones(res[0]),xg1,np.ones(res[2]))
-	yg = np.einsum('i,j,k',np.ones(res[0]),np.ones(res[1]),yg1)
-	the_data = scipy.interpolate.griddata(pts,A,(wg,xg,yg),fill_value=fill)
-	return the_data
-
-def CylGridFromInterpolation(x,y,z,xn=100,yn=100,fill=0.0):
-	'''Special treatment for points that tend to lie on a cylindrical nodes.
-	x,y,z are the data points.
-	xn,yn are arrays of nodes, or numbers of nodes.
+def CylGridFromInterpolation(w,x,y,vals,wn=1,xn=100,yn=100,fill=0.0):
+	'''Special treatment for points that tend to lie on cylindrical nodes.
+	Frequency and azimuth are binned, radial data is interpolated.
+	Fill value for r<min(r) is val(min(r)).
+	w,x,y,vals are the data points.
+	wn,xn,yn are arrays of nodes, or numbers of nodes.
 	If numbers are given, the node boundaries are obtained from the points.'''
+	if type(wn) is int:
+		wn = np.linspace(np.min(w),np.max(w),wn)
 	if type(xn) is int:
 		xn = np.linspace(np.min(x),np.max(x),xn)
 	if type(yn) is int:
 		yn = np.linspace(np.min(y),np.max(y),yn)
 	# Return the boundaries of the plotting voxels for convenience
+	ww = cell_walls(wn[0],wn[-1],wn.shape[0])
 	wx = cell_walls(xn[0],xn[-1],xn.shape[0])
 	wy = cell_walls(yn[0],yn[-1],yn.shape[0])
-	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
-	the_data = np.zeros((xn.shape[0],yn.shape[0]))
-	for j in range(yn.shape[0]):
-		sel = np.where(np.logical_and(y>=wy[j],y<wy[j+1]))
-		idx = np.argmin(x[sel])
-		z0 = z[sel][idx]
-		f = scipy.interpolate.interp1d(x[sel],z[sel],kind='linear',bounds_error=False,fill_value=(z0,0.0))
-		the_data[:,j] = f(xn)
+	plot_ext = np.array([ww[0],ww[-1],wx[0],wx[-1],wy[0],wy[-1]])
+	the_data = np.zeros((wn.shape[0],xn.shape[0],yn.shape[0]))
+	for i in range(wn.shape[0]):
+		for j in range(yn.shape[0]):
+			wcond = np.logical_and(w>=ww[i],w<ww[i+1])
+			ycond = np.logical_and(y>=wy[j],y<wy[j+1])
+			sel = np.where(np.logical_and(wcond,ycond))
+			if len(x[sel])==0:
+				the_data[i,:,j] = 0.0
+			else:
+				idx = np.argmin(x[sel])
+				v0 = vals[sel][idx]
+				f = scipy.interpolate.interp1d(x[sel],vals[sel],kind='linear',bounds_error=False,fill_value=(v0,0.0))
+				the_data[i,:,j] = f(xn)
 	return the_data,plot_ext
 
-def GridFromInterpolation(x,y,z,xn=100,yn=100,fill=0.0):
-	'''x,y,z are the data points.
-	xn,yn are arrays of nodes, or numbers of nodes.
+def GridFromInterpolation(w,x,y,vals,wn=1,xn=100,yn=100,fill=0.0):
+	'''w,x,y,vals are the data points.
+	wn,xn,yn are arrays of nodes, or numbers of nodes.
 	If numbers are given, the node boundaries are obtained from the points.'''
+	if type(wn) is int:
+		wn = np.linspace(np.min(w),np.max(w),wn)
 	if type(xn) is int:
 		xn = np.linspace(np.min(x),np.max(x),xn)
 	if type(yn) is int:
 		yn = np.linspace(np.min(y),np.max(y),yn)
 	# Return the boundaries of the plotting voxels for convenience
+	ww = cell_walls(wn[0],wn[-1],wn.shape[0])
 	wx = cell_walls(xn[0],xn[-1],xn.shape[0])
 	wy = cell_walls(yn[0],yn[-1],yn.shape[0])
-	plot_ext = np.array([wx[0],wx[-1],wy[0],wy[-1]])
-	pts = np.zeros((len(x),2))
-	pts[:,0] = x
-	pts[:,1] = y
+	plot_ext = np.array([ww[0],ww[-1],wx[0],wx[-1],wy[0],wy[-1]])
+	the_data = np.zeros((wn.shape[0],xn.shape[0],yn.shape[0]))
 	xg = 0.9999*np.outer(xn,np.ones(yn.shape[0]))
 	yg = 0.9999*np.outer(np.ones(xn.shape[0]),yn)
-	the_data = scipy.interpolate.griddata(pts,z,(xg,yg),method='cubic',fill_value=fill)
+	for i in range(wn.shape[0]):
+		wcond = np.logical_and(w>=ww[i],w<ww[i+1])
+		sel = np.where(wcond)
+		if len(x[sel])==0:
+			the_data[i,...] = 0.0
+		else:
+			pts = np.zeros((len(x[sel]),2))
+			pts[:,0] = x[sel]
+			pts[:,1] = y[sel]
+			the_data[i,...] = scipy.interpolate.griddata(pts,vals[sel],(xg,yg),method='cubic',fill_value=fill)
 	return the_data,plot_ext
 
 def GridFromBinning(x,y,z,xn=100,yn=100):
@@ -197,3 +216,17 @@ class HankelTransformTool:
 		return self.Transform(self.Hi,a)
 	def kr2(self):
 		return -self.vals
+
+class WignerTransformTool:
+	'''Promote complex waveform to Wigner phase space.'''
+	def __init__(self,N,bounds):
+		self.N = N
+		self.M = np.int(N/2)
+		self.dx = (bounds[1]-bounds[0])/N
+		self.xbounds = bounds
+		self.kbounds = (-np.pi/(2*self.dx) , np.pi/(2*self.dx))
+	def Transform(self,A):
+		corr = np.zeros((self.N,self.M))
+		for j in range(self.M):
+			corr[:,j] = np.roll(A,j)*np.conj(np.roll(A,-j))
+		wig = np.fft.irfft(corr,axis=1)

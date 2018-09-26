@@ -22,11 +22,13 @@ mess = 'Processing input file...\n'
 
 # Preprocessing calculations
 
-lens_D = 0.1/mks_length
-lens_R = 1/mks_length
+mirror_D = 0.1/mks_length
+mirror_R = 1/mks_length
 r00 = .01/mks_length # spot size of radiation
 t00 = 1e-6*C.c/mks_length # pulse width (not important)
 theta = 5*np.pi/180 # direction of propagation, 0 is +z
+f_num = (mirror_R/2)/(2*r00)
+a00 = 1e-3*f_num
 
 # Set up dictionaries
 
@@ -37,7 +39,7 @@ for i in range(1):
 				'message' : mess})
 
 	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,np.cos(theta),0.0,-np.sin(theta)) ,
+					'a0' : (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) ,
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
@@ -59,8 +61,8 @@ for i in range(1):
 	optics.append([
 		{	'object' : surface.SphericalCap('mirror'),
 			'reflective' : True,
-			'radius of sphere' : lens_R,
-			'radius of edge' : lens_D/2,
+			'radius of sphere' : mirror_R,
+			'radius of edge' : mirror_D/2,
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,np.pi,0.)},
 
@@ -71,9 +73,8 @@ for i in range(1):
 			'origin' : (0.043/mks_length,0.0,-.49/mks_length),
 			'euler angles' : (0.,np.pi,0.)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
+		{	'object' : surface.EikonalProfiler('terminal'),
 			'size' : (0.5/mks_length,0.5/mks_length),
-			'grid points' : (128,128,1),
 			'origin' : (0.,0.,-1/mks_length)}
 		])
 

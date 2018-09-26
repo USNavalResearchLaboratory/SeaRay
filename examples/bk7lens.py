@@ -38,11 +38,12 @@ r00 = .01/mks_length # spot size of radiation
 t00 = 1e-6*C.c/mks_length # pulse width (not important)
 theta = 0 # direction of propagation, 0 is +z
 f_num = lens_f/(2*r00)
+a00 = 1e-3*f_num
 paraxial_e_size = 4.0*f_num/1.0
 paraxial_zR = 0.5*1.0*paraxial_e_size**2
 mess = mess + '  f/# = {:.2f}\n'.format(f_num)
-mess = mess + '  Theoretical paraxial spot size (mm) = {:.3f}\n'.format(1e3*mks_length*paraxial_e_size)
-mess = mess + '  Theoretical paraxial Rayleigh length (mm) = {:.2f}\n'.format(1e3*mks_length*paraxial_zR)
+mess = mess + '  Theoretical paraxial spot size (um) = {:.3f}\n'.format(1e6*mks_length*paraxial_e_size)
+mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
 
 # Set up dictionaries
 
@@ -53,7 +54,7 @@ for i in range(1):
 				'message' : mess})
 
 	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,np.cos(theta),0.0,-np.sin(theta)) ,
+					'a0' : (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) ,
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
@@ -89,9 +90,8 @@ for i in range(1):
 			'distance to caustic' : .057/mks_length,
 			'origin' : (0.,0.,0.05/mks_length)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
+		{	'object' : surface.EikonalProfiler('terminal'),
 			'size' : (.1/mks_length,.1/mks_length),
-			'grid points' : (128,128,1),
 			'origin' : (0.,0.,.15/mks_length)}
 		])
 

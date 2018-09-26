@@ -1,15 +1,14 @@
 from scipy import constants as C
 import numpy as np
-from scipy.optimize import brentq
 import dispersion
 import surface
 import volume
 
-# Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a 3D grid.
-# The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
+# Example of aspheric lens focusing and dispersive effects
+# The aspheric surface is modeled using a surface mesh
 
-mks_length = 0.8e-6 / (2*np.pi)
+mks_length = 0.4e-6 / (2*np.pi)
+bundle_scale = 1e-4
 sim = []
 wave = []
 ray = []
@@ -18,31 +17,29 @@ diagnostics = []
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
-# Use thick lens theory to set up channel parameters for given focal length
 
-ideal_form = False
-f = 0.01/mks_length
-Rlens = 0.75*f
-if ideal_form:
-	Lch = 1.5*f
-	lens_object = volume.Grid('plasma')
-else:
-	Lch = 0.2*f
-	lens_object = volume.TestGrid('plasma')
-Fnum = 1.0
-r00 = 0.5*f/Fnum # spot size of radiation
-t00 = 1e-6*C.c/mks_length # pulse width (not important)
-c0 = 0.01
-h0 = np.sqrt(1-c0)
-t = Lch/np.sqrt(1-c0)
-Omega = brentq(lambda q : q*np.tan(q) - t/(f-Lch/2), 0.0, 0.999*np.pi/2) / t
-c2 = Omega**2
-c4 = -Omega**4/4
-x0 = 100*r00
-c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
-c6 = 0.0
-eik_to_caustic = 0.001/mks_length
-a00 = 1e-3*Fnum
+w_las = 1.0
+nrefr = np.sqrt(1+dispersion.BK7(mks_length).chi(w_las)[0])
+mess = mess + '  BK7 Refractive index at {:.0f} nm = {:.3f}\n'.format(2*np.pi*mks_length*1e9,nrefr)
+lens_D = 0.0024/mks_length
+lens_R = 0.00142/mks_length
+lens_t = 0.001/mks_length
+lens_f = 0.0025/mks_length
+f_num = 8.0
+r00 = 0.5*lens_f/f_num # spot size of radiation
+rb = r00*bundle_scale
+t00 = 10e-15*C.c/mks_length # pulse width
+sigma_w = 2/t00
+band = (w_las - 4*sigma_w , w_las + 4*sigma_w)
+a00 = 1e-3*f_num
+theta = 0 # direction of propagation, 0 is +z
+paraxial_e_size = 4.0*f_num/w_las
+paraxial_zR = 0.5*w_las*paraxial_e_size**2
+focused_a0 = w_las*lens_f*a00/(8*f_num**2)
+mess = mess + '  f/# = {:.2f}\n'.format(f_num)
+mess = mess + '  Theoretical paraxial spot size (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_e_size)
+mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
+mess = mess + '  Focused paraxial intensity (a^2) = {:.2f}\n'.format(focused_a0**2)
 
 # Set up dictionaries
 
@@ -53,49 +50,60 @@ for i in range(1):
 				'message' : mess})
 
 	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,a00,0.0,0.0) ,
+					'a0' : (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) ,
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (1.0,0.0,0.0,1.0) ,
+					'k0' : (w_las,w_las*np.sin(theta),0.0,w_las*np.cos(theta)) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (0.0,0.0,0.0,-f),
-					'pulse shape' : 'sech',
-					'supergaussian exponent' : 8})
+					'focus' : (0.0,0.0,0.0,-.003/mks_length),
+					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (64,64,1),
-					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cartesian',
+	ray.append({	'number' : (32,128,4,1),
+					'bundle radius' : (rb,rb,rb,rb),
+					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (-1.4*r00,1.4*r00,-1.4*r00,1.4*r00,-2*t00,2*t00)})
+					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : lens_object,
-			'radial coefficients' : (c0,c2,c4,c6), # only used for test grid
-			'mesh points' : (400,400,2), # only used for test grid
-			'file' : 'extras/ideal-form-3d.npy',
-			'density multiplier' : 1.0,
-			'dispersion inside' : dispersion.ColdPlasma(),
-			'dispersion outside' : dispersion.Vacuum(),
-			'size' : (2*Rlens,2*Rlens,Lch),
-			'origin' : (0.,0.,0.),
-			'euler angles' : (0.,0.,0.),
-			'integrator' : 'symplectic',
-			'dt' : Lch/1000,
-			'steps' : 1500,
-			'subcycles' : 10},
+		{	'object' : surface.EikonalProfiler('init'),
+			'size' : (.002/mks_length,.002/mks_length),
+			'origin' : (0.,0.,-0.0029/mks_length)},
 
-		{	'object' : surface.EikonalProfiler('det2'),
-			'size' : (.04/mks_length,.04/mks_length),
-			'grid points' : (128,128,1),
-			'euler angles' : (0.0,0.0,0.0),
-			'origin' : (0.,0.,.015/mks_length)}
+		{	'object' : volume.AsphericLens('lens'),
+			'dispersion inside' : dispersion.BK7(mks_length),
+			'dispersion outside' : dispersion.Vacuum(),
+			'thickness' : lens_t,
+			'rcurv beneath' : lens_R,
+			#'rcurv above' : lens_R*10000,
+			'aperture radius' : lens_D/2,
+			# The mesh is spherical (polar,azimuth).
+			# Poor polar resolution will lead to inaccurate intensity
+			# Poor azimuthal resolution will lead to numerical astigmatism.
+			'mesh points' : (128,128),
+			'conic constant' : 0.0,
+			'aspheric coefficients' : (-.2861/lens_f**3,1.034/lens_f**5,-9.299/lens_f**7,25.98/lens_f**9,-31.99/lens_f**11),
+			#'aspheric coefficients' : (0.0,0.0,0.0,0.0,0.0),
+			'origin' : (0.,0.,0.),
+			'euler angles' : (0.,0.,0.)},
+
+		{	'object' : surface.CylindricalProfiler('det'),
+			'integrator' : 'transform',
+			'frequency band' : band,
+			'size' : (150e-6/mks_length,150e-6/mks_length,900e-6/mks_length),
+			'grid points' : (32,1024,4,32),
+			'distance to caustic' : 0.0005/mks_length,
+			'origin' : (0.,0.,0.002/mks_length)},
+
+		{	'object' : surface.EikonalProfiler('terminal'),
+			'size' : (.0006/mks_length,.0006/mks_length),
+			'origin' : (0.,0.,0.003/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (8,8,1),
+						'orbit rays' : (1,4,4,1),
 						'base filename' : 'out/test'})

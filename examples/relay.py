@@ -85,7 +85,6 @@ for i in range(1):
 	optics.append([
 		{	'object' : surface.EikonalProfiler('init'),
 			'size' : (inch,inch),
-			'grid points' : (128,128,1),
 			'euler angles' : (0,0,0),
 			'origin' : (SHG[0],SHG[1],SHG[2]+1*cm)},
 
@@ -149,19 +148,16 @@ for i in range(1):
 
 		{	'object' : surface.EikonalProfiler('W1'),
 			'size' : (inch,inch),
-			'grid points' : (128,128,1),
 			'euler angles' : (0,0,0),
 			'origin' : (0,SHG[1]+25*cm,SHG[2]+70*cm)},
 
 		{	'object' : surface.EikonalProfiler('waist'),
 			'size' : (inch,inch),
-			'grid points' : (128,128,1),
 			'euler angles' : (0,0,0),
 			'origin' : (0,SHG[1]+25*cm,SHG[2]+69*cm+169*cm)},
 
 		{	'object' : surface.EikonalProfiler('W2'),
 			'size' : (inch,inch),
-			'grid points' : (128,128,1),
 			'euler angles' : (0,0,0),
 			'origin' : (0,SHG[1]+25*cm,SHG[2]+271*cm)},
 
@@ -189,7 +185,6 @@ for i in range(1):
 
 		{	'object' : surface.EikonalProfiler('sapphire'),
 			'size' : (inch,inch),
-			'grid points' : (128,128,1),
 			'euler angles' : (0,0,0),
 			'origin' : (0,SHG[1]+41.7*cm,SHG[2]+356*cm)},
 
