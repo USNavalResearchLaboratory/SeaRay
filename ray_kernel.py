@@ -116,27 +116,31 @@ def SphericalWave(xp,eikonal,vg,wave):
 	F4 = np.array(wave['focus'])
 	SG = np.array(wave['supergaussian exponent'])
 	# tf = time to reach focus, positive is incoming ray
+	# Transformation of ray box:
+	# Interpret z-tf as the new radial position
+	# Carry over angles from the plane directly
+	# This orients satellites in the new system
+	# N.b. this does alter the spot size by cos(theta0)
 	tf = F4[0]
-	xp[:,:,3] -= tf # put focus at origin
-	r2 = xp[:,:,1]**2 + xp[:,:,2]**2 + xp[:,:,3]**2
-	rho2 = xp[:,:,1]**2 + xp[:,:,2]**2
-	dz = xp[:,:,3]
-	phi = np.arctan2(xp[:,:,2],xp[:,:,1])
-	sgn = np.abs(dz)/dz # positive is outgoing ray
-	r = sgn*np.sqrt(r2)
+	xp[...,3] -= tf # put focus at origin
+	ro = np.sqrt(xp[...,1]**2 + xp[...,2]**2 + xp[...,3]**2)
+	r = xp[...,3]
+	phi = np.arctan2(xp[...,2],xp[...,1])
+	sgn = np.abs(r)/r # positive is outgoing ray
 	theta0 = np.pi/2 - sgn*np.pi/2
-	theta = np.arccos(dz/np.sqrt(r2))
+	theta = np.arccos(r/ro)
 	dtheta = np.arcsin(R4[1]/tf)
-	tau0 = tf
-	tau = xp[:,:,0] - r
-	dtau = R4[0]
+	xp[...,1] = np.abs(r) * np.sin(theta) * np.cos(phi)
+	xp[...,2] = np.abs(r) * np.sin(theta) * np.sin(phi)
+	xp[...,3] = np.abs(r) * np.cos(theta)
+
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
-	amag = amag * np.exp(-(theta-theta0)**SG/dtheta**SG) * np.exp(-(tau-tau0)**2/dtau**2)
+	amag = amag * (-tf/r) * np.exp(-(theta-theta0)**SG/dtheta**SG)
 	az = sgn * amag * np.sin(theta) * np.cos(phi)
 	xp[:,:,5] = sgn * xp[:,:,4] * np.sin(theta) * np.cos(phi)
 	xp[:,:,6] = sgn * xp[:,:,4] * np.sin(theta) * np.sin(phi)
 	xp[:,:,7] = sgn * xp[:,:,4] * np.cos(theta)
-	eikonal[:,0] = xp[:,0,4] * (tau0-tau[:,0])
+	eikonal[:,0] = xp[:,0,4] * xp[:,0,0]
 	eikonal[:,1] = np.sqrt(amag[:,0]**2 - az[:,0]**2)
 	eikonal[:,2] = 0
 	eikonal[:,3] = az[:,0]
@@ -167,22 +171,9 @@ def ParaxialWave(xp,eikonal,vg,wave):
 	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
 	xp[:,:,1:4] += F4[1:4]
 
-def init(wave_dict,ray_dict):
-	"""Use dictionaries from input file to create initial ray distribution"""
-	w0 = wave_dict['k0'][0]
-	N = AddFrequencyDimension(ray_dict['number'])
-	box = AddFrequencyRange(w0,ray_dict['box'])
-
-	# Set up host storage
+def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
+	'''Load the rays in the z=0 plane in a regular pattern.'''
 	num_bundles = N[0]*N[1]*N[2]*N[3]
-	xp = np.zeros((num_bundles,7,8)).astype(np.double)
-	eikonal = np.zeros((num_bundles,4)).astype(np.double)
-	vg = np.zeros((num_bundles,7,4)).astype(np.double)
-
-	# Initialize Rays
-	# It is assumed they start in vacuum
-	# Packing of xp : xp[bundle,bundle_element,components]
-	# components : x0,x1,x2,x3,k0,k1,k2,k3 : x0=time : k0=energy
 	o0 = np.ones(N[0])
 	o1 = np.ones(N[1])
 	o2 = np.ones(N[2])
@@ -190,7 +181,7 @@ def init(wave_dict,ray_dict):
 	# load frequencies to respect FFT conventions
 	grid0 = grid_tools.cyclic_nodes(box[0],box[1],N[0])
 	grid1 = grid_tools.cell_centers(box[2],box[3],N[1])
-	if ray_dict['loading coordinates']=='cartesian':
+	if loading_coordinates=='cartesian':
 		grid2 = grid_tools.cell_centers(box[4],box[5],N[2])
 	else:
 		grid2 = grid_tools.cyclic_nodes(box[4],box[5],N[2])
@@ -198,7 +189,7 @@ def init(wave_dict,ray_dict):
 
 	# Load the primary rays in configuration+w space
 
-	if ray_dict['loading coordinates']=='cartesian':
+	if loading_coordinates=='cartesian':
 		xp[:,0,0] = 0.0
 		xp[:,0,1] = np.einsum('i,j,k,l',o0,grid1,o2,o3).reshape(num_bundles)
 		xp[:,0,2] = np.einsum('i,j,k,l',o0,o1,grid2,o3).reshape(num_bundles)
@@ -220,14 +211,55 @@ def init(wave_dict,ray_dict):
 	xp[:,5,:] = xp[:,0,:]
 	xp[:,6,:] = xp[:,0,:]
 
-	xp[:,1,1] += ray_dict['bundle radius'][1]
-	xp[:,2,1] -= ray_dict['bundle radius'][1]
+	xp[:,1,1] += bundle_radius[1]
+	xp[:,2,1] -= bundle_radius[1]
 
-	xp[:,3,2] += ray_dict['bundle radius'][2]
-	xp[:,4,2] -= ray_dict['bundle radius'][2]
+	xp[:,3,2] += bundle_radius[2]
+	xp[:,4,2] -= bundle_radius[2]
 
-	xp[:,5,3] += ray_dict['bundle radius'][3]
-	xp[:,6,3] -= ray_dict['bundle radius'][3]
+	xp[:,5,3] += bundle_radius[3]
+	xp[:,6,3] -= bundle_radius[3]
+
+def relaunch_rays(xp,eikonal,vg,A,vol_dict):
+	'''Use wave data to create a new ray distribution.
+	The wave data is stored as A[w,x,y,z]'''
+	# Assume vacuum for now
+	N = AddFrequencyDimension(ray_dict['relaunch number'])
+	box = AddFrequencyRange(1.0,vol_dict['relaunch box'])
+	load_rays_xw(xp,ray_dict['relaunch bundle radius'],N,box,ray_dict['relaunch loading coordinates'])
+	ampl = np.abs(A[...,-1])
+	phasex = np.unwrap(np.angle(A[...,-1]),axis=1)
+	phasey = np.unwrap(np.angle(A[...,-1]),axis=2)
+	kx = np.gradient(phasex,axis=1)
+	ky = np.gradient(phasey,axis=2)
+	# Some kind of loop over frequency
+	# xp[...,4] = get frequency
+	# xp[...,5] = 2D gather of kx
+	# xp[...,6] = 2D gather of ky
+	xp[...,7] = np.sqrt(xp[...,4]**2 - xp[...,5]**2 - xp[...,6]**2)
+
+def init(wave_dict,ray_dict):
+	'''Use dictionaries from input file to create initial ray distribution.
+	Vacuum is assumed as the initial environment.
+	Rays are packed in bundles of 7.  If there are Nb bundles, there are Nb*7 rays.
+
+	:returns: xp,eikonal,vg
+	:rtype: numpy.ndarray((Nb,7,8)),numpy.ndarray((Nb,4)),numpy.ndarray((Nb,7,4))
+
+	The 8 elements of xp are x0,x1,x2,x3,k0,k1,k2,k3.
+	The 4 elements of eikonal are phase,ax,ay,az.
+	The 4 elements of vg are 1,vx,vy,vz.'''
+	N = AddFrequencyDimension(ray_dict['number'])
+	box = AddFrequencyRange(wave_dict['k0'][0],ray_dict['box'])
+
+	# Set up host storage
+	num_bundles = N[0]*N[1]*N[2]*N[3]
+	xp = np.zeros((num_bundles,7,8)).astype(np.double)
+	eikonal = np.zeros((num_bundles,4)).astype(np.double)
+	vg = np.zeros((num_bundles,7,4)).astype(np.double)
+
+	# Spatial and frequency loading
+	load_rays_xw(xp,ray_dict['bundle radius'],N,box,ray_dict['loading coordinates'])
 
 	# Use wave description to set wavenumber, phase, and amplitude
 	# All primary rays and satellite rays must be loaded into configuration space first

@@ -2,8 +2,13 @@ Reference
 ===============
 
 .. automodule:: dispersion
-	:members:
-	
+
+	.. autoclass:: sellmeier_medium
+		:members:
+		:special-members:
+
+	.. autoclass:: sellmeier_medium_alt1
+
 .. automodule:: surface
 	:members: base_surface
 
@@ -12,6 +17,7 @@ Reference
 
 .. automodule:: ray_kernel
 	:members:
+
 .. automodule:: paraxial_kernel
 	:members:
 

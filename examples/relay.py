@@ -72,7 +72,6 @@ for i in range(1):
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
 					'focus' : (0.0,SHG[0],SHG[1],SHG[2]),
-					'pulse shape' : 'sech',
 					'supergaussian exponent' : 8})
 
 	ray.append({	'number' : (16,16,1),

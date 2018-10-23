@@ -3,9 +3,11 @@ import numpy as np
 import dispersion
 import surface
 import volume
+import input_tools
 
 # Example of aspheric lens focusing and dispersive effects
 # The aspheric surface is modeled using a surface mesh
+# IMPORTANT: frequency and azimuthal nodes in source and detector must match
 
 mks_length = 0.4e-6 / (2*np.pi)
 bundle_scale = 1e-4
@@ -18,28 +20,22 @@ mess = 'Processing input file...\n'
 
 # Preprocessing calculations
 
-w_las = 1.0
-nrefr = np.sqrt(1+dispersion.BK7(mks_length).chi(w_las)[0])
+helper = input_tools.InputHelper(mks_length)
+
+w00 = 1.0
+theta = 0 # direction of propagation, 0 is +z
+nrefr = np.sqrt(1+dispersion.BK7(mks_length).chi(w00)[0])
 mess = mess + '  BK7 Refractive index at {:.0f} nm = {:.3f}\n'.format(2*np.pi*mks_length*1e9,nrefr)
 lens_D = 0.0024/mks_length
 lens_R = 0.00142/mks_length
 lens_t = 0.001/mks_length
-lens_f = 0.0025/mks_length
+f = 0.0025/mks_length
 f_num = 8.0
-r00 = 0.5*lens_f/f_num # spot size of radiation
+r00 = 0.5*f/f_num # spot size of radiation
 rb = r00*bundle_scale
-t00 = 10e-15*C.c/mks_length # pulse width
-sigma_w = 2/t00
-band = (w_las - 4*sigma_w , w_las + 4*sigma_w)
-a00 = 1e-3*f_num
-theta = 0 # direction of propagation, 0 is +z
-paraxial_e_size = 4.0*f_num/w_las
-paraxial_zR = 0.5*w_las*paraxial_e_size**2
-focused_a0 = w_las*lens_f*a00/(8*f_num**2)
-mess = mess + '  f/# = {:.2f}\n'.format(f_num)
-mess = mess + '  Theoretical paraxial spot size (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_e_size)
-mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
-mess = mess + '  Focused paraxial intensity (a^2) = {:.2f}\n'.format(focused_a0**2)
+t00,band = helper.TransformLimitedBandwidth(w00,'10 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,f,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
@@ -54,14 +50,14 @@ for i in range(1):
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (w_las,w_las*np.sin(theta),0.0,w_las*np.cos(theta)) ,
+					'k0' : (w00,w00*np.sin(theta),0.0,w00*np.cos(theta)) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
 					'focus' : (0.0,0.0,0.0,-.003/mks_length),
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (32,128,4,1),
+	ray.append({	'number' : (64,128,4,1),
 					'bundle radius' : (rb,rb,rb,rb),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
@@ -83,9 +79,9 @@ for i in range(1):
 			# The mesh is spherical (polar,azimuth).
 			# Poor polar resolution will lead to inaccurate intensity
 			# Poor azimuthal resolution will lead to numerical astigmatism.
-			'mesh points' : (128,128),
+			'mesh points' : (256,128),
 			'conic constant' : 0.0,
-			'aspheric coefficients' : (-.2861/lens_f**3,1.034/lens_f**5,-9.299/lens_f**7,25.98/lens_f**9,-31.99/lens_f**11),
+			'aspheric coefficients' : (-.2861/f**3,1.034/f**5,-10/f**7,25.98/f**9,-31.99/f**11),
 			#'aspheric coefficients' : (0.0,0.0,0.0,0.0,0.0),
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.)},
@@ -94,12 +90,12 @@ for i in range(1):
 			'integrator' : 'transform',
 			'frequency band' : band,
 			'size' : (150e-6/mks_length,150e-6/mks_length,900e-6/mks_length),
-			'grid points' : (32,1024,4,32),
+			'grid points' : (64,256,4,1),
 			'distance to caustic' : 0.0005/mks_length,
 			'origin' : (0.,0.,0.002/mks_length)},
 
-		{	'object' : surface.EikonalProfiler('terminal'),
-			'size' : (.0006/mks_length,.0006/mks_length),
+		{	'object' : surface.EikonalProfiler('terminus'),
+			'size' : (.002/mks_length,.002/mks_length),
 			'origin' : (0.,0.,0.003/mks_length)}
 		])
 

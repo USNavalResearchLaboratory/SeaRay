@@ -53,6 +53,8 @@ nbar = 1.0 - (grad[0]**2 + grad[1]**2)
 # nbar[numpy.where(r2<f/4)]=1e-10
 # Throw away guard cells
 nbar = nbar[1:-1,1:-1]
+if numpy.min(nbar)<0.0:
+	nbar -= numpy.min(nbar)*1.000001
 
 plt.figure(1,dpi=300)
 plt.imshow(numpy.log10(nbar),origin='lower',cmap=my_color_map,extent=[-Lbox/2,Lbox/2,0,Rbox])

@@ -63,7 +63,9 @@ if len(sys.argv)==1:
 	print('  The first group of indices are the plotting axes, e.g. 1,2 or 1,2,3.')
 	print('  The next group of indices select slices of the remaining axes.')
 	print('  The last slash, if present, precedes the fraction of the domain to display.')
+	print('  You can use 5 dimensions if time and frequency are the plot axes (induces Wigner transform).')
 	print('mesh: display all surface meshes (may be very slow)')
+	print('bundle=b: display the configuration of the designated ray bundle, e.g. bundle=0')
 	print('-----------------Animations-----------------')
 	print('Generate animations by replacing a slice index with a python range.')
 	print('E.g., det=t1,2/:5,0 generates a movie in the xy plane with the first 5 time levels at z slice 0.')
@@ -207,6 +209,12 @@ def GetPrefixList(postfix):
 		ans.append(f[:-len(postfix)-4])
 	return ans
 
+def IntegrateImage(A,rng):
+	# Assumes A is arranged as [row,col]
+	dh = (rng[1] - rng[0]) / A.shape[1]
+	dv = (rng[3] - rng[2]) / A.shape[0]
+	return np.sum(A)*dh*dv
+
 class Units:
 	def __init__(self,label_type):
 		mks_length = inputs.sim[0]['mks_length']
@@ -276,7 +284,7 @@ class Units:
 			self.normalization[2] = 1/np.pi
 			self.normalization[3] = 1/np.pi
 		if label_type=='cart' or label_type=='cyl' or label_type=='sph':
-			self.lab_str[4] = self.lab_str[4].replace('\delta k_0','\delta\omega').replace('k_{00}','\omega_0')
+			self.lab_str[4] = self.lab_str[4].replace('\delta k_0','\delta\omega').replace('k_{00}','\omega_{00}')
 			self.lab_str[5] = self.lab_str[5].replace('k_1','k_x').replace('k_{00}','\omega_0')
 			self.lab_str[6] = self.lab_str[6].replace('k_2','k_y').replace('k_{00}','\omega_0')
 			self.lab_str[7] = self.lab_str[3].replace('k_3','k_z').replace('k_{00}','\omega_0')
@@ -308,11 +316,11 @@ class MeshViewer:
 		self.simplex = []
 		l = GetPrefixList('simplices')
 		for prefix in l:
-			self.mesh.append(np.load(prefix+'mesh.npy'))
-			self.simplex.append(np.load(prefix+'simplices.npy'))
+			self.mesh.append(prefix+'mesh.npy')
+			self.simplex.append(prefix+'simplices.npy')
 		l = GetPrefixList('mesh')
 		for prefix in l:
-			self.structured_mesh.append(np.load(prefix+'mesh.npy'))
+			self.structured_mesh.append(prefix+'mesh.npy')
 	def GetMeshList(self):
 		return self.structured_mesh
 	def Plot(self,mpl_plot_count,maya_plot_count):
@@ -324,17 +332,46 @@ class MeshViewer:
 			fig = plt.figure(mpl_plot_count,figsize=(7,6))
 			ax = fig.add_subplot(111,projection='3d')
 			surf = []
-			for j,mesh in enumerate(self.mesh):
+			for j,path in enumerate(self.mesh):
+				mesh = np.load(path)
+				simplices = np.load(self.simplex[j])
 				x = mesh[:,:,1].flatten()
 				y = mesh[:,:,2].flatten()
 				z = mesh[:,:,3].flatten()
-				tri = mpl.tri.Triangulation(normalization[1]*x,normalization[2]*y,triangles=self.simplex[j])
+				tri = mpl.tri.Triangulation(normalization[1]*x,normalization[2]*y,triangles=simplices)
 				surf.append(ax.plot_trisurf(tri,normalization[3]*z,cmap=plotter_defaults['level colors']))
 				#ax.set_zlim(-5,5)
 			ax.set_xlabel(lab_str[1])
 			ax.set_ylabel(lab_str[2])
 			ax.set_zlabel(lab_str[3])
 			plt.tight_layout()
+		return mpl_plot_count,maya_plot_count
+
+class Bundles:
+	def __init__(self,lab_sys):
+		self.label_system = lab_sys
+		self.xp = simname+'_xp.npy'
+	def Plot(self,mpl_plot_count,maya_plot_count):
+		lab_str = self.label_system.GetLabels()
+		normalization = self.label_system.GetNormalization()
+		if maya_loaded:
+			try:
+				maya_plot_count += 1
+				b = int(arg_dict['bundle'])
+				xpb = np.load(self.xp)[b,...]
+				print('Primary ray location =',xpb[0,1:4])
+				xpb[:,1:4] -= xpb[0,1:4]
+				xpb[:,1:4] *= normalization[1:4]
+				extent = [np.min(xpb[:,1]),np.max(xpb[:,1]),
+					np.min(xpb[:,2]),np.max(xpb[:,2]),
+					np.min(xpb[:,3]),np.max(xpb[:,3])]
+				mlab.quiver3d(xpb[...,1],xpb[...,2],xpb[...,3],
+					xpb[...,5],xpb[...,6],xpb[...,7],mode='arrow')
+				mlab.axes(xlabel=lab_str[1],ylabel=lab_str[2],zlabel=lab_str[3],extent=extent)
+				mlab.outline(extent=extent)
+				mlab.view(azimuth=80,elevation=30,distance=6*np.max(extent),focalpoint=(0,0,0))
+			except KeyError:
+				None
 		return mpl_plot_count,maya_plot_count
 
 class PhaseSpace:
@@ -369,8 +406,8 @@ class PhaseSpace:
 					weights = self.eikonal[:,1]**2 + self.eikonal[:,2]**2 + self.eikonal[:,3]**2
 					sel = np.logical_and(np.logical_not(np.isnan(x)),np.logical_not(np.isnan(y)))
 					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],self.res,self.res)
-					harray = grid_tools.Smooth1D(harray,4,0)
-					harray = grid_tools.Smooth1D(harray,4,1)
+					#harray = grid_tools.Smooth1D(harray,4,0)
+					#harray = grid_tools.Smooth1D(harray,4,1)
 					pre_str = TransformColorScale(harray,dynamic_range)
 					plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=plot_ext)
 					b=plt.colorbar()
@@ -427,7 +464,8 @@ class Orbits:
 					if x.shape[0]>0:
 						characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
 						mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
-				for mesh in self.mesh_list:
+				for path in self.mesh_list:
+					mesh = np.load(path)
 					c = mesh[:,:,0]
 					x = mesh[:,:,1]
 					y = mesh[:,:,2]
@@ -441,7 +479,10 @@ class Orbits:
 					ax.plot(normalization[1]*self.orbits[:,j,1],normalization[2]*self.orbits[:,j,2],normalization[3]*self.orbits[:,j,3])
 				surf = []
 				cmap = mpl.cm.ScalarMappable(cmap=plotter_defaults['level colors'])
-				for mesh in self.mesh_list:
+				needsBar = False
+				for path in self.mesh_list:
+					mesh = np.load(path)
+					needsBar = needsBar or np.max(mesh[...,0])!=np.min(mesh[...,0])
 					c = cmap.to_rgba(mesh[:,:,0]*normalization[3])
 					x = mesh[:,:,1]
 					y = mesh[:,:,2]
@@ -452,7 +493,7 @@ class Orbits:
 				ax.set_xlabel(lab_str[1])
 				ax.set_ylabel(lab_str[2])
 				ax.set_zlabel(lab_str[3])
-				if len(self.mesh_list)>0 and np.max(mesh[:,:,0])!=np.min(mesh[:,:,0]):
+				if len(self.mesh_list)>0 and needsBar:
 					fig.colorbar(cmap, shrink=0.5, aspect=10, label='height ('+units.LengthLabel()+')')
 				plt.tight_layout()
 		for i in range(12):
@@ -585,20 +626,34 @@ class FullWaveProfiler:
 						coeff = (dom[9]-dom[8])/(2*np.pi)
 						A = coeff*np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
 					else:
-						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+r'$^2$)'
-						A *= self.label_system.GetNormalization()[0]
-				A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
-				A2,rdom = self.reducer(A2,dom,wave_zone_fraction)
+						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
+						A *= np.sqrt(self.label_system.GetNormalization()[0]/(2*np.pi))
+				if data_ax[0]==0 and data_ax[1]==0:
+					bar_label = r'${\cal N}(\omega,t)$'
+					wigner = True
+					A2 = A[...,0]
+					rdom = dom
+				else:
+					wigner = False
+					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
+					A2,rdom = self.reducer(A2,dom,wave_zone_fraction)
 				lab_str = self.label_system.GetLabels()
 				lab_str[0] = lab_str[0].replace('t','t-z/c')
 				lab_range_full = self.label_system.PlotExt(dom,plot_ax)
 				lab_range_red = self.label_system.PlotExt(rdom,plot_ax)
-				if movie:
+				if movie and not wigner:
 					cbar_str = TransformColorScale(A2,dynamic_range)
 					val_rng = (np.min(A2),np.max(A2))
 				for file_idx,slice_now in enumerate(slice_tuples):
 					data_slice = ExtractSlice(A2,data_ax,slice_now)
-					if not movie:
+					if wigner:
+						if plot_ax[0]==4:
+							data_ax = (1,0)
+						else:
+							data_ax = (0,1)
+						ds = (dom[1] - dom[0])/A2.shape[0]
+						data_slice = grid_tools.WignerTransform(data_slice,ds)
+					if not movie or wigner:
 						cbar_str = TransformColorScale(data_slice,dynamic_range)
 						val_rng = (np.min(data_slice),np.max(data_slice))
 					if len(plot_ax)==3:
@@ -617,10 +672,11 @@ class FullWaveProfiler:
 						if movie:
 							mlab.savefig('tempfile{:03d}.png'.format(file_idx))
 					else:
-						mpl_plot_count += 1
-						plt.figure(mpl_plot_count,figsize=(5,4))
 						if data_ax[0]<data_ax[1]:
 							data_slice = data_slice.swapaxes(0,1)
+						print(det_name,'integration =',IntegrateImage(data_slice,lab_range_red))
+						mpl_plot_count += 1
+						plt.figure(mpl_plot_count,figsize=(5,4))
 						plt.imshow(data_slice,origin='lower',vmin=val_rng[0],vmax=val_rng[1],cmap=my_color_map,aspect='auto',extent=lab_range_red)
 						plt.xlabel(lab_str[plot_ax[0]],size=18)
 						plt.ylabel(lab_str[plot_ax[1]],size=18)
@@ -673,6 +729,9 @@ except:
 
 meshPlots = MeshViewer(Units(label_type))
 mpl_plot_count,maya_plot_count = meshPlots.Plot(mpl_plot_count,maya_plot_count)
+
+bundlePlots = Bundles(Units(label_type))
+mpl_plot_count,maya_plot_count = bundlePlots.Plot(mpl_plot_count,maya_plot_count)
 
 orbitPlots = Orbits(meshPlots.GetMeshList(),Units(label_type))
 mpl_plot_count,maya_plot_count = orbitPlots.Plot(mpl_plot_count,maya_plot_count)

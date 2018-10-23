@@ -2,6 +2,7 @@ from scipy import constants as C
 import numpy as np
 import dispersion
 import surface
+import input_tools
 
 # Example showing 90 degree off-axis parabolic mirror
 # Suggested plotter line:
@@ -18,24 +19,20 @@ mess = 'Processing input file...\n'
 
 # Preprocessing calculations
 
+helper = input_tools.InputHelper(mks_length)
+
+w00 = 1.0
+theta = 0.0 # direction of propagation, 0 is +z
 par_f = 0.5/mks_length
 y0 = 2*par_f
 z0 = -2*par_f
 r00 = .05/mks_length # spot size of radiation
-t00 = 1e-6*C.c/mks_length # pulse width (not important)
-theta = 0.0 # direction of propagation, 0 is +z
 
 # N.b. the effective focal length is y0, not par_f
-w_las = 1.0
 f_num = y0/(2*r00)
-a00 = 1e-3*f_num
-paraxial_e_size = 4.0*f_num/w_las
-paraxial_zR = 0.5*w_las*paraxial_e_size**2
-focused_a0 = w_las*y0*a00/(8*f_num**2)
-mess = mess + '  f/# = {:.2f}\n'.format(f_num)
-mess = mess + '  Theoretical paraxial spot size (um) = {:.3f}\n'.format(1e6*mks_length*paraxial_e_size)
-mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
-mess = mess + '  Focused paraxial intensity (a^2) = {:.2f}\n'.format(focused_a0**2)
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,y0,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,y0,f_num)
 
 # Set up dictionaries
 
@@ -50,7 +47,7 @@ for i in range(1):
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (1.0,np.sin(theta),0.0,np.cos(theta)) ,
+					'k0' : (w00,w00*np.sin(theta),0.0,w00*np.cos(theta)) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
@@ -79,7 +76,7 @@ for i in range(1):
 			'origin' : (0.,0.00125/mks_length,0.),
 			'euler angles' : (0.,np.pi/2,0.)},
 
-		{	'object' : surface.EikonalProfiler('terminal'),
+		{	'object' : surface.EikonalProfiler('terminus'),
 			'size' : (0.3/mks_length,0.3/mks_length),
 			'origin' : (0.,-par_f,0.),
 			'euler angles' : (0.,np.pi/2,0.)}

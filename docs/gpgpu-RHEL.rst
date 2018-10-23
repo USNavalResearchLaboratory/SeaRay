@@ -42,12 +42,11 @@ Interactive Notebooks
 ----------------------
 
 	#. If your environment is not already activated, activate it as above.
-	#. :samp:`conda install jupyter`
-	#. :samp:`conda install nb_conda`
-	#. :samp:`conda install -c conda-forge widgetsnbextension`
-	#. If there are problems with Jupyter notebooks the following may be tried:
+	#. :samp:`conda install jupyter nb_conda`
+	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/docs/config-files/custom.css` to the new directory.
+	#. If there are problems with Jupyter notebooks any or all of the following may be tried:
 
+		* :samp:`conda install widgetsnbextension={n}`, where :samp:`{n}` is some older version.
+		* :samp:`conda install ipywidgets`
 		* :samp:`jupyter nbextension install --py --sys-prefix widgetsnbextension`
 		* :samp:`jupyter nbextension enable --py --sys-prefix widgetsnbextension`
-
-	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/docs/config-files/custom.css` to the new directory.

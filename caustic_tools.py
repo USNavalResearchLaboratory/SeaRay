@@ -24,8 +24,8 @@ def ParaxialFocus(xps,vg):
 class FourierTool:
 
 	def __init__(self,pts,size):
-		'''pts = tuple with (Nx,Ny,Nz)
-		size = tuple with (Lx,Ly,Lz)'''
+		'''pts = tuple with (Nw,Nx,Ny,Nz)
+		size = tuple with (band,Lx,Ly,Lz)'''
 		self.pts = pts
 		self.size = size
 		self.dx = (size[0]/pts[0],size[1]/pts[1],size[2]/pts[2],size[3]/pts[3])

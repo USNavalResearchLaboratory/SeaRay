@@ -1,7 +1,19 @@
 import numpy as np
 import scipy.optimize
 import scipy.interpolate
-from mayavi import mlab
+try:
+	import matplotlib.pyplot as plt
+	mpl_loaded = True
+except:
+	mpl_loaded = False
+try:
+	from mayavi import mlab
+	maya_loaded = True
+except:
+	maya_loaded = False
+
+# 3D viz will put NaN outside the lens cylinder
+viz_3d = False
 
 # Plasma lens is scalable
 # Length units are arbitrary
@@ -12,8 +24,8 @@ zetam = -10000
 zetap = f
 
 # Set up the 2D phase array
-Nr = 100
-Nz = 100
+Nr = 200
+Nz = 200
 psi = np.zeros((Nr+2,Nz+2))
 
 # Limits of the computational box
@@ -52,11 +64,11 @@ nbar1 = 1.0 - (grad[0]**2 + grad[1]**2)
 # Throw away guard cells
 nbar = nbar1[1:-1,1:-1]
 
-# Interpolating function for 2D data
-
-nfunc = scipy.interpolate.interp2d(r_pts,z_pts,nbar1)
-
-# Extend to 3D for viz
+# Extend to 3D
+if viz_3d:
+	fval = np.nan
+else:
+	fval = 0.0
 x_pts = np.copy(r_pts)[1:-1]
 y_pts = np.copy(r_pts)[1:-1]
 z_pts = np.copy(z_pts)[1:-1]
@@ -70,15 +82,31 @@ x3 = np.einsum('i,j,k',np.ones(Nx),np.ones(Ny),z_pts)
 rho = np.sqrt(np.outer(x_pts,np.ones(Ny))**2 + np.outer(np.ones(Nx),y_pts)**2)
 nbar3d = np.zeros((Nx,Ny,Nz))
 for k,z0 in enumerate(z_pts):
-	f = scipy.interpolate.interp1d(r_pts,nbar1[:,k+1],bounds_error=False)
+	f = scipy.interpolate.interp1d(r_pts,nbar1[:,k+1],bounds_error=False,fill_value=fval)
 	nbar3d[:,:,k] = f(rho)
-mlab.figure(bgcolor=(0,0,0))
-# src = mlab.pipeline.array2d_source(nbar3d[:,100,:])
-# obj = mlab.pipeline.image_actor(src,colormap='gist_ncar')
-src = mlab.pipeline.scalar_field(x1,x2,x3,nbar3d)
-obj = mlab.pipeline.iso_surface(src,contours=[0.1,0.25,0.4],opacity=1.0)
 
-mlab.savefig('test-3d.png')
+#print(np.where(np.isnan(nbar3d)))
+#print(np.where(np.isinf(nbar3d)))
+if np.min(nbar3d)<0.0:
+	nbar3d -= np.min(nbar3d)*1.000001
 np.save('ideal-form-3d',nbar3d)
 
-mlab.show()
+if mpl_loaded and not viz_3d:
+	plt.figure(1,dpi=100)
+	plt.imshow(nbar3d[:,Ny//2,:],origin='lower',cmap='viridis',extent=[-Lbox/2,Lbox/2,-Rbox,Rbox])
+	b=plt.colorbar(orientation='horizontal')
+	b.set_label(r'$n_e/n_c$',size=18)
+	plt.xlabel(r'$z/f$',size=18)
+	plt.ylabel(r'$x/f$',size=18)
+	plt.tight_layout()
+	plt.savefig('test-3d.png')
+	plt.show()
+
+if maya_loaded and viz_3d:
+	mlab.figure(bgcolor=(0,0,0))
+	# src = mlab.pipeline.array2d_source(nbar3d[:,:,int(Nz/2)])
+	# obj = mlab.pipeline.image_actor(src,colormap='viridis')
+	src = mlab.pipeline.scalar_field(x1,x2,x3,nbar3d)
+	obj = mlab.pipeline.iso_surface(src,contours=[0.1,0.25,0.4],opacity=1.0)
+	mlab.savefig('test-3d.png')
+	mlab.show()

@@ -4,6 +4,7 @@ from scipy.optimize import brentq
 import dispersion
 import surface
 import volume
+import input_tools
 
 # Example input file for parabolic or quartic plasma lenses.
 # The parabolic lens produces large area caustic surfaces in
@@ -25,11 +26,13 @@ mess = 'Processing input file...\n'
 # Preprocessing calculations
 # Use thick lens theory to set up channel parameters for given focal length
 
+helper = input_tools.InputHelper(mks_length)
+
+w00 = 1.0
 quartic_correction = True
 f = 0.01/mks_length
 f_num = 3.0
 r00 = 0.5*f/f_num # spot size of radiation
-t00 = 1e-6*C.c/mks_length # pulse width (not important)
 Rlens = 0.01/mks_length
 Lch = 0.002/mks_length
 c0 = 0.01
@@ -39,19 +42,16 @@ Omega = brentq(lambda q : q*np.tan(q) - t/(f-Lch/2), 0.0, 0.999*np.pi/2) / t
 c2 = Omega**2
 c4 = 0.0
 c6 = 0.0
-eik_to_caustic = -0.002/mks_length
+eik_to_caustic = -0.001/mks_length
 if quartic_correction:
 	c4 = -Omega**4/4
 	x0 = 100*r00
 	c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
 	eik_to_caustic *= -1
-a00 = 1e-3*f_num
 
-paraxial_e_size = 4.0*f_num/1.0
-paraxial_zR = 0.5*1.0*paraxial_e_size**2
-mess = mess + '  f/# = {:.2f}\n'.format(f_num)
-mess = mess + '  Theoretical paraxial spot size (um) = {:.3f}\n'.format(1e6*mks_length*paraxial_e_size)
-mess = mess + '  Theoretical paraxial Rayleigh length (um) = {:.2f}\n'.format(1e6*mks_length*paraxial_zR)
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,f,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
@@ -66,12 +66,11 @@ for i in range(1):
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (1.0,0.0,0.0,1.0) ,
+					'k0' : (w00,0.0,0.0,w00) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
 					'focus' : (0.0,0.0,0.0,-.006/mks_length),
-					'pulse shape' : 'sech',
 					'supergaussian exponent' : 2})
 
 	ray.append({	'number' : (512,4,1),
@@ -89,7 +88,6 @@ for i in range(1):
 			'length' : Lch,
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.),
-			'integrator' : 'symplectic',
 			'radial coefficients' : (c0,c2,c4,c6),
 			'dt' : Lch/1000,
 			# Use enough steps to make sure rays reach end of box.
@@ -100,12 +98,12 @@ for i in range(1):
 
 		{	'object' : surface.CylindricalProfiler('det'),
 			'integrator' : 'transform',
-			'size' : (.0012/mks_length,.0012/mks_length,30e-6/mks_length),
+			'size' : (.002/mks_length,.002/mks_length,30e-6/mks_length),
 			'grid points' : (4096,4,1),
 			'distance to caustic' : eik_to_caustic,
 			'origin' : (0.,0.,f - eik_to_caustic)},
 
-		{	'object' : surface.EikonalProfiler('terminal'),
+		{	'object' : surface.EikonalProfiler('terminus'),
 			'size' : (.005/mks_length,.005/mks_length),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.02/mks_length)}

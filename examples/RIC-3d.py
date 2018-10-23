@@ -4,10 +4,12 @@ from scipy.optimize import brentq
 import dispersion
 import surface
 import volume
+import input_tools
 
 # Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
 # The alternate test case creates a quartic lens on a 3D grid (will give messy results).
 # The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
+# N.b. an explicitly axisymmetric grid will give much better results for a given grid resolution.
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -20,8 +22,12 @@ mess = 'Processing input file...\n'
 # Preprocessing calculations
 # Use thick lens theory to set up channel parameters for given focal length
 
-ideal_form = False
+helper = input_tools.InputHelper(mks_length)
+
+w00 = 1.0
+ideal_form = True
 f = 0.01/mks_length
+f_num = 2.0
 Rlens = 0.75*f
 if ideal_form:
 	Lch = 1.5*f
@@ -29,9 +35,7 @@ if ideal_form:
 else:
 	Lch = 0.2*f
 	lens_object = volume.TestGrid('plasma')
-Fnum = 1.0
-r00 = 0.5*f/Fnum # spot size of radiation
-t00 = 1e-6*C.c/mks_length # pulse width (not important)
+r00 = 0.5*f/f_num # spot size of radiation
 c0 = 0.01
 h0 = np.sqrt(1-c0)
 t = Lch/np.sqrt(1-c0)
@@ -42,7 +46,10 @@ x0 = 100*r00
 c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
 c6 = 0.0
 eik_to_caustic = 0.001/mks_length
-a00 = 1e-3*Fnum
+
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,f,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
@@ -57,15 +64,14 @@ for i in range(1):
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (1.0,0.0,0.0,1.0) ,
+					'k0' : (w00,0.0,0.0,w00) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
 					'focus' : (0.0,0.0,0.0,-f),
-					'pulse shape' : 'sech',
 					'supergaussian exponent' : 8})
 
-	ray.append({	'number' : (64,64,1),
+	ray.append({	'number' : (32,32,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cartesian',
 					# Ray box is always put at the origin
@@ -83,12 +89,11 @@ for i in range(1):
 			'size' : (2*Rlens,2*Rlens,Lch),
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.),
-			'integrator' : 'symplectic',
 			'dt' : Lch/1000,
 			'steps' : 1500,
 			'subcycles' : 10},
 
-		{	'object' : surface.EikonalProfiler('terminal'),
+		{	'object' : surface.EikonalProfiler('terminus'),
 			'size' : (.04/mks_length,.04/mks_length),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.015/mks_length)}
@@ -96,5 +101,5 @@ for i in range(1):
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (8,8,1),
+						'orbit rays' : (4,4,1),
 						'base filename' : 'out/test'})

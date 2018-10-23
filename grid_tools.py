@@ -217,16 +217,14 @@ class HankelTransformTool:
 	def kr2(self):
 		return -self.vals
 
-class WignerTransformTool:
-	'''Promote complex waveform to Wigner phase space.'''
-	def __init__(self,N,bounds):
-		self.N = N
-		self.M = np.int(N/2)
-		self.dx = (bounds[1]-bounds[0])/N
-		self.xbounds = bounds
-		self.kbounds = (-np.pi/(2*self.dx) , np.pi/(2*self.dx))
-	def Transform(self,A):
-		corr = np.zeros((self.N,self.M))
-		for j in range(self.M):
-			corr[:,j] = np.roll(A,j)*np.conj(np.roll(A,-j))
-		wig = np.fft.irfft(corr,axis=1)
+def WignerTransform(A,ds):
+	N = A.shape[0]
+	M = np.int(N/2) + 1
+	corr = np.zeros((N,M)).astype(np.complex)
+	Ai = np.zeros(N*2-1).astype(np.complex)
+	Ai[::2] = A
+	Ai[1::2] = 0.5*(np.roll(Ai,1)+np.roll(Ai,-1))[1::2]
+	for j in range(M):
+		corr[:,j] = (np.conj(np.roll(Ai,j))*np.roll(Ai,-j))[::2]
+	wig = np.fft.hfft(corr,axis=1)*ds/(2*np.pi)
+	return np.fft.fftshift(wig,axes=1)

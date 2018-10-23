@@ -75,6 +75,8 @@ class base_surface:
 			self.reflective = input_dict['reflective']
 		except KeyError:
 			print('INFO: defaulting to transmissive')
+	def InitializeCL(self,cl,input_dict):
+		None
 	def PositionGlobalToLocal(self,xp):
 		'''Transform position vectors only'''
 		xp[...,1:4] -= self.P_ref
@@ -685,7 +687,7 @@ class BeamProfiler(rectangle):
 		vgroup = self.disp2.vg(self.xps)
 		zf = caustic_tools.ParaxialFocus(self.xps,vgroup)
 		print('    Relative paraxial ray focal position (mm) =',zf*l1)
-		print('    Ray count =',self.hits)
+		print('    Ray bundle count =',self.hits)
 		print('    Conserved micro-action = {:.3g}'.format(self.micro_action))
 		print('    Transversality = {:.3g}'.format(self.transversality))
 		return xc,yc,zc,xrms,yrms,zrms
@@ -745,8 +747,7 @@ class CylindricalProfiler(FullWaveProfiler):
 	def InitializeCL(self,cl,input_dict):
 		plugin_str = ''
 		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
-		kernel_dict = { 'transform' : program.transform }
-		self.kernel = kernel_dict[input_dict['integrator']]
+		self.kernel = program.transform
 		self.queue = cl.queue()
 	def Report(self,basename,mks_length):
 		xc,yc,zc,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)

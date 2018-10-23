@@ -43,7 +43,6 @@ if inputs.diagnostics[0]['clean old files']:
 		os.remove(f)
 
 # Run one case for each set of dictionaries
-# Typical use would be to change the frequency each time
 for irun in range(len(inputs.sim)):
 
 	print('-------------')
@@ -61,8 +60,7 @@ for irun in range(len(inputs.sim)):
 	for opt_dict in inputs.optics[irun]:
 		print('Initializing',opt_dict['object'].name)
 		opt_dict['object'].Initialize(opt_dict)
-		if 'integrator' in opt_dict:
-			opt_dict['object'].InitializeCL(cl,opt_dict)
+		opt_dict['object'].InitializeCL(cl,opt_dict)
 
 	print('\nSetting up rays and orbits...')
 	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun])
@@ -83,6 +81,7 @@ for irun in range(len(inputs.sim)):
 		basename = inputs.diagnostics[irun]['base filename']
 
 	if not inputs.diagnostics[irun]['suppress details']:
+		ray_kernel.SyncSatellites(xp,vg)
 		np.save(basename+'_xp0',xp0)
 		np.save(basename+'_xp',xp)
 		np.save(basename+'_eikonal',eikonal)

@@ -22,10 +22,11 @@ def setup_opencl(argv):
 	args = command line arguments stripped of OpenCL items"""
 
 	if argv[1]=='list':
+		print('PyOpenCL version',pyopencl.VERSION)
 		for platform in pyopencl.get_platforms():
-			print('Platform',platform.get_info(pyopencl.platform_info.NAME))
+			print('Platform:',platform.name)
 			for dev in platform.get_devices(pyopencl.device_type.ALL):
-				print('  ',dev.get_info(pyopencl.device_info.NAME))
+				print('  ',dev.name,'/',dev.version)
 		exit(0)
 
 	device_search_string = ''
@@ -110,11 +111,6 @@ def setup_cl_program(cl,prog_filename,plugin_str):
 
 	# Build OpenCL program file
 	program = pyopencl.Program(cl.context(), program_text)
-	try:
-	    program.build()
-	except:
-	    print("Build log:")
-	    print(program.get_build_info(cl.device(),pyopencl.program_build_info.LOG))
-	    raise
+	program.build()
 
 	return program

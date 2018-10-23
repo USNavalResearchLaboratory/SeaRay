@@ -23,41 +23,90 @@ inline double ComputeRayVolume(int vidx,__global double *xp)
 	return fabs(dot4(v1xv2,v3));
 }
 
-inline double Gather(__global double *dens,const double4 x)
+inline void AtomicDep(volatile __global double *target,double val)
+{
+	union
+	{
+		unsigned long u64;
+		double f64;
+	} sum,old,curr;
+	curr.f64 = *target;
+	do
+	{
+		old.f64 = curr.f64;
+		sum.f64 = curr.f64 + val;
+		curr.f64 = atomic_cmpxchg((volatile __global unsigned long *)target,old.u64,sum.u64);
+	} while (curr.u64!=old.u64);
+}
+
+inline void GetWeights(double w[3][3],int c[3],int s[3],const double4 x)
 {
 	// macros are installed dynamically
 	// Assumes coordinate lies in the interior grid
+	// Assumes 2 ghost cell layers with origin at center of box
 	const double cart = MAC_CART;
 	const double cyl = MAC_CYL;
 	const double4 spacing = MAC_DX4;
 	const int4 N = MAC_NUM4;
-	double ans = 0.0;
 	const double x1 = (cart*x.s1 + cyl*sqrt(x.s1*x.s1 + x.s2*x.s2))/spacing.s1;
 	const double x2 = cart*x.s2/spacing.s2;
 	const double x3 = x.s3/spacing.s3;
-	const int c1 = 2 + ((int)cart)*(N.s1-4)/2 + (int)x1 - (x1<0);
-	const int c2 = 2 + (N.s2-4)/2 + (int)x2 - (x2<0);
-	const int c3 = 2 + (N.s3-4)/2 + (int)x3 - (x3<0);
-	const int s1 = (c1>0)*(c1<N.s1-1)*N.s2*N.s3;
-	const int s2 = (c2>0)*(c2<N.s2-1)*N.s3;
-	const int s3 = (c3>0)*(c3<N.s3-1);
 	const double q1 = x1 - (int)x1 + (x1<0) - 0.5;
 	const double q2 = cart*(x2 - (int)x2 + (x2<0) - 0.5);
 	const double q3 = x3 - (int)x3 + (x3<0) - 0.5;
-	const double w1[3] = {0.125-0.5*q1+0.5*q1*q1,0.75-q1*q1,0.125+0.5*q1+0.5*q1*q1};
-	const double w2[3] = {0.125-0.5*q2+0.5*q2*q2,0.75-q2*q2,0.125+0.5*q2+0.5*q2*q2};
-	const double w3[3] = {0.125-0.5*q3+0.5*q3*q3,0.75-q3*q3,0.125+0.5*q3+0.5*q3*q3};
-	for (int i1=0;i1<3;i1++)
-		for (int i2=0;i2<3;i2++)
-			for (int i3=0;i3<3;i3++)
-				ans += w1[i1]*w2[i2]*w3[i3]*dens[(c1+i1-1)*s1 + (c2+i2-1)*s2 + (c3+i3-1)*s3];
-	return ans;
+	w[0][0] = 0.125-0.5*q1+0.5*q1*q1;
+	w[1][0] = 0.125-0.5*q2+0.5*q2*q2;
+	w[2][0] = 0.125-0.5*q3+0.5*q3*q3;
+	w[0][1] = 0.75-q1*q1;
+	w[1][1] = 0.75-q2*q2;
+	w[2][1] = 0.75-q3*q3;
+	w[0][2] = 0.125+0.5*q1+0.5*q1*q1;
+	w[1][2] = 0.125+0.5*q2+0.5*q2*q2;
+	w[2][2] = 0.125+0.5*q3+0.5*q3*q3;
+	// w[0][0] = (q1<0)*fabs(q1);
+	// w[1][0] = (q2<0)*fabs(q2);
+	// w[2][0] = (q3<0)*fabs(q3);
+	// w[0][1] = 1.0-fabs(q1);
+	// w[1][1] = 1.0-fabs(q2);
+	// w[2][1] = 1.0-fabs(q3);
+	// w[0][2] = (q1>0)*fabs(q1);
+	// w[1][2] = (q2>0)*fabs(q2);
+	// w[2][2] = (q3>0)*fabs(q3);
+	c[0] = 2 + ((int)cart)*(N.s1-4)/2 + (int)x1 - (x1<0);
+	c[1] = 2 + (N.s2-4)/2 + (int)x2 - (x2<0);
+	c[2] = 2 + (N.s3-4)/2 + (int)x3 - (x3<0);
+	s[0] = (c[0]>0)*(c[0]<N.s1-1)*N.s2*N.s3;
+	s[1] = (c[1]>0)*(c[1]<N.s2-1)*N.s3;
+	s[2] = (c[2]>0)*(c[2]<N.s3-1);
+}
+
+inline double Gather(__global double *dens,const double4 x)
+{
+	double ans_l=0.0, w[3][3];
+	int c[3],s[3];
+	GetWeights(w,c,s,x);
+	for (int i0=0;i0<3;i0++)
+		for (int i1=0;i1<3;i1++)
+			for (int i2=0;i2<3;i2++)
+				ans_l += w[0][i0]*w[1][i1]*w[2][i2]*dens[(c[0]+i0-1)*s[0] + (c[1]+i1-1)*s[1] + (c[2]+i2-1)*s[2]];
+	return ans_l;
+}
+
+inline void Scatter(__global double *dens,const double4 x,const double val)
+{
+	double w[3][3];
+	int c[3],s[3];
+	GetWeights(w,c,s,x);
+	for (int i0=0;i0<3;i0++)
+		for (int i1=0;i1<3;i1++)
+			for (int i2=0;i2<3;i2++)
+				AtomicDep(&dens[(c[0]+i0-1)*s[0] + (c[1]+i1-1)*s[1] + (c[2]+i2-1)*s[2]], w[0][i0]*w[1][i1]*w[2][i2]*val);
 }
 
 inline double4 D_alpha_x(__global double *dens,const double4 x,const double4 k)
 {
 	// function D_alpha is installed dynamically
-	double ans[4],h[7] = {0.0,0.0,0.0,1e-5,0.0,0.0,0.0};
+	double ans[4],h[7] = {0.0,0.0,0.0,1e-2,0.0,0.0,0.0};
 	double4 hv;
 	for (int i=0;i<4;i++)
 	{
@@ -181,11 +230,20 @@ __kernel void GetDensity(	__global double * xp,
 {
 	// xp is a 3d array with [bundle][ray][component]
 	// components are x,k which are 4-vectors with signature +---
-	// The function "outside" is installed dynamically
 	const int bundle = get_global_id(0);
 	const int ray = get_global_id(1);
-	const int vidx = bundle*7*2;
+	const int bund_size = get_global_size(1);
+	const int vidx = (ray + bundle*bund_size)*2;
+	const double4 x0 = vload4(vidx,xp);
+	ans[ray+bundle*bund_size] = Gather(grid,x0);
+}
 
-	double4 x0 = vload4(vidx,xp);
-	ans[ray+bundle*7] = Gather(grid,x0);
+__kernel void AddDensity(	__global double * x4,
+							__global double * grid,
+							__global double * val)
+{
+	const int vidx = get_global_id(0);
+	const double4 x0 = vload4(vidx,x4);
+	const double v0 = val[vidx];
+	Scatter(grid,x0,v0);
 }
