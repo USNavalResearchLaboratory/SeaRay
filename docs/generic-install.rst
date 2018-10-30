@@ -43,6 +43,25 @@ We will use the generic :samp:`pocl` driver to support multi-core CPU parallelis
 	#. :samp:`conda install -c conda-forge pocl`
 	#. :samp:`conda install -c conda-forge pyopencl`
 
+Getting SeaRay Components
+-------------------------
+
+To copy the SeaRay components to your local computer perform the following procedure:
+
+	#. Open a terminal window
+	#. Test to see if you have Git installed by executing :samp:`git --version`
+	#. Install Git if necessary.
+
+		* Anaconda --- :samp:`conda install git`
+		* CentOS/RHEL/SL --- :samp:`sudo yum install git`
+		* Homebrew --- :samp:`brew install git`
+		* MacPorts --- :samp:`sudo port install git`
+		* Ubuntu --- :samp:`sudo apt install git`
+
+	#. Navigate to the directory where you want to install SeaRay (you don't need to make an enclosing directory).
+	#. :samp:`git clone https://github.com/USNavalResearchLaboratory/searay.git`
+	#. If you like you can give the SeaRay root directory another name, we will call it :samp:`{raysroot}` from now on.
+
 Advanced Installation Preview
 ------------------------------
 

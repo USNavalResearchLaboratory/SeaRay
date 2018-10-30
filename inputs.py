@@ -69,7 +69,7 @@ for i in range(1):
 					'focus' : (0.0,0.0,0.0,-.006/mks_length),
 					'supergaussian exponent' : 8})
 
-	ray.append({	'number' : (32,128,4,1),
+	ray.append({	'number' : (64,128,4,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
@@ -96,7 +96,7 @@ for i in range(1):
 			'integrator' : 'transform',
 			'frequency band' : band,
 			'size' : (.0006/mks_length,.0006/mks_length,.002/mks_length),
-			'grid points' : (32,1024,4,8),
+			'grid points' : (64,1024,4,32),
 			'distance to caustic' : eik_to_caustic,
 			'origin' : (0.,0.,f - eik_to_caustic)},
 

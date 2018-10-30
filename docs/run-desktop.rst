@@ -22,8 +22,8 @@ Running an Example
 	#. For definiteness, let us use :samp:`{raysroot}/examples/parabola.py`
 	#. Open a terminal window and navigate to :samp:`{raysroot}`
 	#. :samp:`python rays.py list`
-	#. The above command lists the hardware acceleration platforms and devices available on your system.  Most often you need not worry about the platform since there will typically be only one. If there is more than one device, choose the one you would like to use, and pick out some unique part of its name, such as :samp:`{xeon}`.  Case does not matter.
-	#. :samp:`python rays.py run file=examples/parabola.py device={xeon}`
+	#. The above command lists the hardware acceleration platforms and devices available on your system.  A device may be available only within a given platform.  If there is more than one platform, choose the one you would like to use, and pick out some unique part of its name, such as :samp:`{cuda}`.  Case does not matter.  Similarly, if there is more than one device, choose some unique part of its name, such as :samp:`{titan}`
+	#. :samp:`python rays.py run file=examples/parabola.py platform={cuda} device={titan}`
 	#. This copies the :samp:`parabola.py` example file to the :samp:`{raysroot}` directory as :samp:`inputs.py` and runs the calculation.  If you do not specify a file, SeaRay will use whatever :samp:`inputs.py` is in :samp:`{raysroot}`.  It is best practice to never directly edit :samp:`inputs.py`.
 	#. When the run is finished, you should have several output files in :samp:`{raysroot}/out`.  The output files are simply pickled numpy arrays.
 	#. Let us plot the results using the SeaRay plotter.  The plotter is not interactive, but allows for a fairly high degree of control using command line options. You can get a help screen by executing :samp:`python ray_plotter.py` with no arguments.

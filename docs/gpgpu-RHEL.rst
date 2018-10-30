@@ -3,15 +3,35 @@ CentOS 7.5 Advanced Install
 
 Before starting, follow the steps in :doc:`generic-install`.
 
+.. Warning::
+
+	Installing video drivers on Linux can sometimes cause you to lose your display.  Recovery is often difficult.  If you cannot afford for this to happen you should take steps to backup your system.
+
+Support for CPU via pocl
+-------------------------
+
+As of this writing there seems to be no suitable repository containing an RPM for pocl.  The only way to gain pocl functionality seems to be with the ``conda`` tool.
+
+Support for NVIDIA Graphics
+----------------------------
+
+It is possible to install all the necessary packages using ``yum`` (no need to visit NVIDIA website).
+
+	#. :samp:`sudo yum update`
+	#. :samp:`sudo yum install ocl-icd clinfo`
+	#. Perform internet search to find instructions for installing ``ELRepo``, and carry out.
+	#. :samp:`sudo yum install kmod-nvidia`
+	#. Reboot the system
+	#. Copy the ICD registry files from the root environment to the Anaconda environment
+
+		* :samp:`sudo cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
+
+	#. :samp:`clinfo` should give a listing of platforms and devices, if the installation succeeded.
+
 Support for AMD Graphics
 -------------------------
 
-.. Warning::
-	Installing graphics drivers in linux can result in losing the display manager.  Recovering functionality is usually possible, but requires considerable expertise.  You may want to take steps to backup the system before attempting the driver installation.
-
-Graphics drivers can change rapidly, so internet searches may figure prominently into your installation effort.  As of this writing the AMD driver to use is Radeon or Radeon Pro, with the typical package name ``amdgpu`` or ``amdgpu-pro``.  Also as of this writing the installation has been known to fail due to a dependency problem.
-
-Due to the difficulties we do not attempt to give specific instructions.  You will have to try to follow guidance on the AMD website.
+As of this writing not recommended.  You can try to use the ``amdgpu`` installer from the AMD website, but this is vulnerable to breakage after a kernel update.  Keep an eye on ``ELRepo`` and ``RPMFusion`` repositories for a more suitable alternative.
 
 TeX for premium plot labels
 ---------------------------
