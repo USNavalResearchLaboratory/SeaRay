@@ -49,15 +49,17 @@ def propagator(a0,chi,dens,n0,ng,w,x,y,dz,long_pulse_approx):
 	a = np.copy(a0)
 	N = (w.shape[0],x.shape[0],y.shape[0],1)
 	w0 = w[int(N[0]/2)]
-	if N[0]==1 or long_pulse_approx:
-		dt = 0.0
+	if N[0]==1:
+		dt = 1.0
 	else:
 		bandwidth = w[-1] - w[0] + w[1] - w[0]
 		dt = 2*np.pi/bandwidth
 	dx = (dt,x[1]-x[0],y[1]-y[0],dz)
 	dn = n0-ng
 	# Form uniform contribution to susceptibility
-	chi0 = np.min(dens)*chi
+	chi0 = np.copy(chi)
+	chi0[np.where(np.real(chi)>0.0)] *= np.min(dens)
+	chi0[np.where(np.real(chi)<0.0)] *= np.max(dens)
 	# Form spatial perturbation to susceptibility
 	dchi = np.einsum('i,jk',chi,dens) - chi0[...,np.newaxis,np.newaxis]
 	kx = 2.0*np.pi*np.fft.fftfreq(N[1],d=dx[1])
@@ -77,9 +79,9 @@ def propagator(a0,chi,dens,n0,ng,w,x,y,dz,long_pulse_approx):
 	a *= np.exp(-h*dz/g)
 
 	# nonlinear step (assumes medium is plasma)
-	a = np.fft.ifft(np.fft.ifftshift(a,axes=0),axis=0)
+	a = np.fft.ifft(np.fft.ifftshift(a,axes=0),axis=0)/dx[0]
 	a2 = np.abs(a)**2
-	if dx[0]==0.0:
+	if long_pulse_approx or N[0]==1:
 		# Dropping tau derivative allows for simple exponential solution
 		# assuming we can evaluate |a|^2 at the old z
 		a *= np.exp(1j*dens[np.newaxis,...]*a2*dz/(8*n0*w0))
@@ -94,7 +96,7 @@ def propagator(a0,chi,dens,n0,ng,w,x,y,dz,long_pulse_approx):
 				b = np.roll(a[:,i,j],1)*ng/dx[0] - np.roll(a[:,i,j],-1)*ng/dx[0]
 				b += a[:,i,j]*(2j*w0*n0-0.125*dz*dens[i,j]*a2[:,i,j])
 				a[:,i,j] = scipy.sparse.linalg.spsolve(T,b)
-	a = np.fft.fftshift(np.fft.fft(a,axis=0),axes=0)
+	a = dx[0]*np.fft.fftshift(np.fft.fft(a,axis=0),axes=0)
 
 	# linear half-step
 	a = np.fft.fft(np.fft.fft(a,axis=1),axis=2)
@@ -119,7 +121,9 @@ def axisymmetric_propagator(H,a,chi,dens,n0,ng,w,dz,long_pulse_approx):
 	w0 = w[int(Nw/2)]
 	dn = n0-ng
 	# Form uniform contribution to susceptibility
-	chi0 = np.min(dens)*chi
+	chi0 = np.copy(chi)
+	chi0[np.where(np.real(chi)>0.0)] *= np.min(dens)
+	chi0[np.where(np.real(chi)<0.0)] *= np.max(dens)
 	# Form spatial perturbation to susceptibility
 	dchi = np.outer(chi,dens) - chi0[...,np.newaxis]
 	kperp2 = H.kr2()
@@ -171,26 +175,23 @@ def track(xp,eikonal,vg,vol_dict):
 	:param numpy.array vg: ray group velocity with shape (bundles,rays,4)
 	:param dictionary vol_dict: input file dictionary for the volume'''
 	band = vol_dict['frequency band']
-	bandwidth = band[1]-band[0]
-	wc = 0.5*(band[0]+band[1])
-	center = (wc,0.0,0.0,0.0)
-	size = (bandwidth,) + vol_dict['size']
+	size = (band[1]-band[0],) + vol_dict['size']
 	N = vol_dict['grid points']
 
 	# Capture the rays
-	field_tool = caustic_tools.FourierTool(N,size)
+	field_tool = caustic_tools.FourierTool(N,band,(0,0,0),vol_dict['size'])
 	w_nodes,x_nodes,y_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
-	A[...,0],dom3d = field_tool.GetBoundaryFields(np.array(list(center)),xp[:,0,:],eikonal,1)
+	A[...,0],dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
 	n0 = np.mean(np.sqrt(np.einsum('...i,...i',xp[:,0,5:8],xp[:,0,5:8]))/xp[:,0,4])
 	ng = 1.0/np.mean(np.sqrt(np.einsum('...i,...i',vg[:,0,1:4],vg[:,0,1:4])))
 
 	# Setup the wave propagation domain
-	w_nodes += wc
 	chi = vol_dict['dispersion inside'].chi(w_nodes)
 	dens_nodes = grid_tools.cell_centers(-size[3]/2,size[3]/2,N[3]-1)
-	field_nodes = grid_tools.cell_walls(dens_nodes[0],dens_nodes[-1],N[3]-1)
-	dz = field_nodes[1]-field_nodes[0]
+	field_walls = grid_tools.cell_walls(-size[3]/2,size[3]/2,N[3])
+	dz = field_walls[1]-field_walls[0]
+	dom4d = np.concatenate((dom3d,[field_walls[0],field_walls[-1]]))
 
 	# Step through the domain
 	# Strategy to get density plane is to re-use ray gather system
@@ -205,4 +206,4 @@ def track(xp,eikonal,vg,vol_dict):
 
 	# Return the wave amplitude
 	# Rays are re-launched externally
-	return A
+	return A,dom4d

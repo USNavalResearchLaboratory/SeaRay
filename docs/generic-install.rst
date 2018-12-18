@@ -15,8 +15,11 @@ Environment and Basic Packages
 	#. :samp:`bash {filename}`, where :samp:`{filename}` is the file that you just downloaded
 	#. Choose a name for your environment, denoted :samp:`{NAME}`
 	#. :samp:`conda create -n {NAME} scipy matplotlib`
-	#. :samp:`source activate {NAME}`
-	#. The last command puts you in an isolated conda environment.  This command must be issued each time you open a new terminal window, in order to use the environment.
+	#. :samp:`conda activate {NAME}`
+
+		* You may need to follow some onscreen instructions on modifying your login shell.
+		* This command puts you in an isolated conda environment.  This command must be issued each time you open a new terminal window, in order to use the environment.
+
 	#. If you find that the plotter is failing, try explicit installation of a backend, e.g.
 
 		* :samp:`conda install PyQt`
@@ -60,6 +63,12 @@ To copy the SeaRay components to your local computer perform the following proce
 
 	#. Navigate to the directory where you want to install SeaRay (you don't need to make an enclosing directory).
 	#. :samp:`git clone https://github.com/USNavalResearchLaboratory/searay.git`
+	#. Checkout a stable version
+
+		* :samp:`git tag --list` displays tagged commits.
+		* Select a tag without a letter suffix for the highest stability.
+		* :samp:`git checkout {vers}`, where :samp:`{vers}` is the selected tag.
+
 	#. If you like you can give the SeaRay root directory another name, we will call it :samp:`{raysroot}` from now on.
 
 Advanced Installation Preview

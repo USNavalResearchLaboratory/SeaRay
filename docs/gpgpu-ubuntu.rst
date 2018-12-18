@@ -29,7 +29,7 @@ Even if you get your GPU working using drivers from NVIDIA or AMD, it may still 
 
 	#. Now try to install PyOpenCL
 
-		* :samp:`source activate {NAME}`
+		* Activate the conda environment
 		* :samp:`conda install -c conda-forge pyopencl`
 
 Support for NVIDIA Graphics
@@ -104,7 +104,7 @@ Interactive Notebooks
 
 	#. Activate your environment.
 	#. :samp:`conda install jupyter nb_conda`
-	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/docs/config-files/custom.css` to the new directory.
+	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/extras/custom.css` to the new directory.
 	#. If there are problems with Jupyter notebooks any or all of the following may be tried:
 
 		* :samp:`conda install widgetsnbextension={n}`, where :samp:`{n}` is some older version.

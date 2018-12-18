@@ -18,7 +18,6 @@ diagnostics = []
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
-# Use thick lens theory to set up channel parameters for given focal length
 
 helper = input_tools.InputHelper(mks_length)
 
@@ -26,7 +25,7 @@ w00 = 1.0
 f = .1/mks_length
 f_num = 50.0
 r00 = f/(2*f_num) # spot size of radiation
-t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',8)
 a00,waist,zR = helper.ParaxialParameters(w00,1.0,f,f_num)
 mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
@@ -50,7 +49,7 @@ for i in range(1):
 					'focus' : (1.001*f,0.0,0.0,f),
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (1,128,128,1),
+	ray.append({	'number' : (64,64,64,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
@@ -59,6 +58,7 @@ for i in range(1):
 
 	optics.append([
 		{	'object' : surface.EikonalProfiler('init'),
+			'frequency band' : (1-1e-7,1+1e-7),
 			'size' : (f/8,f/8),
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.)},
@@ -67,7 +67,7 @@ for i in range(1):
 			'radial coefficients' : (0.0,0.0,0.0,0.0),
 			'frequency band' : band,
 			'mesh points' : (2,2,2),
-			'grid points' : (1,256,256,31),
+			'grid points' : (64,64,64,9),
 			'density multiplier' : 1.0,
 			'dispersion inside' : dispersion.Vacuum(),
 			'dispersion outside' : dispersion.Vacuum(),

@@ -21,5 +21,8 @@ Reference
 .. automodule:: paraxial_kernel
 	:members:
 
+.. automodule:: uppe_kernel
+	:members:
+
 .. automodule:: grid_tools
 	:members: cyclic_nodes, cell_centers, cell_walls, GridFromInterpolation

@@ -67,4 +67,6 @@ class InputHelper:
 		t00 = self.ProcessArg(t00)
 		sigma_w = 2/t00
 		band = (w00 - sigmas*sigma_w , w00 + sigmas*sigma_w)
+		if band[0]<0.0:
+			raise ValueError('Bandwidth calculation led to negative frequency.')
 		return t00,band

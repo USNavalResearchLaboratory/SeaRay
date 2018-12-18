@@ -14,6 +14,13 @@ from scipy.linalg import eig_banded
 import pyopencl
 import pyopencl.array
 
+def cyclic_center_and_width(node_low,node_high):
+	'''Return the center node and wall-to-wall width of a cyclic set of nodes.
+	Once cyclic nodes are generated the high node is lost.
+	This function helps us remember not to use the generated nodes to find the center.
+	See also cyclic_nodes(...) below.'''
+	return 0.5*(node_low + node_high) , node_high - node_low
+
 def cyclic_nodes(node_low,node_high,num_nodes):
 	'''Generate nodes suitable for periodic functions.
 	The requested low node is included, the high node is excluded.
@@ -27,11 +34,11 @@ def cyclic_nodes(node_low,node_high,num_nodes):
 
 def cell_centers(wall_pos_low,wall_pos_high,cells_between):
 	'''Generate nodes between two cell wall positions.
-	Number of cells between the two walls must be given.'''
+	Number of nodes between the two walls must be given.'''
 	dx = (wall_pos_high - wall_pos_low)/cells_between
 	return np.linspace(wall_pos_low+0.5*dx,wall_pos_high-0.5*dx,cells_between)
 
-def cell_walls(node_low,node_high,nodes_between,default_voxel_width=1.0):
+def cell_walls(node_low,node_high,nodes_between,default_voxel_width=1000.0):
 	'''Generate cell walls bracketing two nodes.
 	Number of nodes between the walls must be given.'''
 	if nodes_between==1:

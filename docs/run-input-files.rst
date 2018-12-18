@@ -57,16 +57,22 @@ A Python dictionary is a set of key-value pairs.  For example::
 
 creates a dictionary of my favorites.  The keys are the strings on the left of the colon, the values are the elements on the right, which can be any Python object.  In Python everything is an object, including simple types like strings, integers, and floating point numbers.
 
+There is another kind of list called a tuple.  Tuples are denoted using parenthesis::
+
+	my_vector = (1.0,0.0,0.0)
+
+A tuple is basically a list that cannot be modified after it is created.
+
 Geometry
 ---------------
 
 The simulation defines a global three dimensional Cartesian coordinate system.  Each object also has its own coordinate system, called the local system.  Rays are initially loaded into the global space.  Internally they are always represented by Cartesian vectors, although the initial configuration can be chosen to have n-fold radial symmetry.  As the rays enter or exit various optical elements, they are generally transformed into and out of the local system of the object.
 
-The euler angles :math:`(\alpha,\beta,\gamma)` are used to set the orientation of an object.  In the active view of the tranformation, the object is first rotated about the z axis by :math:`\gamma`, then about the x axis by :math:`\beta`, and finally about the z axis again by :math:`\alpha`.  These are all right handed rotations.
-Most optical elements have their default orientation such that the z axis is coincident with the center ray of a beam perfectly aligned with the object.  Typically it is most convenient, therefore, to orient the optical system to lie in z-y plane, so that the single euler angle :math:`\beta` can be used to direct the beam anywhere in the plane.
+The euler angles :math:`(\alpha,\beta,\gamma)` are used to set the orientation of an object.  In the active view of the transformation, the object is first rotated about the z axis by :math:`\gamma`, then about the x axis by :math:`\beta`, and finally about the z axis again by :math:`\alpha`.  These are all right handed rotations.
+Most optical elements have their default orientation such that the z axis is coincident with the center ray of a beam perfectly aligned with the object.  Typically it is most convenient, therefore, to orient the optical system to lie in z-y plane, so that the single Euler angle :math:`\beta` can be used to direct the beam anywhere in the plane.
 When visualizing the z-y plane, it is most convenient to picture positive z as toward the top of the screen, positive y as toward the right of the screen, and positive x as out of the screen.
 
 Four Dimensional Object Properties
 ----------------------------------
 
-Many input file elements are in the form of four-vectors, represented as Python tuples, e.g., ``(t,x,y,z)``.  This examples represents the typical arrangement, where time or frequency is the first element, and spatial coordinates are the next three elements.  This pattern is used for specifying time + position, energy + momentum, frequency grid + spatial grid, etc..
+Many input file elements are in the form of four-vectors, represented as Python tuples, e.g., ``(t,x,y,z)``.  This example represents the typical arrangement, where time or frequency is the first element, and spatial coordinates are the next three elements.  This pattern is used for specifying time + position, energy + momentum, frequency grid + spatial grid, etc..

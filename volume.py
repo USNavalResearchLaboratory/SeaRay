@@ -20,6 +20,7 @@ import init
 import dispersion
 import ray_kernel
 import paraxial_kernel
+import uppe_kernel
 import grid_tools
 import caustic_tools
 import surface
@@ -299,7 +300,10 @@ class grid_volume(base_volume):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		if self.propagator=='paraxial':
-			self.paraxial_wave = paraxial_kernel.track(xp,eikonal,vg,self.vol_dict)
+			self.paraxial_wave,self.dom4d = paraxial_kernel.track(xp,eikonal,vg,self.vol_dict)
+		if self.propagator=='uppe':
+			self.uppe_wave,self.dom4d = uppe_kernel.track(xp,eikonal,vg,self.vol_dict)
+		#if self.propagator=='eikonal':
 		ray_kernel.SyncSatellites(xp,vg)
 		ray_kernel.track_RIC(self.queue,self.kernel,xp,eikonal,self.ne,self.vol_dict,orb)
 		vg[...] = self.disp_in.vg(xp)
@@ -311,6 +315,11 @@ class grid_volume(base_volume):
 		if self.propagator=='paraxial':
 			print('    Write paraxial wave data...')
 			np.save(basename+'_'+self.name+'_paraxial_wave',self.paraxial_wave)
+			np.save(basename+'_'+self.name+'_paraxial_plot_ext',self.dom4d)
+		if self.propagator=='uppe':
+			print('    Write UPPE wave data...')
+			np.save(basename+'_'+self.name+'_uppe_wave',self.uppe_wave)
+			np.save(basename+'_'+self.name+'_uppe_plot_ext',self.dom4d)
 
 class PlasmaChannel(nonuniform_volume,Cylinder):
 	def InitializeCL(self,cl,input_dict):

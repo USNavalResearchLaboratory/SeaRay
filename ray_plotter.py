@@ -69,7 +69,7 @@ if len(sys.argv)==1:
 	print('-----------------Animations-----------------')
 	print('Generate animations by replacing a slice index with a python range.')
 	print('E.g., det=t1,2/:5,0 generates a movie in the xy plane with the first 5 time levels at z slice 0.')
-	print('Please only make a single move at a time, and rename mov.gif before creating the next one.')
+	print('Please only make a single movie at a time, and rename mov.gif before creating the next one.')
 	print('==============END HELP FOR SEARAY PLOTTER==============')
 	exit(1)
 
@@ -621,13 +621,16 @@ class FullWaveProfiler:
 				if A.shape[0]==1:
 					bar_label = r'$|a|^2$'
 				else:
-					if time_domain:
-						bar_label = r'$|a(t)|^2$'
-						coeff = (dom[9]-dom[8])/(2*np.pi)
-						A = coeff*np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
+					if A.shape[0]==1:
+						bar_label = r'$|a|^2$'
 					else:
-						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
-						A *= np.sqrt(self.label_system.GetNormalization()[0]/(2*np.pi))
+						if time_domain:
+							bar_label = r'$|a(t)|^2$'
+							coeff = (dom[9]-dom[8])/(2*np.pi)
+							A = coeff*np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
+						else:
+							bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
+							A *= np.sqrt(self.label_system.GetNormalization()[0]/(2*np.pi))
 				if data_ax[0]==0 and data_ax[1]==0:
 					bar_label = r'${\cal N}(\omega,t)$'
 					wigner = True

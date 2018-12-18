@@ -63,7 +63,7 @@ Interactive Notebooks
 
 	#. If your environment is not already activated, activate it as above.
 	#. :samp:`conda install jupyter nb_conda`
-	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/docs/config-files/custom.css` to the new directory.
+	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/extras/custom.css` to the new directory.
 	#. If there are problems with Jupyter notebooks any or all of the following may be tried:
 
 		* :samp:`conda install widgetsnbextension={n}`, where :samp:`{n}` is some older version.
