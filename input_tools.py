@@ -4,6 +4,11 @@ from scipy import constants as C
 class InputHelper:
 	def __init__(self,mks_length):
 		self.x1 = mks_length
+		self.t1 = mks_length/C.c
+		self.w1 = 1/self.t1
+		self.E1 = C.m_e*C.c*self.w1/C.e
+		self.n1 = C.epsilon_0*C.m_e*self.w1**2/C.e**2
+		self.P1 = self.n1*C.e*mks_length
 
 	def ProcessArg(self,arg):
 		if type(arg)==str:
@@ -11,17 +16,17 @@ class InputHelper:
 			units = arg.split(' ')[1]
 			mult = 0.0
 			if units=='fs':
-				mult = 1e-15*C.c/self.x1
+				mult = 1e-15/self.t1
 			if units=='ps':
-				mult = 1e-12*C.c/self.x1
+				mult = 1e-12/self.t1
 			if units=='ns':
-				mult = 1e-9*C.c/self.x1
+				mult = 1e-9/self.t1
 			if units=='us':
-				mult = 1e-6*C.c/self.x1
+				mult = 1e-6/self.t1
 			if units=='ms':
-				mult = 1e-3*C.c/self.x1
+				mult = 1e-3/self.t1
 			if units=='s':
-				mult = C.c/self.x1
+				mult = 1/self.t1
 			if units=='um':
 				mult = 1e-6/self.x1
 			if units=='mm':
@@ -30,6 +35,8 @@ class InputHelper:
 				mult = 1e-2/self.x1
 			if units=='m':
 				mult = 1/self.x1
+			if units=='m2/V2':
+				mult = C.epsilon_0 * self.E1**3 / self.P1
 			if mult==0.0:
 				raise ValueError('Unrecognized units in input.')
 			val *= mult
@@ -70,3 +77,17 @@ class InputHelper:
 		if band[0]<0.0:
 			raise ValueError('Bandwidth calculation led to negative frequency.')
 		return t00,band
+
+	def Wcm2_to_a0(self,intensity,lambda_mks):
+		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
+		Epeak = np.sqrt(intensity*1e4*2*eta0)
+		Enormalized = Epeak/self.E1
+		return Enormalized * lambda_mks/(2*np.pi*self.x1)
+
+	def chi3(self,chi3):
+		return self.ProcessArg(chi3)
+
+	def mks_n2_to_chi3(self,n0,n2_mks):
+		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
+		chi3_mks = (2.0/3.0)*n0*n2_mks/eta0
+		return self.ProcessArg(str(chi3_mks)+' m2/V2')

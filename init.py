@@ -26,7 +26,9 @@ def setup_opencl(argv):
 		for platform in pyopencl.get_platforms():
 			print('Platform:',platform.name)
 			for dev in platform.get_devices(pyopencl.device_type.ALL):
-				print('  ',dev.name,'/',dev.version)
+				print('  ',dev.name)
+				print('      ',dev.version)
+				print('      {:.1g} GB , '.format(dev.global_mem_size/1e9)+str(dev.native_vector_width_float*32)+' bit vectors') 
 		exit(0)
 
 	device_search_string = ''

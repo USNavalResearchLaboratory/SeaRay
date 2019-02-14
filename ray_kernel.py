@@ -95,14 +95,30 @@ def AddFrequencyRange(carrier_freq,spatial_range):
 	else:
 		return spatial_range
 
-def PulseSpectrum(xp,eikonal,wave):
+def PulseSpectrum(xp,eikonal,box,N,pulse_length,w0):
 	'''Weight the rays based their frequency.  Assume transform limited pulse.
-	When inverse transforming a derived spectrum, multiply the amplitude by 1/dt
-	in order to obtain correct normalization.  1/dt = Nyquist/pi.'''
-	pulse_length = wave['r0'][0]
-	w0 = wave['k0'][0]
+	Spectral amplitude is matched with time domain amplitude by performing a test FFT.
+	If the lower frequency bound is zero, real carrier resolved fields are used.
+
+	:param numpy.ndarray xp: Ray phase space, returned by a wave loader
+	:param numpy.ndarray eikonal: Eikonal data, returned by a wave loader
+	:param tuple box: The first two elements are the frequency bounds
+	:param tuple N: The first element is the number of frequency nodes
+	:param pulse_length: The Gaussian pulse width (1/e amplitude)
+	:param w0: The central frequency of the wave'''
 	sigma_w = 2.0/pulse_length
-	coeff = np.sqrt(np.pi)*pulse_length
+	freq_range = grid_tools.cyclic_nodes(box[0],box[1],N[0])
+	# Create a unit-height Gaussian spectral amplitude
+	envelope = np.exp(-(freq_range-w0)**2/sigma_w**2)
+	if box[0]==0.0:
+		# Intepret as real carrier resolved field
+		envelope = np.fft.irfft(envelope)
+	else:
+		# Interpret as spectral envelope putting negative frequencies last
+		envelope = np.fft.ifftshift(envelope)
+		# Get the corresponding time domain envelope
+		envelope = np.fft.ifft(envelope)
+	coeff = 1/np.max(np.abs(envelope))
 	weights = coeff*np.exp(-(xp[:,0,4]-w0)**2/sigma_w**2)
 	eikonal[:,1] *= weights
 	eikonal[:,2] *= weights
@@ -187,6 +203,11 @@ def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 		grid2 = grid_tools.cyclic_nodes(box[4],box[5],N[2])
 	grid3 = grid_tools.cell_centers(box[6],box[7],N[3])
 
+	if box[0]==0.0:
+		grid0 = grid0[1:]
+		o0 = o0[1:]
+		num_bundles -= N[1]*N[2]*N[3]
+
 	# Load the primary rays in configuration+w space
 
 	if loading_coordinates=='cartesian':
@@ -224,19 +245,32 @@ def relaunch_rays(xp,eikonal,vg,A,vol_dict):
 	'''Use wave data to create a new ray distribution.
 	The wave data is stored as A[w,x,y,z]'''
 	# Assume vacuum for now
-	N = AddFrequencyDimension(ray_dict['relaunch number'])
-	box = AddFrequencyRange(1.0,vol_dict['relaunch box'])
-	load_rays_xw(xp,ray_dict['relaunch bundle radius'],N,box,ray_dict['relaunch loading coordinates'])
 	ampl = np.abs(A[...,-1])
 	phasex = np.unwrap(np.angle(A[...,-1]),axis=1)
 	phasey = np.unwrap(np.angle(A[...,-1]),axis=2)
-	kx = np.gradient(phasex,axis=1)
-	ky = np.gradient(phasey,axis=2)
-	# Some kind of loop over frequency
-	# xp[...,4] = get frequency
-	# xp[...,5] = 2D gather of kx
-	# xp[...,6] = 2D gather of ky
+	if phasex.shape[1]>1:
+		kx = np.gradient(phasex,axis=1)
+	else:
+		kx = np.zeros(phasex.shape)
+	if phasey.shape[2]>1:
+		ky = np.gradient(phasey,axis=2)
+	else:
+		ky = np.zeros(phasey.shape)
+	# Rays keep their original frequency and transverse positions.
+	# Frequency shifts are still accounted for because amplitude may change.
+	xp[...,0] += vol_dict['size'][2] # How to handle ray time?
+	xp[...,3] += vol_dict['size'][2]
+	xp[...,5] = 0.0 # Need 2D gather of kx
+	xp[...,6] = 0.0 # Need 2D gather of ky
 	xp[...,7] = np.sqrt(xp[...,4]**2 - xp[...,5]**2 - xp[...,6]**2)
+	eikonal[...,0] = 0.0 # Need 2D gather of phase
+	eikonal[...,1] = 1.0 # Need 2D gather of amplitude
+	eikonal[...,2] = 0.0
+	eikonal[...,3] = 0.0
+	vg[...,0] = 1.0
+	vg[...,1] = 0.0
+	vg[...,2] = 0.0
+	vg[...,3] = 1.0
 
 def init(wave_dict,ray_dict):
 	'''Use dictionaries from input file to create initial ray distribution.
@@ -253,7 +287,10 @@ def init(wave_dict,ray_dict):
 	box = AddFrequencyRange(wave_dict['k0'][0],ray_dict['box'])
 
 	# Set up host storage
-	num_bundles = N[0]*N[1]*N[2]*N[3]
+	if box[0]==0.0:
+		num_bundles = (N[0]-1)*N[1]*N[2]*N[3]
+	else:
+		num_bundles = N[0]*N[1]*N[2]*N[3]
 	xp = np.zeros((num_bundles,7,8)).astype(np.double)
 	eikonal = np.zeros((num_bundles,4)).astype(np.double)
 	vg = np.zeros((num_bundles,7,4)).astype(np.double)
@@ -270,7 +307,7 @@ def init(wave_dict,ray_dict):
 	else:
 		SphericalWave(xp,eikonal,vg,wave_dict)
 	if N[0]>1:
-		PulseSpectrum(xp,eikonal,wave_dict)
+		PulseSpectrum(xp,eikonal,box,N,wave_dict['r0'][0],wave_dict['k0'][0])
 
 	return xp,eikonal,vg
 

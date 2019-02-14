@@ -96,7 +96,7 @@ for i in range(1):
 		# {	'object' : surface.CylindricalProfiler('det'),
 		# 	'integrator' : 'transform',
 		# 	'size' : (.001/mks_length,.001/mks_length,.0001/mks_length),
-		# 	'grid points' : (16000,4,256),
+		# 	'wave grid' : (16000,4,256),
 		# 	'distance to caustic' : eik_to_caustic,
 		# 	'origin' : (0.,0.,f - eik_to_caustic)},
 

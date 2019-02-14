@@ -159,7 +159,44 @@ def GridFromBinning(x,y,z,xn=100,yn=100):
 	harray /= harray_count+.0001
 	return harray,plot_ext
 
-class HankelTransformTool:
+class TransverseModeTool:
+	'''Base class for transformation of Cartesian components to another spatial basis
+
+	:param 4-tuple N: nodes along each dimension (0 and 3 are not used)
+	:param 4-tuple dq: node separation along each dimension (must be uniform)'''
+	def __init__(self,N,dq,queue,kernel):
+		self.N = N
+		self.dq = dq
+		self.queue = queue
+		self.kernel = kernel
+	def kspace(self,a):
+		return a
+	def rspace(self,a):
+		return a
+	def kr2(self):
+		return np.zeros(self.N[1:3])
+
+class FourierTransformTool(TransverseModeTool):
+	'''Transform Cartesian components to plane wave basis'''
+	def kspace(self,a):
+		return np.fft.fft(np.fft.fft(a,axis=1),axis=2)
+	def rspace(self,a):
+		return np.fft.ifft(np.fft.ifft(a,axis=2),axis=1)
+	def k_diff(self,num,dx):
+		# Square of this is the proper eigenvalue of the finite difference laplacian
+		# For small frequencies it corresponds to the wave frequency
+		i_list = np.arange(0,num)
+		sgn = np.ones(num)
+		sgn[np.int(num/2)+1:] = -1.0
+		return sgn*np.sqrt(2.0*(1.0 - np.cos(2.0*np.pi*i_list/num)))/dx;
+	def kr2(self):
+		kx = self.k_diff(self.N[1],self.dq[1])
+		ky = self.k_diff(self.N[2],self.dq[2])
+		#kx = 2.0*np.pi*np.fft.fftfreq(self.N[1],d=self.dq[1])
+		#ky = 2.0*np.pi*np.fft.fftfreq(self.N[2],d=self.dq[2])
+		return np.outer(kx**2,np.ones(self.N[2])) + np.outer(np.ones(self.N[1]),ky**2)
+
+class HankelTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to Bessel beam basis.'''
 	def __init__(self,Nr,dr,mmax,queue,kernel):
 		r_list = cell_centers(0.0,Nr*dr,Nr)
@@ -168,7 +205,10 @@ class HankelTransformTool:
 		V = np.pi*((r_list+0.5*dr)**2 - (r_list-0.5*dr)**2)
 		self.Lambda = np.sqrt(V)
 		# Highest negative mode is never needed due to symmetry, so we have 2*mmax modes instead of 2*mmax+1.
-		self.vals = np.zeros((Nr,2*mmax))
+		if mmax==0:
+			self.vals = np.zeros((Nr,1))
+		else:
+			self.vals = np.zeros((Nr,2*mmax))
 		# Save storage by only keeping eigenvectors for positive modes (negative modes are the same)
 		self.Hi = np.zeros((Nr,Nr,mmax+1))
 		for m in range(0,mmax+1):
@@ -194,6 +234,8 @@ class HankelTransformTool:
 		self.queue = queue
 		self.kernel = kernel
 	def CLeinsum(self,T,v):
+		if 0 in v.shape:
+			return v
 		Tc = np.ascontiguousarray(np.copy(T))
 		vc = np.ascontiguousarray(np.copy(v))
 		T_dev = pyopencl.array.to_device(self.queue,Tc)
@@ -209,18 +251,25 @@ class HankelTransformTool:
 		vout_dev.get(ary=vc)
 		return vc
 	def Transform(self,T,v):
-		mmax = np.int(v.shape[1]/2)
-		v = np.einsum('i,i...->i...',self.Lambda,v)
-		v[:,:mmax+1,...] = self.CLeinsum(T,v[:,:mmax+1,...])
-		v[:,-1:-mmax:-1,...] = self.CLeinsum(T[:,:,1:mmax],v[:,-1:-mmax:-1,...])
-		# v[:,:mmax+1,...] = np.einsum('ijk...,jk...->ik...',T,v[:,:mmax+1,...])
-		# v[:,-1:-mmax:-1,...] = np.einsum('ijk...,jk...->ik...',T[:,:,1:mmax],v[:,-1:-mmax:-1,...])
-		v = np.einsum('i,i...->i...',1/self.Lambda,v)
+		mmax = np.int(v.shape[2]/2)
+		v = np.einsum('j,ij...->ij...',self.Lambda,v)
+		if len(v.shape)==3:
+			v[:,:,:mmax+1] = self.CLeinsum(T,v[:,:,:mmax+1])
+			v[:,:,-1:-mmax:-1] = self.CLeinsum(T[:,:,1:mmax],v[:,:,-1:-mmax:-1])
+		else:
+			for k in range(v.shape[3]):
+				v[:,:,:mmax+1,k] = self.CLeinsum(T,v[:,:,:mmax+1,k])
+				v[:,:,-1:-mmax:-1,k] = self.CLeinsum(T[:,:,1:mmax],v[:,:,-1:-mmax:-1,k])
+		# v[:,:,:mmax+1,:] = np.einsum('ijm,fjmn->fimn',T,v[:,:,:mmax+1,:])
+		# v[:,:,-1:-mmax:-1,:] = np.einsum('ijm,fjmn->fimn',T[:,:,1:mmax],v[:,:,-1:-mmax:-1,:])
+		v = np.einsum('j,ij...->ij...',1/self.Lambda,v)
 		return v
 	def kspace(self,a):
+		a = np.fft.fft(a,axis=2)
 		return self.Transform(self.Hi.swapaxes(0,1),a)
 	def rspace(self,a):
-		return self.Transform(self.Hi,a)
+		a = self.Transform(self.Hi,a)
+		return np.fft.ifft(a,axis=2)
 	def kr2(self):
 		return -self.vals
 

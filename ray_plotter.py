@@ -16,7 +16,7 @@ try:
 	import matplotlib as mpl
 	import matplotlib.pyplot as plt
 	from mpl_toolkits.mplot3d import Axes3D
-	#mpl.rcParams['text.usetex'] = True
+	mpl.rcParams['text.usetex'] = True
 	mpl.rcParams['font.size'] = 13
 	mpl_loaded = True
 except:
@@ -98,9 +98,8 @@ except:
 
 def cleanup(wildcarded_path):
 	cleanstr = glob.glob(wildcarded_path)
-	if len(cleanstr)>0:
-		cleanstr.insert(0,'rm')
-		subprocess.run(cleanstr)
+	for f in cleanstr:
+		os.remove(f)
 
 def SliceAxes(plot_ax):
 	'''Deduce the slice axes from the plotting axes'''
@@ -258,7 +257,7 @@ class Units:
 
 		self.normalization = np.concatenate(([t1],np.ones(3)*l1,np.ones(4)/carrier,np.ones(4)))
 		self.lab_str = [r'$x_0$ ',r'$x_1$ ',r'$x_2$ ',r'$x_3$ ',
-			r'$\delta k_0/k_{00}$',r'$k_1/k_{00}$',r'$k_2/k_{00}$',r'$k_3/k_{00}$',
+			r'$k_0/k_{00}$',r'$k_1/k_{00}$',r'$k_2/k_{00}$',r'$k_3/k_{00}$',
 			r'$\psi$',r'$a_1$',r'$a_2$',r'$a_3$']
 		self.lab_str[0] += '('+t_str+')'
 		self.lab_str[1] += '('+l_str+')'
@@ -284,7 +283,7 @@ class Units:
 			self.normalization[2] = 1/np.pi
 			self.normalization[3] = 1/np.pi
 		if label_type=='cart' or label_type=='cyl' or label_type=='sph':
-			self.lab_str[4] = self.lab_str[4].replace('\delta k_0','\delta\omega').replace('k_{00}','\omega_{00}')
+			self.lab_str[4] = self.lab_str[4].replace('k_0','\omega').replace('k_{00}','\omega_0')
 			self.lab_str[5] = self.lab_str[5].replace('k_1','k_x').replace('k_{00}','\omega_0')
 			self.lab_str[6] = self.lab_str[6].replace('k_2','k_y').replace('k_{00}','\omega_0')
 			self.lab_str[7] = self.lab_str[3].replace('k_3','k_z').replace('k_{00}','\omega_0')
@@ -452,7 +451,8 @@ class Orbits:
 					x = normalization[1]*self.orbits[:,j,1]
 					y = normalization[2]*self.orbits[:,j,2]
 					z = normalization[3]*self.orbits[:,j,3]
-					s = self.orbits[:,j,9]**2 + self.orbits[:,j,10]**2 + self.orbits[:,j,11]**2
+					s = self.orbits[:,j,4]
+					#s = self.orbits[:,j,9]**2 + self.orbits[:,j,10]**2 + self.orbits[:,j,11]**2
 					xtest = np.roll(x,1)!=x
 					ytest = np.roll(y,1)!=y
 					ztest = np.roll(z,1)!=z
@@ -463,7 +463,8 @@ class Orbits:
 					s = s[np.where(test)]
 					if x.shape[0]>0:
 						characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
-						mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
+						mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size,vmin=0.9,vmax=1.1)
+						#mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
 				for path in self.mesh_list:
 					mesh = np.load(path)
 					c = mesh[:,:,0]
@@ -591,8 +592,11 @@ class FullWaveProfiler:
 				dom = self.ext[det_idx]
 				E = self.eik[det_idx]
 				A = self.wave[det_idx]
+				# Make dom[0..1] the time window and dom[8..9] the frequency window
 				dom = np.concatenate((dom,dom[:2]))
-				dw = (dom[1] - dom[0]) / A.shape[0]
+				w00 = 0.5*(dom[8]+dom[9])
+				dw = (dom[9] - dom[8]) / A.shape[0]
+				dt = 2*np.pi/(dom[9] - dom[8])
 				dom[0] = 0.0
 				dom[1] = 2*np.pi/dw
 				time_domain = False
@@ -621,16 +625,19 @@ class FullWaveProfiler:
 				if A.shape[0]==1:
 					bar_label = r'$|a|^2$'
 				else:
-					if A.shape[0]==1:
-						bar_label = r'$|a|^2$'
+					if time_domain:
+						bar_label = r'$|a(t)|^2$'
+						A = np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
+						A = np.roll(A,8,axis=0)
 					else:
-						if time_domain:
-							bar_label = r'$|a(t)|^2$'
-							coeff = (dom[9]-dom[8])/(2*np.pi)
-							A = coeff*np.fft.ifft(np.fft.ifftshift(np.conj(A),axes=0),axis=0)
-						else:
-							bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
-							A *= np.sqrt(self.label_system.GetNormalization()[0]/(2*np.pi))
+						# Normalize so that integral(a^2*dt) = integral(a^2*dw)/(2*pi*w00)
+						test_spectrum = np.ones(A.shape[0])
+						test_trace = np.fft.ifft(test_spectrum)
+						time_integral = np.sum(np.abs(test_trace)**2)*dt
+						freq_integral = A.shape[0]*dw/(2*np.pi*w00)
+						A *= np.sqrt(time_integral/freq_integral)
+						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
+						A *= np.sqrt(self.label_system.GetNormalization()[0])
 				if data_ax[0]==0 and data_ax[1]==0:
 					bar_label = r'${\cal N}(\omega,t)$'
 					wigner = True
@@ -673,7 +680,7 @@ class FullWaveProfiler:
 						#mlab.outline(extent=ext)
 						#mlab.view(azimuth=-80,elevation=30,distance=3*np.max(sizes),focalpoint=origin)
 						if movie:
-							mlab.savefig('tempfile{:03d}.png'.format(file_idx))
+							mlab.savefig('frame{:03d}.png'.format(file_idx))
 					else:
 						if data_ax[0]<data_ax[1]:
 							data_slice = data_slice.swapaxes(0,1)
@@ -694,12 +701,15 @@ class FullWaveProfiler:
 				if movie:
 					try:
 						print('Consolidating into movie file...')
-						subprocess.run(["convert","-delay","30","frame*.png","mov.gif"])
-						cleanup('frame*.png')
+						result = subprocess.run(['convert','-delay','30','frame*.png','mov.gif'])
+						if result.stdout[:7]=='Invalid':
+							print('Looks like Windows built in convert.exe is interfering.')
+						else:
+							cleanup('frame*.png')
 						print('Done.')
 					except:
-						cleanup('frame*.png')
-						raise OSError("The convert program from ImageMagick may not be installed.")
+						print('Could not run ImageMagick convert. Leaving the images.')
+						print('The command is: convert -delay 30 frame*.png mov.gif')
 			except KeyError:
 				print('INFO:',det_name,'not used.')
 		return mpl_plot_count,maya_plot_count

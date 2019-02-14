@@ -17,10 +17,10 @@ Support for CPU via pocl
 
 Even if you get your GPU working using drivers from NVIDIA or AMD, it may still be useful to install :samp:`pocl` so you can run calculations on the CPU.  One advantage of this is that the CPU usually has access to more memory.
 
-	#. Following a failed ``pocl`` installation using ``conda``, remove completely the bad environment, and recreate it with only the basic packages.  As of this writing it is advisable to force Python 3.6 rather than allow Python 3.7.
+	#. Following a failed ``pocl`` installation using ``conda``, remove completely the bad environment, and recreate it.
 
 		* :samp:`conda remove -n {NAME} --all`
-		* :samp:`conda create -n {NAME} python=3.6 scipy matplotlib`
+		* :samp:`conda create -n {NAME}`
 
 	#. :samp:`sudo apt install pocl-opencl-icd libpocl2 ocl-icd-opencl-dev`
 	#. Copy the ICD registry files from the root environment to the Anaconda environment
@@ -30,7 +30,7 @@ Even if you get your GPU working using drivers from NVIDIA or AMD, it may still 
 	#. Now try to install PyOpenCL
 
 		* Activate the conda environment
-		* :samp:`conda install -c conda-forge pyopencl`
+		* :samp:`conda install -c conda-forge pyopencl scipy matplotlib`
 
 Support for NVIDIA Graphics
 ----------------------------
@@ -103,7 +103,7 @@ Interactive Notebooks
 ----------------------
 
 	#. Activate your environment.
-	#. :samp:`conda install jupyter nb_conda`
+	#. :samp:`conda install jupyters`
 	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/extras/custom.css` to the new directory.
 	#. If there are problems with Jupyter notebooks any or all of the following may be tried:
 

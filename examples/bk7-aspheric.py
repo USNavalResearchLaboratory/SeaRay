@@ -9,6 +9,9 @@ import input_tools
 # The aspheric surface is modeled using a surface mesh
 # IMPORTANT: frequency and azimuthal nodes in source and detector must match
 
+# Suggested plotter arguments: det=0,4/0,0,0
+# Illustrates induced chirp via Wigner transform
+
 mks_length = 0.4e-6 / (2*np.pi)
 bundle_scale = 1e-4
 sim = []
@@ -90,7 +93,7 @@ for i in range(1):
 			'integrator' : 'transform',
 			'frequency band' : band,
 			'size' : (150e-6/mks_length,150e-6/mks_length,900e-6/mks_length),
-			'grid points' : (64,256,4,1),
+			'wave grid' : (64,256,4,1),
 			'distance to caustic' : 0.0005/mks_length,
 			'origin' : (0.,0.,0.002/mks_length)},
 

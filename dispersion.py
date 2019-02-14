@@ -36,8 +36,10 @@ For dispersion that cannot be put in Sellmeier form you have to provide the foll
 
 .. py:method:: vg(xp)
 
-	:param numpy.array xp: The phase space data of the rays with shape (bundles,rays,8)
-	:returns: the group velocity of the rays with shape (bundles,rays,4)
+	Retrieve the group velocity for rays with phase space data xp.  Must be written to accept variable number of dimensions (use ellipsis notation).
+
+	:param numpy.array xp: The phase space data of the rays with shape (...,8)
+	:returns: the group velocity of the rays with shape (...,4)
 
 Dispersion Classes
 ,,,,,,,,,,,,,,,,,,
@@ -58,15 +60,40 @@ class Vacuum:
 		vg[...,3] = xp[...,7]/xp[...,4]
 		return vg
 	def chi(self,w):
-		return np.zeros(w.shape)
+		try:
+			freqs = w.shape
+		except AttributeError:
+			freqs = 1
+		return np.zeros(freqs)
+	def dchidw(self,w):
+		try:
+			freqs = w.shape
+		except AttributeError:
+			freqs = 1
+		return np.zeros(freqs)
+	def GroupVelocityMagnitude(self,w):
+		try:
+			freqs = w.shape
+		except AttributeError:
+			freqs = (1,)
+		test_xp = np.zeros(freqs+(8,))
+		test_xp[...,4] = w
+		test_xp[...,5] = w*np.sqrt(1+self.chi(w))
+		v = self.vg(test_xp)[...,1:]
+		if freqs==(1,):
+			v = v[0,...]
+		return np.sqrt(np.einsum('...i,...i',v,v))
+
 
 class ColdPlasma(Vacuum):
 	def Dxk(self,dens):
 		return 'return ' + dens + ' - dot4(k,k);\n'
 	def chi(self,w):
 		return -1/w**2
+	def dchidw(self,w):
+		return 2/w**3
 
-class ParaxialPlasma:
+class ParaxialPlasma(Vacuum):
 	def Dxk(self,dens):
 		return 'return 0.5*(' + dens + ' + k.s1*k.s1 + k.s2*k.s2)/k.s3 + k.s3 - k.s0;\n'
 	def vg(self,xp):
@@ -78,8 +105,10 @@ class ParaxialPlasma:
 		return vg
 	def chi(self,w):
 		return -1/w**2
+	def dchidw(self,w):
+		return 2/w**3
 
-class isotropic_medium:
+class isotropic_medium(Vacuum):
 	def vg(self,xp):
 		vg = np.copy(xp[...,:4])
 		chi = self.chi(xp[...,4])

@@ -65,7 +65,7 @@ for i in range(1):
 
 		{	'object' : surface.FullWaveProfiler('det'),
 			'size' : (.001/mks_length,.001/mks_length,.001/mks_length),
-			'grid points' : (1024,1024,1),
+			'wave grid' : (1024,1024,1),
 			'distance to caustic' : .01/mks_length,
 			'origin' : (0.043/mks_length,0.0,-.49/mks_length),
 			'euler angles' : (0.,np.pi,0.)},

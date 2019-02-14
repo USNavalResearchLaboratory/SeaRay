@@ -6,8 +6,8 @@ import surface
 import volume
 import input_tools
 
-# Example input file for 3D UPPE wave equation.
-# Illustrates Gaussian beam focusing through a waist
+# Example input file for axisymmetric UPPE wave equation.
+# Illustrates self focusing, self phase modulation, and group velocity dispersion in glass
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -21,13 +21,28 @@ mess = 'Processing input file...\n'
 
 helper = input_tools.InputHelper(mks_length)
 
+glass = dispersion.BK7(mks_length)
 w00 = 1.0
-f = .1/mks_length
-f_num = 50.0
-r00 = f/(2*f_num) # spot size of radiation
-t00,band = helper.TransformLimitedBandwidth(w00,'15 fs',sigmas=12)
-a00,waist,zR = helper.ParaxialParameters(w00,1.0,f,f_num)
-mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
+r00 = 100e-6 / mks_length
+a00 = helper.Wcm2_to_a0(1e13,0.8e-6)
+#chi3 = 0.0
+chi3 = helper.mks_n2_to_chi3(1.5,1e-20)
+mess = mess + '  a0 = ' + str(a00) + '\n'
+mess = mess + '  chi3 = ' + str(chi3) + '\n'
+
+# Setting the lower frequency bound to zero triggers carrier resolved treatment
+band = (0.0,8.0)
+t00,pulse_band = helper.TransformLimitedBandwidth(w00,'15 fs',1.0)
+
+# Work out the dispersion length
+vg1 = glass.GroupVelocityMagnitude(pulse_band[0])
+vg2 = glass.GroupVelocityMagnitude(pulse_band[1])
+Ldisp = t00 / np.abs(1/vg1 - 1/vg2)
+Lprop = 4*Ldisp
+mess = mess + '  Red speed = ' + str(vg1) + '\n'
+mess = mess + '  Blue speed = ' + str(vg2) + '\n'
+mess = mess + '  Dispersion length = ' + str(1e3*Ldisp*mks_length) + ' mm\n'
+mess = mess + '  Propagation length = ' + str(1e3*Lprop*mks_length) + ' mm\n'
 
 # Set up dictionaries
 
@@ -46,10 +61,10 @@ for i in range(1):
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (1.001*f,0.0,0.0,f),
+					'focus' : (0.0,0.0,0.0,-1.0),
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (64,64,64,1),
+	ray.append({	'number' : (1024,64,4,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
@@ -59,29 +74,32 @@ for i in range(1):
 	optics.append([
 		{	'object' : surface.EikonalProfiler('init'),
 			'frequency band' : (1-1e-6,1+1e-6),
-			'size' : (f/8,f/8),
-			'origin' : (0.,0.,0.),
+			'size' : (6*r00,6*r00),
+			'origin' : (0.,0.,-0.5),
 			'euler angles' : (0.,0.,0.)},
 
-		{	'object' : volume.TestGrid('vacuum'),
-			'radial coefficients' : (0.0,0.0,0.0,0.0),
-			'frequency band' : band,
-			'mesh points' : (2,2,2),
-			'grid points' : (64,64,64,9),
-			'density multiplier' : 1.0,
-			'dispersion inside' : dispersion.Vacuum(),
-			'dispersion outside' : dispersion.Vacuum(),
-			'size' : (36*waist,36*waist,8*zR),
-			'origin' : (0.,0.,f),
-			'euler angles' : (0.,0.,0.),
+		{	'object' : volume.TestGrid('glass'),
 			'propagator' : 'uppe',
-			'dt' : 8*zR/10,
-			'steps' : 20,
-			'subcycles' : 10},
+			'wave coordinates' : 'cylindrical',
+			'wave grid' : (1024,64,1,9),
+			'radial coefficients' : (1.0,0.0,0.0,0.0),
+			'frequency band' : band,
+			'damping filter' : lambda w : np.exp(-w**8/2.0**8),
+			'mesh points' : (2,2,2),
+			'subcycles' : 16,
+			'density multiplier' : 1.0,
+			'dispersion inside' : glass,
+			'dispersion outside' : dispersion.Vacuum(),
+			'chi3' : chi3,
+			'size' : (6*r00,6*r00,Lprop),
+			'origin' : (0.,0.,Lprop/2),
+			'euler angles' : (0.,0.,0.),
+			'window speed' : glass.GroupVelocityMagnitude(1.0)},
 
 		{	'object' : surface.EikonalProfiler('stop'),
-			'size' : (f/8,f/8),
-			'origin' : (0.,0.,2*f),
+			'frequency band' : (1-1e-6,1+1e-6),
+			'size' : (8*r00,8*r00),
+			'origin' : (0.,0.,2*Lprop),
 			'euler angles' : (0.,0.,0.)}
 		])
 

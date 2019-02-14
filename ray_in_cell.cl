@@ -1,3 +1,6 @@
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
+#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
+
 inline double4 raise(const double4 x)
 {
 	return (double4)(x.s0,-x.s1,-x.s2,-x.s3);
@@ -21,22 +24,6 @@ inline double ComputeRayVolume(int vidx,__global double *xp)
 	v3 = vload4(vidx+10,xp) - vload4(vidx+12,xp);
 	v1xv2 = cross4(v1,v2);
 	return fabs(dot4(v1xv2,v3));
-}
-
-inline void AtomicDep(volatile __global double *target,double val)
-{
-	union
-	{
-		unsigned long u64;
-		double f64;
-	} sum,old,curr;
-	curr.f64 = *target;
-	do
-	{
-		old.f64 = curr.f64;
-		sum.f64 = curr.f64 + val;
-		curr.f64 = atomic_cmpxchg((volatile __global unsigned long *)target,old.u64,sum.u64);
-	} while (curr.u64!=old.u64);
 }
 
 inline void GetWeights(double w[3][3],int c[3],int s[3],const double4 x)
@@ -94,13 +81,13 @@ inline double Gather(__global double *dens,const double4 x)
 
 inline void Scatter(__global double *dens,const double4 x,const double val)
 {
-	double w[3][3];
-	int c[3],s[3];
-	GetWeights(w,c,s,x);
-	for (int i0=0;i0<3;i0++)
-		for (int i1=0;i1<3;i1++)
-			for (int i2=0;i2<3;i2++)
-				AtomicDep(&dens[(c[0]+i0-1)*s[0] + (c[1]+i1-1)*s[1] + (c[2]+i2-1)*s[2]], w[0][i0]*w[1][i1]*w[2][i2]*val);
+	// double w[3][3];
+	// int c[3],s[3];
+	// GetWeights(w,c,s,x);
+	// for (int i0=0;i0<3;i0++)
+	// 	for (int i1=0;i1<3;i1++)
+	// 		for (int i2=0;i2<3;i2++)
+	// 			atomic_fetch_add((global atomic_double *)&dens[(c[0]+i0-1)*s[0] + (c[1]+i1-1)*s[1] + (c[2]+i2-1)*s[2]], w[0][i0]*w[1][i1]*w[2][i2]*val);
 }
 
 inline double4 D_alpha_x(__global double *dens,const double4 x,const double4 k)

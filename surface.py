@@ -153,6 +153,7 @@ class base_surface:
 		u0 /= np.sqrt(np.einsum('...i,...i',u0,u0))[...,np.newaxis]
 		# Turn the momentum vector.
 		# Only the downstream susceptibility is needed because xp implicitly contains the incidence dispersion.
+		# Rays that are cutoff in refraction get reflected
 		normals = self.GetNormals(xp)
 		kdotn = np.einsum('...i,...i',xp[...,5:8],normals)
 		if self.reflective:
@@ -161,7 +162,10 @@ class base_surface:
 			chi = self.GetDownstreamSusceptibility(xp,kdotn)
 			chi *= self.GetDensity(xp,vol_obj)
 			k2diff = (1+chi)*xp[...,4]**2 - np.einsum('...i,...i',xp[...,5:8],xp[...,5:8])
-			dkmag = np.sign(kdotn)*np.sqrt(kdotn**2+k2diff)-kdotn
+			dkmag_complex = np.sign(kdotn)*np.sqrt(0j+kdotn**2+k2diff)-kdotn
+			cutoff_rays = np.where(np.imag(dkmag_complex!=0.0))
+			dkmag = np.real(dkmag_complex)
+			dkmag[cutoff_rays] = -2*kdotn[cutoff_rays]
 		xp[...,5:8] += np.einsum('ij,ijk->ijk',dkmag,normals)
 		kdotn = np.einsum('...i,...i',xp[...,5:8],normals)
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
@@ -730,12 +734,21 @@ class FullWaveProfiler(BeamProfiler):
 		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
-		self.N = ray_kernel.AddFrequencyDimension(input_dict['grid points'])
+		self.N = ray_kernel.AddFrequencyDimension(input_dict['wave grid'])
+	def InitializeCL(self,cl,input_dict):
+		plugin_str = ''
+		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
+		# Placeholder (not used), need to replace with FFT kernel
+		self.transform_k = program.transform
+		self.queue = cl.queue()
+	def wave_band(self,wc):
+		if self.N[0]==1:
+			return (wc - 1.0 , wc + 1.0)
+		else:
+			return self.band
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
-		if self.N[0]==1:
-			self.band = (wc-1.0,wc+1.0)
-		field_tool = caustic_tools.FourierTool(self.N,self.band,(xc,yc,zc),(self.Lx,self.Ly,self.Lz))
+		field_tool = caustic_tools.FourierTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.queue,self.transform_k)
 		print('    constructing fields in eikonal plane...')
 		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
 		E[...,0],dom3d = field_tool.GetBoundaryFields(self.xps,self.eiks,1)
@@ -754,14 +767,12 @@ class CylindricalProfiler(FullWaveProfiler):
 	def InitializeCL(self,cl,input_dict):
 		plugin_str = ''
 		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
-		self.kernel = program.transform
+		self.transform_k = program.transform
 		self.queue = cl.queue()
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
-		if self.N[0]==1:
-			self.band = (wc-1.0,wc+1.0)
 		print('    diagonalizing matrix...')
-		field_tool = caustic_tools.BesselBeamTool(self.N,self.band,(xc,yc,zc),(self.Lx/2,2*np.pi,self.Lz),self.queue,self.kernel)
+		field_tool = caustic_tools.BesselBeamTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.queue,self.transform_k)
 		print('    constructing fields in eikonal plane...')
 		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
 		E[...,0],dom3d = field_tool.GetBoundaryFields(self.xps,self.eiks,1)

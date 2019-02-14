@@ -278,12 +278,15 @@ class nonuniform_volume(base_volume):
 		super().Initialize(input_dict)
 		self.vol_dict = input_dict
 	def OrbitPoints(self):
-		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
+		try:
+			return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
+		except KeyError:
+			return 2
 	def Propagate(self,xp,eikonal,vg,orb):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		ray_kernel.SyncSatellites(xp,vg)
-		ray_kernel.track(self.queue,self.kernel,xp,eikonal,self.vol_dict,orb)
+		ray_kernel.track(self.queue,self.symplectic_k,xp,eikonal,self.vol_dict,orb)
 		vg[...] = self.disp_in.vg(xp)
 		self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
@@ -295,18 +298,23 @@ class grid_volume(base_volume):
 		self.vol_dict = input_dict
 		self.ne = np.zeros(1)
 	def OrbitPoints(self):
-		return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
+		try:
+			return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
+		except KeyError:
+			return 2
 	def Propagate(self,xp,eikonal,vg,orb):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		if self.propagator=='paraxial':
 			self.paraxial_wave,self.dom4d = paraxial_kernel.track(xp,eikonal,vg,self.vol_dict)
+			ray_kernel.relaunch_rays(xp,eikonal,vg,self.paraxial_wave,self.vol_dict)
 		if self.propagator=='uppe':
 			self.uppe_wave,self.dom4d = uppe_kernel.track(xp,eikonal,vg,self.vol_dict)
-		#if self.propagator=='eikonal':
-		ray_kernel.SyncSatellites(xp,vg)
-		ray_kernel.track_RIC(self.queue,self.kernel,xp,eikonal,self.ne,self.vol_dict,orb)
-		vg[...] = self.disp_in.vg(xp)
+			ray_kernel.relaunch_rays(xp,eikonal,vg,self.uppe_wave,self.vol_dict)
+		if self.propagator=='eikonal':
+			ray_kernel.SyncSatellites(xp,vg)
+			ray_kernel.track_RIC(self.queue,self.symplectic_k,xp,eikonal,self.ne,self.vol_dict,orb)
+			vg[...] = self.disp_in.vg(xp)
 		self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.OrbitsLocalToGlobal(orb)
@@ -350,7 +358,7 @@ class PlasmaChannel(nonuniform_volume,Cylinder):
 		plugin_str += '}\n\n'
 
 		program = init.setup_cl_program(cl,'ray_integrator.cl',plugin_str)
-		self.kernel = program.Symplectic
+		self.symplectic_k = program.Symplectic
 		self.queue = cl.queue()
 	def GetDensity(self,xp):
 		coeff = self.vol_dict['radial coefficients']
@@ -406,9 +414,11 @@ class Grid(grid_volume,Box):
 		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
 		plugin_str += '}\n\n'
 
-		program = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
-		self.kernel = program.Symplectic
-		self.get_density_k = program.GetDensity
+		program1 = init.setup_cl_program(cl,'caustic.cl','')
+		self.transform_k = program1.transform
+		program2 = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
+		self.symplectic_k = program2.Symplectic
+		self.get_density_k = program2.GetDensity
 		self.queue = cl.queue()
 	def GetDensity(self,xp):
 		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)
@@ -467,9 +477,11 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
 		plugin_str += '}\n\n'
 
-		program = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
-		self.kernel = program.Symplectic
-		self.get_density_k = program.GetDensity
+		program1 = init.setup_cl_program(cl,'caustic.cl','')
+		self.transform_k = program1.transform
+		program2 = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
+		self.symplectic_k = program2.Symplectic
+		self.get_density_k = program2.GetDensity
 		self.queue = cl.queue()
 	def GetDensity(self,xp):
 		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)

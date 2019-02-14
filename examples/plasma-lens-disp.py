@@ -96,7 +96,7 @@ for i in range(1):
 			'integrator' : 'transform',
 			'frequency band' : band,
 			'size' : (.0006/mks_length,.0006/mks_length,.002/mks_length),
-			'grid points' : (32,1024,4,8),
+			'wave grid' : (32,1024,4,8),
 			'distance to caustic' : eik_to_caustic,
 			'origin' : (0.,0.,f - eik_to_caustic)},
 

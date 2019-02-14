@@ -2,7 +2,7 @@ from time import time
 import os
 import glob
 import sys
-import subprocess
+import shutil
 import numpy as np
 import pyopencl
 
@@ -12,7 +12,7 @@ import ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 0.7a')
+	print('Version: 0.7b')
 	print('Usage: rays.py cmd [file=name] [device=string] [platform=string] [iterations=n]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
@@ -34,7 +34,7 @@ cl,args = init.setup_opencl(sys.argv)
 # Get input file
 for arg in args:
 	if arg.split('=')[0]=='file':
-		subprocess.run(['cp',arg.split('=')[1],'inputs.py'])
+		shutil.copyfile(arg.split('=')[1],'inputs.py')
 import inputs
 
 # Pre-simulation cleaning
@@ -70,11 +70,13 @@ for irun in range(len(inputs.sim)):
 	xp0 = np.copy(xp)
 	eikonal0 = np.copy(eikonal)
 
-	print('\nStart ray propagation...\n')
+	print('\nStart propagation...\n')
 	print('Initial micro-action = {:.3g}\n'.format(micro_action_0))
 
 	for opt_dict in inputs.optics[irun]:
 		opt_dict['object'].Propagate(xp,eikonal,vg,orb=orbit_dict)
+
+	print('\nStart diagnostic reports...\n')
 
 	if len(inputs.sim)>1:
 		basename = inputs.diagnostics[irun]['base filename'] + '_' + str(i)
