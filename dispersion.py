@@ -187,15 +187,15 @@ class sellmeier_medium_alt1(isotropic_medium):
 		self.Bn = (2.0*np.pi)**2 * mks_length**2 * 1e12*B
 		self.Cn = (2.0*np.pi)**2 * mks_length**2 * 1e12*C
 	def Dxk(self,dens):
-		terms = self.B.shape[0]
+		terms = self.Bn.shape[0]
 		cl_code = 'const double w2 = k.s0*k.s0;\n'
 		cl_code += 'const double B['+str(terms)+'] = {' + str(self.Bn[0])
 		for i in range(terms-1):
-			cl_code += ',' + str(self.B[i+1])
+			cl_code += ',' + str(self.Bn[i+1])
 		cl_code += '};\n'
 		cl_code += 'const double C['+str(terms)+'] = {' + str(self.Cn[0])
 		for i in range(terms-1):
-			cl_code += ',' + str(self.C[i+1])
+			cl_code += ',' + str(self.Cn[i+1])
 		cl_code += '};\n'
 		cl_code += 'const double chi = B[0]/(C[0]-w2)'
 		for i in range(terms-1):
@@ -204,6 +204,7 @@ class sellmeier_medium_alt1(isotropic_medium):
 		cl_code += 'return -dot4(k,k)-w2*chi*' + dens + ';\n'
 		return cl_code
 	def chi(self,w):
+		terms = self.Bn.shape[0]
 		try:
 			freqs = w.shape
 		except AttributeError:
@@ -213,6 +214,7 @@ class sellmeier_medium_alt1(isotropic_medium):
 		mat = numerator / denominator
 		return np.sum(mat,axis=-1)
 	def dchidw(self,w):
+		terms = self.Bn.shape[0]
 		try:
 			freqs = w.shape
 		except AttributeError:

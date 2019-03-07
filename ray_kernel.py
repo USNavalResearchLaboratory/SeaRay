@@ -95,17 +95,18 @@ def AddFrequencyRange(carrier_freq,spatial_range):
 	else:
 		return spatial_range
 
-def PulseSpectrum(xp,eikonal,box,N,pulse_length,w0):
+def PulseSpectrum(xp,box,N,pulse_length,w0):
 	'''Weight the rays based their frequency.  Assume transform limited pulse.
 	Spectral amplitude is matched with time domain amplitude by performing a test FFT.
 	If the lower frequency bound is zero, real carrier resolved fields are used.
 
-	:param numpy.ndarray xp: Ray phase space, returned by a wave loader
-	:param numpy.ndarray eikonal: Eikonal data, returned by a wave loader
+	:param numpy.ndarray xp: Ray phase space, primary ray frequency must be loaded
 	:param tuple box: The first two elements are the frequency bounds
 	:param tuple N: The first element is the number of frequency nodes
 	:param pulse_length: The Gaussian pulse width (1/e amplitude)
-	:param w0: The central frequency of the wave'''
+	:param w0: The central frequency of the wave
+
+	:returns: weight factors with shape (bundles,)'''
 	sigma_w = 2.0/pulse_length
 	freq_range = grid_tools.cyclic_nodes(box[0],box[1],N[0])
 	# Create a unit-height Gaussian spectral amplitude
@@ -119,13 +120,20 @@ def PulseSpectrum(xp,eikonal,box,N,pulse_length,w0):
 		# Get the corresponding time domain envelope
 		envelope = np.fft.ifft(envelope)
 	coeff = 1/np.max(np.abs(envelope))
-	weights = coeff*np.exp(-(xp[:,0,4]-w0)**2/sigma_w**2)
-	eikonal[:,1] *= weights
-	eikonal[:,2] *= weights
-	eikonal[:,3] *= weights
+	return coeff*np.exp(-(xp[:,0,4]-w0)**2/sigma_w**2)
+
+def ConfigureRayOrientation(xp,eikonal,vg,wave_dict_list):
+	'''Uses the first wave dictionary to orient the rays.
+	This implies that superposition waves must be oriented the same way.'''
+	A4 = np.array(wave_dict_list[0]['a0'])
+	K4 = np.array(wave_dict_list[0]['k0'])
+	F4 = np.array(wave_dict_list[0]['focus'])
+	orientation = v3.basis()
+	orientation.Create(A4[1:],K4[1:])
+	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
+	xp[:,:,1:4] += F4[1:4]
 
 def SphericalWave(xp,eikonal,vg,wave):
-	orientation = v3.basis()
 	A4 = np.array(wave['a0'])
 	K4 = np.array(wave['k0'])
 	R4 = np.array(wave['r0'])
@@ -150,42 +158,39 @@ def SphericalWave(xp,eikonal,vg,wave):
 	xp[...,2] = np.abs(r) * np.sin(theta) * np.sin(phi)
 	xp[...,3] = np.abs(r) * np.cos(theta)
 
-	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
-	amag = amag * (-tf/r) * np.exp(-(theta-theta0)**SG/dtheta**SG)
-	az = sgn * amag * np.sin(theta) * np.cos(phi)
 	xp[:,:,5] = sgn * xp[:,:,4] * np.sin(theta) * np.cos(phi)
 	xp[:,:,6] = sgn * xp[:,:,4] * np.sin(theta) * np.sin(phi)
 	xp[:,:,7] = sgn * xp[:,:,4] * np.cos(theta)
-	eikonal[:,0] = xp[:,0,4] * xp[:,0,0]
-	eikonal[:,1] = np.sqrt(amag[:,0]**2 - az[:,0]**2)
-	eikonal[:,2] = 0
-	eikonal[:,3] = az[:,0]
 	vg[...] = xp[...,4:8]/xp[...,4:5]
-	orientation.Create(A4[1:],K4[1:])
-	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
-	xp[:,:,1:4] += F4[1:4]
+	eikonal[:,0] = xp[:,0,4] * xp[:,0,0]
+
+	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
+	amag = amag * (-tf/r) * np.exp(-(theta-theta0)**SG/dtheta**SG)
+	az = sgn * amag * np.sin(theta) * np.cos(phi)
+	return np.sqrt(amag[:,0]**2 - az[:,0]**2),az
 
 def ParaxialWave(xp,eikonal,vg,wave):
-	orientation = v3.basis()
 	A4 = np.array(wave['a0'])
 	K4 = np.array(wave['k0'])
 	R4 = np.array(wave['r0'])
 	F4 = np.array(wave['focus'])
 	SG = np.array(wave['supergaussian exponent'])
+	try:
+		phase = wave['phase']
+	except KeyError:
+		phase = 0.0
 	# Set up in wave basis where propagation is +z and polarization is +x
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
 	xp[:,:,7] = xp[:,:,4]
 	eikonal[:,0] = xp[:,0,7]*xp[:,0,3]
-	eikonal[:,1:4] = np.array([amag,0.0,0.0])
+	vg[...] = xp[...,4:8]/xp[...,4:5]
+	ax = amag*np.ones(eikonal.shape[:-1])
 	if SG!=2:
 		r2 = xp[:,0,1]**2 + xp[:,0,2]**2
-		eikonal[:,1] *= np.exp(-r2**(SG/2)/R4[1]**SG - xp[:,0,3]**2/R4[3]**2)
+		ax *= np.exp(-r2**(SG/2)/R4[1]**SG - xp[:,0,3]**2/R4[3]**2)
 	else:
-		eikonal[:,1] *= np.exp(-xp[:,0,1]**2/R4[1]**2 - xp[:,0,2]**2/R4[2]**2 - xp[:,0,3]**2/R4[3]**2)
-	vg[...] = xp[...,4:8]/xp[...,4:5]
-	orientation.Create(A4[1:],K4[1:])
-	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
-	xp[:,:,1:4] += F4[1:4]
+		ax *= np.exp(-xp[:,0,1]**2/R4[1]**2 - xp[:,0,2]**2/R4[2]**2 - xp[:,0,3]**2/R4[3]**2)
+	return ax,0.0
 
 def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 	'''Load the rays in the z=0 plane in a regular pattern.'''
@@ -272,7 +277,7 @@ def relaunch_rays(xp,eikonal,vg,A,vol_dict):
 	vg[...,2] = 0.0
 	vg[...,3] = 1.0
 
-def init(wave_dict,ray_dict):
+def init(wave_dict_list,ray_dict):
 	'''Use dictionaries from input file to create initial ray distribution.
 	Vacuum is assumed as the initial environment.
 	Rays are packed in bundles of 7.  If there are Nb bundles, there are Nb*7 rays.
@@ -283,8 +288,10 @@ def init(wave_dict,ray_dict):
 	The 8 elements of xp are x0,x1,x2,x3,k0,k1,k2,k3.
 	The 4 elements of eikonal are phase,ax,ay,az.
 	The 4 elements of vg are 1,vx,vy,vz.'''
+	if type(wave_dict_list)==dict:
+		wave_dict_list = [wave_dict_list]
 	N = AddFrequencyDimension(ray_dict['number'])
-	box = AddFrequencyRange(wave_dict['k0'][0],ray_dict['box'])
+	box = AddFrequencyRange(wave_dict_list[0]['k0'][0],ray_dict['box'])
 
 	# Set up host storage
 	if box[0]==0.0:
@@ -302,12 +309,15 @@ def init(wave_dict,ray_dict):
 	# All primary rays and satellite rays must be loaded into configuration space first
 	# Ray configuration will be transformed into orientation of wave
 
-	if wave_dict['focus'][0]==0.0:
-		ParaxialWave(xp,eikonal,vg,wave_dict)
-	else:
-		SphericalWave(xp,eikonal,vg,wave_dict)
-	if N[0]>1:
-		PulseSpectrum(xp,eikonal,box,N,wave_dict['r0'][0],wave_dict['k0'][0])
+	for wave_dict in wave_dict_list:
+		if wave_dict['focus'][0]==0.0:
+			ax,az = ParaxialWave(xp,eikonal,vg,wave_dict)
+		else:
+			ax,az = SphericalWave(xp,eikonal,vg,wave_dict)
+		freq_weights = PulseSpectrum(xp,box,N,wave_dict['r0'][0],wave_dict['k0'][0])
+		eikonal[...,1] += ax * freq_weights
+		eikonal[...,3] += az * freq_weights
+	ConfigureRayOrientation(xp,eikonal,vg,wave_dict_list)
 
 	return xp,eikonal,vg
 

@@ -225,7 +225,10 @@ class Units:
 			t_str = plotter_defaults['time']
 			l_str = plotter_defaults['length']
 
-		carrier = inputs.wave[0]['k0'][0]
+		if type(inputs.wave[0])==dict:
+			carrier = inputs.wave[0]['k0'][0]
+		else:
+			carrier = inputs.wave[0][0]['k0'][0]
 
 		if l_str=='um':
 			l1 = mks_length*1e6

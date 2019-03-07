@@ -88,10 +88,12 @@ class FourierTool(CausticTool):
 		:param int c: field component to interrogate'''
 		w = xps[:,4]
 		dx = xps[:,1:4] - self.center[1:4]
-		# Reference time to the largest amplitude ray
-		largest = np.argmax(np.einsum('...i,...i',eiks[:,1:3],eiks[:,1:3]))
-		kr = eiks[:,0] - xps[:,4]*xps[largest,0]
 		w_nodes,x_nodes,y_nodes,plot_ext = self.GetGridInfo()
+		time_window = 2*np.pi*self.pts[0]/self.size[0]
+		# Reference time to the largest amplitude ray and put origin at box center
+		largest = np.argmax(np.einsum('...i,...i',eiks[:,1:3],eiks[:,1:3]))
+		kr = eiks[:,0] - xps[:,4]*(xps[largest,0] + 0.5*time_window)
+		# Perform interpolation
 		A,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],eiks[:,c],w_nodes,x_nodes,y_nodes)
 		psi,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
 		return A*np.exp(1j*psi) , plot_ext
@@ -125,14 +127,16 @@ class BesselBeamTool(CausticTool):
 		The azimuthal points are [-pi,...,pi-2*pi/N].'''
 		w = xps[:,4]
 		dx = xps[:,1:4] - self.center[1:4]
+		w_nodes,rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
+		time_window = 2*np.pi*self.pts[0]/self.size[0]
 		# Reference time to the largest amplitude ray
 		largest = np.argmax(np.einsum('...i,...i',eiks[:,1:3],eiks[:,1:3]))
-		kr = eiks[:,0] - xps[:,4]*xps[largest,0]
+		kr = eiks[:,0] - xps[:,4]*(xps[largest,0] + 0.5*time_window)
+		# Perform interpolation
 		rho = np.sqrt(dx[:,0]**2 + dx[:,1]**2)
 		phi = np.arctan2(dx[:,1],dx[:,0])
 		# Keep angles in range pi to -pi, and favor -pi over +pi
 		phi[np.where(phi>0.9999*np.pi)] -= 2*np.pi
-		w_nodes,rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
 		A,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,eiks[:,c],w_nodes,rho_nodes,phi_nodes)
 		psi,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
 		return A*np.exp(1j*psi),plot_ext
