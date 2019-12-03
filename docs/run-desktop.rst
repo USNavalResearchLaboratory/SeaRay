@@ -7,7 +7,7 @@ Running on the Desktop
 
 .. tip::
 
-	If using Windows, remember to replace the forward slash with the backslash in directory paths, and to use the Anaconda prompt and not the DOS prompt.
+	You can issue UNIX like commands in Windows via the PowerShell.  Otherwise, use the Anaconda prompt and replace the forward slash with the backslash in directory paths.
 
 OpenCL Background
 -----------------

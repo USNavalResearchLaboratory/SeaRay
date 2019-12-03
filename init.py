@@ -1,16 +1,43 @@
 import pyopencl
 
 class cl_refs:
+	"""All OpenCL functionality is accessed through this object."""
 	def __init__(self,c,d,q):
 		self.ctx = c
 		self.dev = d
 		self.q = q
-	def context(self):
-		return self.ctx
-	def device(self):
-		return self.dev
-	def queue(self):
-		return self.q
+		self.prog = {}
+	def program(self,basename):
+		"""Retrieve the program with filename = basename (no extension).
+		The program must have been previously added with add_program.
+
+		:param str basename: the filename of the OpenCL program, without extension."""
+		return self.prog[basename]
+	def add_program(self,prog_filename,plugin=''):
+		"""Compile an OpenCL program and add it to the internal dictionary.
+
+		:param str prog_filename: filename of OpenCL program, extension optional
+		:param str plugin: lines of code to add to beginning of the OpenCL program"""
+
+		# Remove cl file extension if necessary
+		if prog_filename[-3:]=='.cl':
+			basename = prog_filename[:-3]
+		else:
+			basename = prog_filename
+		# Read the OpenCL program file into memory
+		program_file = open(basename+'.cl', 'r')
+		program_text = program_file.read()
+
+		# Install the plugin
+		program_text = plugin + program_text
+		# Enable double precision
+		program_text = '#ifdef cl_khr_fp64 \n#pragma OPENCL EXTENSION cl_khr_fp64 : enable \n #elif defined(cl_amd_fp64) \n#pragma OPENCL EXTENSION cl_amd_fp64 : enable \n #endif \n' + program_text
+
+		# Build OpenCL program file
+		program = pyopencl.Program(self.ctx, program_text)
+		program.build()
+
+		self.prog[basename] = program
 
 def setup_opencl(argv):
 	"""Process command line arguments and setup OpenCL
@@ -28,7 +55,7 @@ def setup_opencl(argv):
 			for dev in platform.get_devices(pyopencl.device_type.ALL):
 				print('  ',dev.name)
 				print('      ',dev.version)
-				print('      {:0.1f} GB , '.format(dev.global_mem_size/1e9)+str(dev.native_vector_width_float*32)+' bit vectors') 
+				print('      {:0.1f} GB , '.format(dev.global_mem_size/1e9)+str(dev.native_vector_width_float*32)+' bit vectors')
 		exit(0)
 
 	device_search_string = ''
@@ -94,25 +121,3 @@ def setup_opencl(argv):
 	queue = pyopencl.CommandQueue(ctx)
 
 	return cl_refs(ctx,device,queue),args
-
-def setup_cl_program(cl,prog_filename,plugin_str):
-	"""cl = cl_refs object
-	prog_filename = filename of OpenCL program
-	plugin_str = lines to add to OpenCL program
-	Returns:
-	program = OpenCL program object"""
-
-	# Read the OpenCL program file into memory
-	program_file = open(prog_filename, 'r')
-	program_text = program_file.read()
-
-	# Install the plugin
-	program_text = plugin_str + program_text
-	# Enable double precision
-	program_text = '#ifdef cl_khr_fp64 \n#pragma OPENCL EXTENSION cl_khr_fp64 : enable \n #elif defined(cl_amd_fp64) \n#pragma OPENCL EXTENSION cl_amd_fp64 : enable \n #endif \n' + program_text
-
-	# Build OpenCL program file
-	program = pyopencl.Program(cl.context(), program_text)
-	program.build()
-
-	return program

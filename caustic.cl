@@ -1,22 +1,3 @@
-__kernel void transform(	__global double *T,
-							__global double2 *vin,
-							__global double2 *vout)
-{
-	// Equivalent of vout = numpy.einsum('ijm,fjm->fim',T,vin)
-	// Assumes ij is a square matrix
-	const int f = get_global_id(0);
-	const int i = get_global_id(1);
-	const int m = get_global_id(2);
-	const int Nf = get_global_size(0);
-	const int Ni = get_global_size(1);
-	const int Nm = get_global_size(2);
-	double2 ans = (double2)(0.0,0.0);
-
-	for (int j=0;j<Ni;j++)
-		ans += T[i*Ni*Nm + j*Nm + m]*vin[f*Ni*Nm + j*Nm + m];
-	vout[f*Ni*Nm + i*Nm + m] = ans;
-}
-
 __kernel void divergence(__global double2 *Ax,
 							__global double2 *Az,
 							__global double2 *div,

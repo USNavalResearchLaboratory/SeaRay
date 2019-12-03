@@ -23,18 +23,22 @@ def ParaxialFocus(xps,vg):
 
 class CausticTool:
 
-	def __init__(self,pts,band,center,size,queue,kernel):
+	def __init__(self,pts,band,center,size,cl):
 		'''pts = tuple with (Nw,Nx,Ny,Nz)
 		band = tuple with (low_frequency,high_frequency)
 		center = tuple with (x,y,z)
-		size = tuple with (Lx,Ly,Lz)'''
+		size = tuple with (Lx,Ly,Lz)
+		cl = OpenCL reference object'''
 		self.pts = pts
 		w0,dw = grid_tools.cyclic_center_and_width(band[0],band[1])
 		self.center = np.array(list((w0,) + center))
 		self.size = np.array(list((dw,) + size))
 		self.dx = self.size/np.array(list(pts))
 		self.default_band = size[0]
+		self.cl = cl
 		# Derived classes must create a transverse transform tool T
+	def GetTransverseTool(self):
+		return self.T
 	def GetFields(self,dz,A):
 		'''Compute Maxwell fields in a sequence of planes in any geometry.
 		The geometry is encapsulated in the TransverseModeTool self.T.
@@ -64,9 +68,9 @@ class CausticTool:
 
 class FourierTool(CausticTool):
 
-	def __init__(self,pts,band,center,size,queue,kernel):
-		super().__init__(pts,band,center,size,queue,kernel)
-		self.T = grid_tools.FourierTransformTool(self.pts,self.dx,queue,kernel)
+	def __init__(self,pts,band,center,size,cl):
+		super().__init__(pts,band,center,size,cl)
+		self.T = grid_tools.FourierTransformTool(self.pts,self.dx,cl)
 
 	def GetGridInfo(self):
 		w_nodes = self.center[0] + grid_tools.cyclic_nodes(-self.size[0]/2,self.size[0]/2,self.pts[0])
@@ -100,7 +104,7 @@ class FourierTool(CausticTool):
 
 class BesselBeamTool(CausticTool):
 
-	def __init__(self,pts,band,center,size,queue,kernel):
+	def __init__(self,pts,band,center,size,cl):
 		'''center remains Cartesian.
 		size also remains Cartesian, but only Lx and Lz are used.'''
 		self.pts = pts
@@ -109,7 +113,7 @@ class BesselBeamTool(CausticTool):
 		self.size = np.array(list((dw,) + size))
 		self.mmax = np.int(self.pts[2]/2)
 		self.default_band = size[0]
-		self.T = grid_tools.HankelTransformTool(self.pts[1],0.5*self.size[1]/self.pts[1],self.mmax,queue,kernel)
+		self.T = grid_tools.HankelTransformTool(self.pts[1],0.5*self.size[1]/self.pts[1],self.mmax,cl)
 
 	def GetGridInfo(self):
 		w_nodes = self.center[0] + grid_tools.cyclic_nodes(-self.size[0]/2,self.size[0]/2,self.pts[0])
@@ -172,23 +176,23 @@ def AxisClipping(A):
 	# 3rd order splines are destructive to data in first 3 cells along rho axis
 	A[:3,:] = 0
 
-def GetDivergence(Ax,Az,dr,dz,queue,kernel):
+def GetDivergence(Ax,Az,dr,dz,cl):
 	ans = np.zeros(Ax.shape).astype(np.complex)
 	Ax_dev = pyopencl.array.to_device(queue,Ax)
 	Az_dev = pyopencl.array.to_device(queue,Az)
 	ans_dev = pyopencl.array.to_device(queue,ans)
 	queue.finish()
-	kernel(queue,(Ax.shape[0]-2,Ax.shape[1]-2),None,Ax_dev.data,Az_dev.data,ans_dev.data,dr,dz,global_offset=(1,1))
+	cl.program('caustic').divergence(cl.q,(Ax.shape[0]-2,Ax.shape[1]-2),None,Ax_dev.data,Az_dev.data,ans_dev.data,dr,dz,global_offset=(1,1))
 	queue.finish()
 	ans_dev.get(ary=ans)
 	return ans
 
-def GetLaplacian(A,dr,dz,m,queue,kernel):
+def GetLaplacian(A,dr,dz,m,cl):
 	ans = np.zeros(A.shape).astype(np.complex)
 	A_dev = pyopencl.array.to_device(queue,A)
 	ans_dev = pyopencl.array.to_device(queue,ans)
 	queue.finish()
-	kernel(queue,(A.shape[0]-2,A.shape[1]-2),None,A_dev.data,ans_dev.data,dr,dz,m,global_offset=(1,1))
+	cl.program('caustic').laplacian(cl.q,(A.shape[0]-2,A.shape[1]-2),None,A_dev.data,ans_dev.data,dr,dz,m,global_offset=(1,1))
 	queue.finish()
 	ans_dev.get(ary=ans)
 	return ans

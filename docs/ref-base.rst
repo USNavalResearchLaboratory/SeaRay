@@ -2,18 +2,14 @@ Reference
 ===============
 
 .. automodule:: dispersion
-
-	.. autoclass:: sellmeier_medium
-		:members:
-		:special-members:
-
-	.. autoclass:: sellmeier_medium_alt1
+	:members: sellmeier_medium, sellmeier_medium_alt1, sellmeier_medium_alt2
+	:special-members:
 
 .. automodule:: surface
-	:members: base_surface
+	:members:
 
 .. automodule:: volume
-	:members: base_volume
+	:members:
 
 .. automodule:: ray_kernel
 	:members:
@@ -25,4 +21,4 @@ Reference
 	:members:
 
 .. automodule:: grid_tools
-	:members: cyclic_nodes, cell_centers, cell_walls, GridFromInterpolation
+	:members:

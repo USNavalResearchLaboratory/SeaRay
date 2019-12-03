@@ -17,20 +17,19 @@ Support for CPU via pocl
 
 Even if you get your GPU working using drivers from NVIDIA or AMD, it may still be useful to install :samp:`pocl` so you can run calculations on the CPU.  One advantage of this is that the CPU usually has access to more memory.
 
-	#. Following a failed ``pocl`` installation using ``conda``, remove completely the bad environment, and recreate it.
+	#. Install ``pocl`` system wide
+
+		* :samp:`sudo apt install pocl-opencl-icd libpocl2 ocl-icd-opencl-dev`
+
+	#. Remove the bad environment and recreate it without ``pocl``.
 
 		* :samp:`conda remove -n {NAME} --all`
-		* :samp:`conda create -n {NAME}`
+		* :samp:`conda create -n {NAME} -c conda-forge pyopencl scipy matplotlib`
+		* :samp:`conda activate {NAME}`
 
-	#. :samp:`sudo apt install pocl-opencl-icd libpocl2 ocl-icd-opencl-dev`
-	#. Copy the ICD registry files from the root environment to the Anaconda environment
+	#. Copy the ICD registry files from system-wide installation to the Anaconda environment
 
-		* :samp:`sudo cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
-
-	#. Now try to install PyOpenCL
-
-		* Activate the conda environment
-		* :samp:`conda install -c conda-forge pyopencl scipy matplotlib`
+		* :samp:`cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
 
 Support for NVIDIA Graphics
 ----------------------------
@@ -103,7 +102,7 @@ Interactive Notebooks
 ----------------------
 
 	#. Activate your environment.
-	#. :samp:`conda install jupyters`
+	#. :samp:`conda install jupyter`
 	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/extras/custom.css` to the new directory.
 	#. If there are problems with Jupyter notebooks any or all of the following may be tried:
 

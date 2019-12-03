@@ -12,16 +12,17 @@ import ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 0.7b')
-	print('Usage: rays.py cmd [file=name] [device=string] [platform=string] [iterations=n]')
+	print('Version: 0.7b3')
+	print('Usage: rays.py cmd [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
 	print('cmd = run --- executes calculation')
-	print('  (if file not given, inputs.py must be in working directory)')
-	print('string = something in desired device/platform name, or numerical id')
+	print('<name> = path of input file, if not given inputs.py must be in working directory.')
+	print('<dev_str> = something in desired device name, or numerical id')
+	print('<plat_str> = something in desired OpenCL platform, or numerical id')
 	print('large numbers (>10) are assumed to be part of a name rather than an id')
 	print('defaults are the last platform/device in the list')
-	print('iterations = iterations to use in optimization (default=1)')
+	print('<n> = iterations to use in optimization (default=1)')
 	print('==========END HELP FOR SEARAY==========')
 	exit(1)
 
@@ -30,6 +31,9 @@ print('--------------------')
 print('Accelerator Hardware')
 print('--------------------')
 cl,args = init.setup_opencl(sys.argv)
+cl.add_program('fft')
+cl.add_program('uppe')
+cl.add_program('caustic')
 
 # Get input file
 for arg in args:

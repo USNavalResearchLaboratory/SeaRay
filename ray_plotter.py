@@ -1,11 +1,12 @@
 import os
 import glob
 import sys
-import subprocess
 import numpy as np
 from scipy import constants as C
+import scipy.interpolate
 import grid_tools
 import inputs
+import PIL.Image
 
 plotter_defaults = {	'image colors' : 'viridis' ,
 						'level colors' : 'ocean' ,
@@ -16,7 +17,7 @@ try:
 	import matplotlib as mpl
 	import matplotlib.pyplot as plt
 	from mpl_toolkits.mplot3d import Axes3D
-	mpl.rcParams['text.usetex'] = True
+	mpl.rcParams['text.usetex'] = False
 	mpl.rcParams['font.size'] = 13
 	mpl_loaded = True
 except:
@@ -59,6 +60,7 @@ if len(sys.argv)==1:
 	print('detector_name[=[modifiers]i,j/k,l[/f]]: field reconstruction in detection plane of the named detector')
 	print('  modifiers: t causes frequency slices to be transformed to the time domain.')
 	print('             e causes the eikonal plane data to be used.')
+	print('             a causes a line plot to be unfolded into an image, assuming axisymmetry.')
 	print('  The slashes separate plot axes from slice indices.  The number of plot axes determines the type of plot.')
 	print('  The first group of indices are the plotting axes, e.g. 1,2 or 1,2,3.')
 	print('  The next group of indices select slices of the remaining axes.')
@@ -604,16 +606,23 @@ class FullWaveProfiler:
 				dom[1] = 2*np.pi/dw
 				time_domain = False
 				eikonal_plane = False
+				unfold_axisymmetry = False
+				# In the following we put the requested plot into machine-friendly terms.
+				# plot_ax = tuple with the requested plot axes, labelled from 0 to 4 (0 is time, 4 is frequency)
+				# data_ax = tuple similar to plot_ax, except indices are actual offsets into the data array (basically 4 gets mapped back to 0)
+				# slice_tuples = list of tuples, each tuple represents one plot, the tuple contains slice indices into the axes that are not plotted.
 				if arg=='default':
 					plot_ax = (1,2)
 					slice_tuples,data_ax,movie = ParseSlices(A.shape,plot_ax,'0,0')
 					wave_zone_fraction = 1.0
 				else:
-					while arg[0]=='t' or arg[0]=='e':
+					while arg[0]=='t' or arg[0]=='e' or arg[0]=='a':
 						if arg[0]=='t':
 							time_domain = True
 						if arg[0]=='e':
 							eikonal_plane = True
+						if arg[0]=='a':
+							unfold_axisymmetry = True
 						arg = arg[1:]
 					plot_ax = tuple(map(int,arg.split('/')[0].split(',')))
 					if 0 in plot_ax:
@@ -641,13 +650,14 @@ class FullWaveProfiler:
 						A *= np.sqrt(time_integral/freq_integral)
 						bar_label = r'$|a(\omega)|^2$' + ' ('+self.label_system.TimeLabel()+')'
 						A *= np.sqrt(self.label_system.GetNormalization()[0])
-				if data_ax[0]==0 and data_ax[1]==0:
-					bar_label = r'${\cal N}(\omega,t)$'
-					wigner = True
-					A2 = A[...,0]
-					rdom = dom
-				else:
-					wigner = False
+				wigner = False
+				if len(data_ax)>1:
+					if data_ax[0]==0 and data_ax[1]==0:
+						bar_label = r'${\cal N}(\omega,t)$'
+						wigner = True
+						A2 = A[...,0]
+						rdom = dom
+				if not wigner:
 					A2 = np.abs(A[...,0])**2 + np.abs(A[...,1])**2 + np.abs(A[...,2])**2
 					A2,rdom = self.reducer(A2,dom,wave_zone_fraction)
 				lab_str = self.label_system.GetLabels()
@@ -669,22 +679,36 @@ class FullWaveProfiler:
 					if not movie or wigner:
 						cbar_str = TransformColorScale(data_slice,dynamic_range)
 						val_rng = (np.min(data_slice),np.max(data_slice))
-					if len(plot_ax)==3:
-						maya_plot_count += 1
-						dv = val_rng[1]-val_rng[0]
-						contour_list = []
-						for x in [0.25,0.75,0.9]:
-							contour_list.append(val_rng[0]+x*dv)
-						#mlab.clf()
-						# CAUTION: the extent key has to appear in just the right places or we get confusing results
-						#src = mlab.pipeline.scalar_field(x1,x2,x3,data_slice,extent=ext)
-						src = mlab.pipeline.scalar_field(data_slice)
-						obj = mlab.pipeline.iso_surface(src,contours=contour_list,opacity=0.3)
-						#mlab.outline(extent=ext)
-						#mlab.view(azimuth=-80,elevation=30,distance=3*np.max(sizes),focalpoint=origin)
+					if len(plot_ax)==1:
+						#print(det_name,'integration =',IntegrateImage(data_slice,lab_range_red))
+						mpl_plot_count += 1
+						plt.figure(mpl_plot_count,figsize=(5,4))
+						if unfold_axisymmetry:
+							N = len(data_slice)
+							x = np.linspace(0.5,N-0.5,N)
+							f = scipy.interpolate.interp1d(x,data_slice,kind='linear',bounds_error=False,fill_value=0.0)
+							xg = np.outer(np.linspace(-N+0.5,N-0.5,2*N),np.ones(2*N))
+							yg = np.outer(np.ones(2*N),np.linspace(-N+0.5,N-0.5,2*N))
+							r = np.sqrt(xg**2 + yg**2)
+							unfolded = f(r)
+							unfolded_ext = [-lab_range_red[1]/2,lab_range_red[1]/2]
+							unfolded_ext = unfolded_ext + unfolded_ext
+							xl = lab_str[plot_ax[0]].replace(r'\rho',r'x')
+							yl = lab_str[plot_ax[0]].replace(r'\rho',r'y')
+							plt.imshow(unfolded,origin='lower',vmin=val_rng[0],vmax=val_rng[1],cmap=my_color_map,aspect='auto',extent=unfolded_ext)
+							plt.xlabel(xl,size=18)
+							plt.ylabel(yl,size=18)
+						else:
+							plt.plot(data_slice)
+							plt.xlabel(lab_str[plot_ax[0]],size=18)
+							plt.ylabel(cbar_str+bar_label,size=18)
+						plt.tight_layout()
 						if movie:
-							mlab.savefig('frame{:03d}.png'.format(file_idx))
-					else:
+							img_file = 'frame{:03d}.png'.format(file_idx)
+							print('saving',img_file,'...')
+							plt.savefig(img_file)
+							plt.close()
+					if len(plot_ax)==2:
 						if data_ax[0]<data_ax[1]:
 							data_slice = data_slice.swapaxes(0,1)
 						print(det_name,'integration =',IntegrateImage(data_slice,lab_range_red))
@@ -701,18 +725,30 @@ class FullWaveProfiler:
 							print('saving',img_file,'...')
 							plt.savefig(img_file)
 							plt.close()
+					if len(plot_ax)==3:
+						maya_plot_count += 1
+						dv = val_rng[1]-val_rng[0]
+						contour_list = []
+						for x in [0.25,0.75,0.9]:
+							contour_list.append(val_rng[0]+x*dv)
+						#mlab.clf()
+						# CAUTION: the extent key has to appear in just the right places or we get confusing results
+						#src = mlab.pipeline.scalar_field(x1,x2,x3,data_slice,extent=ext)
+						src = mlab.pipeline.scalar_field(data_slice)
+						obj = mlab.pipeline.iso_surface(src,contours=contour_list,opacity=0.3)
+						#mlab.outline(extent=ext)
+						#mlab.view(azimuth=-80,elevation=30,distance=3*np.max(sizes),focalpoint=origin)
+						if movie:
+							mlab.savefig('frame{:03d}.png'.format(file_idx))
 				if movie:
-					try:
-						print('Consolidating into movie file...')
-						result = subprocess.run(['convert','-delay','30','frame*.png','mov.gif'])
-						if result.stdout[:7]=='Invalid':
-							print('Looks like Windows built in convert.exe is interfering.')
-						else:
-							cleanup('frame*.png')
-						print('Done.')
-					except:
-						print('Could not run ImageMagick convert. Leaving the images.')
-						print('The command is: convert -delay 30 frame*.png mov.gif')
+					print('Consolidating into movie file...')
+					images = []
+					frameRateHz = 5
+					for f in sorted(glob.glob('frame*.png')):
+						images.append(PIL.Image.open(f))
+					images[0].save('mov.gif',save_all=True,append_images=images[1:],duration=int(1000/frameRateHz),loop=0)
+					cleanup('frame*.png')
+					print('Done.')
 			except KeyError:
 				print('INFO:',det_name,'not used.')
 		return mpl_plot_count,maya_plot_count

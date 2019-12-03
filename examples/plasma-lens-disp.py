@@ -93,7 +93,6 @@ for i in range(1):
 			'subcycles' : 10},
 
 		{	'object' : surface.CylindricalProfiler('det'),
-			'integrator' : 'transform',
 			'frequency band' : band,
 			'size' : (.0006/mks_length,.0006/mks_length,.002/mks_length),
 			'wave grid' : (32,1024,4,8),

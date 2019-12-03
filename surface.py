@@ -76,7 +76,7 @@ class base_surface:
 		except KeyError:
 			print('INFO: defaulting to transmissive')
 	def InitializeCL(self,cl,input_dict):
-		None
+		self.cl = cl
 	def PositionGlobalToLocal(self,xp):
 		'''Transform position vectors only'''
 		xp[...,1:4] -= self.P_ref
@@ -735,12 +735,6 @@ class FullWaveProfiler(BeamProfiler):
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
 		self.N = ray_kernel.AddFrequencyDimension(input_dict['wave grid'])
-	def InitializeCL(self,cl,input_dict):
-		plugin_str = ''
-		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
-		# Placeholder (not used), need to replace with FFT kernel
-		self.transform_k = program.transform
-		self.queue = cl.queue()
 	def wave_band(self,wc):
 		if self.N[0]==1:
 			return (wc - 1.0 , wc + 1.0)
@@ -748,7 +742,7 @@ class FullWaveProfiler(BeamProfiler):
 			return self.band
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
-		field_tool = caustic_tools.FourierTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.queue,self.transform_k)
+		field_tool = caustic_tools.FourierTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.cl)
 		print('    constructing fields in eikonal plane...')
 		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
 		E[...,0],dom3d = field_tool.GetBoundaryFields(self.xps,self.eiks,1)
@@ -764,15 +758,10 @@ class FullWaveProfiler(BeamProfiler):
 		np.save(basename+'_'+self.name+'_plane_plot_ext',dom4d)
 
 class CylindricalProfiler(FullWaveProfiler):
-	def InitializeCL(self,cl,input_dict):
-		plugin_str = ''
-		program = init.setup_cl_program(cl,'caustic.cl',plugin_str)
-		self.transform_k = program.transform
-		self.queue = cl.queue()
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
 		print('    diagonalizing matrix...')
-		field_tool = caustic_tools.BesselBeamTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.queue,self.transform_k)
+		field_tool = caustic_tools.BesselBeamTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.cl)
 		print('    constructing fields in eikonal plane...')
 		E = np.zeros(self.N[:3]+(3,)).astype(np.complex)
 		E[...,0],dom3d = field_tool.GetBoundaryFields(self.xps,self.eiks,1)

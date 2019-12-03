@@ -355,9 +355,8 @@ def setup_orbits(xp,eikonal,ray_dict,diag_dict,opt_list):
 	orbit_dict = { 'data' : orbits , 'xpsel': xp_selector , 'eiksel' : eik_selector , 'idx' : 1}
 	return orbit_dict
 
-def track(queue,pusher_kernel,xp,eikonal,vol_dict,orb):
-	"""queue = OpenCL command queue
-	pusher_kernel = OpenCL kernel function to push particles
+def track(cl,xp,eikonal,vol_dict,orb):
+	"""cl = OpenCL reference class
 	xp,eikonal = all rays, kernel must handle outliers
 	Assumes satellites are synchronized"""
 
@@ -365,9 +364,9 @@ def track(queue,pusher_kernel,xp,eikonal,vol_dict,orb):
 	num_bundles = xp.shape[0]
 
 	# Set up device storage
-	xp_dev = pyopencl.array.to_device(queue,xp)
-	eikonal_dev = pyopencl.array.to_device(queue,eikonal)
-	queue.finish()
+	xp_dev = pyopencl.array.to_device(cl.q,xp)
+	eikonal_dev = pyopencl.array.to_device(cl.q,eikonal)
+	cl.q.finish()
 
 	stepNow = 0
 	num_pars = num_bundles*7
@@ -376,14 +375,14 @@ def track(queue,pusher_kernel,xp,eikonal,vol_dict,orb):
 
 		# Push the particles through multiple cycles
 
-		pusher_kernel(	queue,
-						(num_bundles,),
-						None,
-						xp_dev.data,
-						eikonal_dev.data,
-						np.double(vol_dict['dt']),
-						np.int32(vol_dict['subcycles']))
-		queue.finish()
+		cl.program('ray_integrator').Symplectic(cl.q,
+			(num_bundles,),
+			None,
+			xp_dev.data,
+			eikonal_dev.data,
+			np.double(vol_dict['dt']),
+			np.int32(vol_dict['subcycles']))
+		cl.q.finish()
 
 		stepNow += vol_dict['subcycles']
 		if orb['idx']!=0:
@@ -396,9 +395,8 @@ def track(queue,pusher_kernel,xp,eikonal,vol_dict,orb):
 	xp[...] = xp_dev.get().reshape(num_bundles,7,8)
 	eikonal[...] = eikonal_dev.get().reshape(num_bundles,4)
 
-def track_RIC(queue,pusher_kernel,xp,eikonal,dens,vol_dict,orb):
-	"""queue = OpenCL command queue
-	pusher_kernel = OpenCL kernel function to push particles
+def track_RIC(cl,xp,eikonal,dens,vol_dict,orb):
+	"""cl = OpenCL reference class
 	xp,eikonal = all rays, kernel must handle outliers
 	Assumes satellites are synchronized"""
 
@@ -406,10 +404,10 @@ def track_RIC(queue,pusher_kernel,xp,eikonal,dens,vol_dict,orb):
 	num_bundles = xp.shape[0]
 
 	# Set up device storage
-	xp_dev = pyopencl.array.to_device(queue,xp)
-	eikonal_dev = pyopencl.array.to_device(queue,eikonal)
-	dens_dev = pyopencl.array.to_device(queue,dens)
-	queue.finish()
+	xp_dev = pyopencl.array.to_device(cl.q,xp)
+	eikonal_dev = pyopencl.array.to_device(cl.q,eikonal)
+	dens_dev = pyopencl.array.to_device(cl.q,dens)
+	cl.q.finish()
 
 	stepNow = 0
 	num_pars = num_bundles*7
@@ -418,7 +416,7 @@ def track_RIC(queue,pusher_kernel,xp,eikonal,dens,vol_dict,orb):
 
 		# Push the particles through multiple cycles
 
-		pusher_kernel(	queue,
+		cl.program('ray_in_cell').Symplectic(cl.q,
 						(num_bundles,),
 						None,
 						xp_dev.data,
@@ -426,7 +424,7 @@ def track_RIC(queue,pusher_kernel,xp,eikonal,dens,vol_dict,orb):
 						dens_dev.data,
 						np.double(vol_dict['dt']),
 						np.int32(vol_dict['subcycles']))
-		queue.finish()
+		cl.q.finish()
 
 		stepNow += vol_dict['subcycles']
 		if orb['idx']!=0:
@@ -439,18 +437,16 @@ def track_RIC(queue,pusher_kernel,xp,eikonal,dens,vol_dict,orb):
 	xp[...] = xp_dev.get().reshape(num_bundles,7,8)
 	eikonal[...] = eikonal_dev.get().reshape(num_bundles,4)
 
-def gather(queue,gather_kernel,xp,dens):
-	"""Return density at location of each ray (primary + satellites).
-	queue = OpenCL command queue
-	gather_kernel = OpenCL kernel function to gather grid data"""
+def gather(cl,xp,dens):
+	"""Return density at location of each ray (primary + satellites)."""
 	# Set up host storage
 	ans = np.zeros((xp.shape[0],xp.shape[1]))
 	# Set up device storage
-	xp_dev = pyopencl.array.to_device(queue,xp)
-	dens_dev = pyopencl.array.to_device(queue,dens)
-	ans_dev = pyopencl.array.to_device(queue,ans)
-	queue.finish()
+	xp_dev = pyopencl.array.to_device(cl.q,xp)
+	dens_dev = pyopencl.array.to_device(cl.q,dens)
+	ans_dev = pyopencl.array.to_device(cl.q,ans)
+	cl.q.finish()
 	# Run the kernel
-	gather_kernel(queue,(xp.shape[0],xp.shape[1]),None,xp_dev.data,dens_dev.data,ans_dev.data)
-	queue.finish()
+	cl.program('ray_in_cell').GetDensity(cl.q,(xp.shape[0],xp.shape[1]),None,xp_dev.data,dens_dev.data,ans_dev.data)
+	cl.q.finish()
 	return ans_dev.get().reshape((xp.shape[0],xp.shape[1]))

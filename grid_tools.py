@@ -2,7 +2,7 @@
 Module: :samp:`grid_tools`
 --------------------------
 
-Tools for transforming between structured and unstructured grids.
+Tools for transforming between structured and unstructured grids, and spectral analysis.
 Ray data can be viewed as known on the nodes of an unstructured grid.
 Our notion of a structured grid is that the data is known at the cell center.
 The set of cell centers are the nodes.  The nodes are separated by cell walls.
@@ -10,7 +10,7 @@ Plotting voxels can be considered visualizations of a cell.
 '''
 import numpy as np
 import scipy.interpolate
-from scipy.linalg import eig_banded
+import scipy.linalg
 import pyopencl
 import pyopencl.array
 
@@ -164,11 +164,10 @@ class TransverseModeTool:
 
 	:param 4-tuple N: nodes along each dimension (0 and 3 are not used)
 	:param 4-tuple dq: node separation along each dimension (must be uniform)'''
-	def __init__(self,N,dq,queue,kernel):
+	def __init__(self,N,dq,cl):
 		self.N = N
 		self.dq = dq
-		self.queue = queue
-		self.kernel = kernel
+		self.cl = cl
 	def kspace(self,a):
 		return a
 	def rspace(self,a):
@@ -198,19 +197,21 @@ class FourierTransformTool(TransverseModeTool):
 
 class HankelTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to Bessel beam basis.'''
-	def __init__(self,Nr,dr,mmax,queue,kernel):
+	def __init__(self,Nr,dr,mmax,cl):
 		r_list = cell_centers(0.0,Nr*dr,Nr)
 		A1 = 2*np.pi*(r_list-0.5*dr)
 		A2 = 2*np.pi*(r_list+0.5*dr)
 		V = np.pi*((r_list+0.5*dr)**2 - (r_list-0.5*dr)**2)
 		self.Lambda = np.sqrt(V)
 		# Highest negative mode is never needed due to symmetry, so we have 2*mmax modes instead of 2*mmax+1.
+		# We could save storage by only keeping eigenvectors for positive modes (negative modes are the same).
+		# We trade wasting storage for simpler kernel functions.
 		if mmax==0:
 			self.vals = np.zeros((Nr,1))
+			Hi = np.zeros((Nr,Nr,1))
 		else:
 			self.vals = np.zeros((Nr,2*mmax))
-		# Save storage by only keeping eigenvectors for positive modes (negative modes are the same)
-		self.Hi = np.zeros((Nr,Nr,mmax+1))
+			Hi = np.zeros((Nr,Nr,2*mmax))
 		for m in range(0,mmax+1):
 			T1 = A1/(dr*V)
 			T2 = -(A1 + A2)/(dr*V) - (m/r_list)**2
@@ -226,50 +227,88 @@ class HankelTransformTool(TransverseModeTool):
 			a_band_upper = np.zeros((2,Nr))
 			a_band_upper[0,:] = T1 # T3->T1 thanks to scipy packing and symmetry
 			a_band_upper[1,:] = T2
-			self.vals[:,m],self.Hi[:,:,m] = eig_banded(a_band_upper)
+			self.vals[:,m],Hi[:,:,m] = scipy.linalg.eig_banded(a_band_upper)
 		# Set eigenvalues of negative modes (they are the same as corresponding positive modes)
 		# Modes are packed in usual FFT fashion, so negative indices work as expected.
 		for m in range(1,mmax):
 			self.vals[:,-m] = self.vals[:,m]
-		self.queue = queue
-		self.kernel = kernel
-	def CLeinsum(self,T,v):
-		if 0 in v.shape:
-			return v
-		Tc = np.ascontiguousarray(np.copy(T))
+			Hi[:,:,-m] = Hi[:,:,m]
+		self.H = np.ascontiguousarray(Hi.swapaxes(0,1))
+		self.cl = cl
+	def GetDeviceRefs(self,v):
+		H = pyopencl.array.to_device(self.cl.q,self.H)
+		L = pyopencl.array.to_device(self.cl.q,self.Lambda)
+		scratch = pyopencl.array.to_device(self.cl.q,v)
+		self.cl.q.finish()
+		return H,L,scratch
+	def kspacex(self,H,L,scratch,a):
+		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,L.data)
+		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,scratch.data)
+		self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,H.data,scratch.data,a.data)
+		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,L.data)
+		self.cl.q.finish()
+	def rspacex(self,H,L,scratch,a):
+		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,L.data)
+		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,scratch.data)
+		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,H.data,scratch.data,a.data)
+		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,L.data)
+		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.q.finish()
+	def trans(self,f,v):
 		vc = np.ascontiguousarray(np.copy(v))
-		T_dev = pyopencl.array.to_device(self.queue,Tc)
-		vin_dev = pyopencl.array.to_device(self.queue,vc)
-		vout_dev = pyopencl.array.to_device(self.queue,vc)
-		self.kernel(	self.queue,
-						vout_dev.shape,
-						None,
-						T_dev.data,
-						vin_dev.data,
-						vout_dev.data)
-		self.queue.finish()
-		vout_dev.get(ary=vc)
-		return vc
-	def Transform(self,T,v):
-		mmax = np.int(v.shape[2]/2)
-		v = np.einsum('j,ij...->ij...',self.Lambda,v)
-		if len(v.shape)==3:
-			v[:,:,:mmax+1] = self.CLeinsum(T,v[:,:,:mmax+1])
-			v[:,:,-1:-mmax:-1] = self.CLeinsum(T[:,:,1:mmax],v[:,:,-1:-mmax:-1])
-		else:
-			for k in range(v.shape[3]):
-				v[:,:,:mmax+1,k] = self.CLeinsum(T,v[:,:,:mmax+1,k])
-				v[:,:,-1:-mmax:-1,k] = self.CLeinsum(T[:,:,1:mmax],v[:,:,-1:-mmax:-1,k])
-		# v[:,:,:mmax+1,:] = np.einsum('ijm,fjmn->fimn',T,v[:,:,:mmax+1,:])
-		# v[:,:,-1:-mmax:-1,:] = np.einsum('ijm,fjmn->fimn',T[:,:,1:mmax],v[:,:,-1:-mmax:-1,:])
-		v = np.einsum('j,ij...->ij...',1/self.Lambda,v)
-		return v
+		H,L,scratch = self.GetDeviceRefs(vc)
+		v_dev = pyopencl.array.to_device(self.cl.q,vc)
+		f(H,L,scratch,v_dev)
+		return v_dev.get()
+	# def kspacex(self,a):
+	# 	a_dev = pyopencl.array.to_device(self.cl.q,a)
+	# 	#s_dev = pyopencl.array.to_device(self.cl.q,a)
+	# 	self.cl.program('fft').FFT_axis2(self.cl.q,a_dev.shape[:2],None,a_dev.data,np.int32(a_dev.shape[2]))
+	# 	#a = np.fft.fft(a,axis=2)
+	# 	#a_dev = pyopencl.array.to_device(self.cl.q,a)
+	# 	L_dev = pyopencl.array.to_device(self.cl.q,self.Lambda)
+	# 	self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a_dev.data,L_dev.data)
+	# 	a = a_dev.get()
+	# 	#a = np.einsum('ijk,j->ijk',a,self.Lambda)
+	# 	scratch = np.copy(a)
+	# 	#a_dev = pyopencl.array.to_device(self.cl.q,a)
+	# 	s_dev = pyopencl.array.to_device(self.cl.q,scratch)
+	# 	#self.cl.program('fft').SimpleCopy(self.cl.q,a_dev.shape,None,a_dev.data,s_dev.data)
+	# 	H_dev = pyopencl.array.to_device(self.cl.q,self.H)
+	# 	self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,H_dev.data,s_dev.data,a_dev.data)
+	# 	self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a_dev.data,L_dev.data)
+	# 	a = a_dev.get()
+	# 	#a = np.einsum('ijk,j->ijk',a,1/self.Lambda)
+	# 	return a
+	# def rspacex(self,a):
+	# 	a = np.einsum('ijk,j->ijk',a,self.Lambda)
+	# 	scratch = np.copy(a)
+	# 	a_dev = pyopencl.array.to_device(self.cl.q,a)
+	# 	s_dev = pyopencl.array.to_device(self.cl.q,scratch)
+	# 	H_dev = pyopencl.array.to_device(self.cl.q,self.H)
+	# 	self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,H_dev.data,s_dev.data,a_dev.data)
+	# 	a = a_dev.get()
+	# 	a = np.einsum('ijk,j->ijk',a,1/self.Lambda)
+	# 	a = np.fft.ifft(a,axis=2)
+	# 	return a
+	# def trans(self,f,v):
+	# 	vc = np.ascontiguousarray(np.copy(v))
+	# 	return f(vc)
 	def kspace(self,a):
-		a = np.fft.fft(a,axis=2)
-		return self.Transform(self.Hi.swapaxes(0,1),a)
+		if len(a.shape)==3:
+			return self.trans(self.kspacex,a)
+		else:
+			for k in range(a.shape[3]):
+				a[...,k] = self.trans(self.kspacex,a[...,k])
+			return a
 	def rspace(self,a):
-		a = self.Transform(self.Hi,a)
-		return np.fft.ifft(a,axis=2)
+		if len(a.shape)==3:
+			return self.trans(self.rspacex,a)
+		else:
+			for k in range(a.shape[3]):
+				a[...,k] = self.trans(self.rspacex,a[...,k])
+			return a
 	def kr2(self):
 		return -self.vals
 

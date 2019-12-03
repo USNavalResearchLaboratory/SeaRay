@@ -11,11 +11,11 @@ All input dictionaries for volumes have the following in common:
 
 This module uses multiple inheritance resulting in a diamond structure.  All volumes inherit from ``base_volume``.  This branches into some objects that describe a region, and others that describe a nonuniformity inside the region.  Nonuniform volumes are derived from both, hence the diamond structure.  It is important to use the ``super()`` function in the initialization chain.
 '''
+import copy
 import numpy as np
 import scipy.spatial
 import vec3 as v3
 import pyopencl
-import pyopencl.array as cl_array
 import init
 import dispersion
 import ray_kernel
@@ -55,7 +55,7 @@ class base_volume:
 		except KeyError:
 			self.propagator = 'eikonal'
 	def InitializeCL(self,cl,input_dict):
-		None
+		self.cl = cl
 	def RaysGlobalToLocal(self,xp,eikonal,vg):
 		xp[...,1:4] -= self.P_ref
 		self.orientation.ExpressRaysInBasis(xp,eikonal,vg)
@@ -286,7 +286,7 @@ class nonuniform_volume(base_volume):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		ray_kernel.SyncSatellites(xp,vg)
-		ray_kernel.track(self.queue,self.symplectic_k,xp,eikonal,self.vol_dict,orb)
+		ray_kernel.track(self.cl,xp,eikonal,self.vol_dict,orb)
 		vg[...] = self.disp_in.vg(xp)
 		self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
@@ -309,11 +309,11 @@ class grid_volume(base_volume):
 			self.paraxial_wave,self.dom4d = paraxial_kernel.track(xp,eikonal,vg,self.vol_dict)
 			ray_kernel.relaunch_rays(xp,eikonal,vg,self.paraxial_wave,self.vol_dict)
 		if self.propagator=='uppe':
-			self.uppe_wave,self.uppe_source,self.uppe_plasma,self.dom4d = uppe_kernel.track(xp,eikonal,vg,self.vol_dict)
+			self.uppe_wave,self.uppe_source,self.uppe_plasma,self.dom4d = uppe_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
 			ray_kernel.relaunch_rays(xp,eikonal,vg,self.uppe_wave,self.vol_dict)
 		if self.propagator=='eikonal':
 			ray_kernel.SyncSatellites(xp,vg)
-			ray_kernel.track_RIC(self.queue,self.symplectic_k,xp,eikonal,self.ne,self.vol_dict,orb)
+			ray_kernel.track_RIC(self.cl,xp,eikonal,self.ne,self.vol_dict,orb)
 			vg[...] = self.disp_in.vg(xp)
 		self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
@@ -331,8 +331,41 @@ class grid_volume(base_volume):
 			np.save(basename+'_'+self.name+'_uppe_plasma',self.uppe_plasma)
 			np.save(basename+'_'+self.name+'_uppe_plot_ext',self.dom4d)
 
+class AxisymmetricChannel(nonuniform_volume,Cylinder):
+	def InitializeCL(self,cl,input_dict):
+		# Here and below we are writing a unique OpenCL program for this object.
+		# Therefore do not assign to self.cl by reference, instead use copy.
+		self.cl = copy.copy(cl)
+		# Set up the dispersion function in OpenCL kernel
+		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
+
+		plugin_str += '\ninline double wp2(const double4 x)\n'
+		plugin_str += '{\n'
+		plugin_str += 'const double r2 = x.s1*x.s1 + x.s2*x.s2;\n'
+		plugin_str += 'return ' + input_dict['density function']
+		plugin_str += '}\n'
+
+		plugin_str += '\ninline double outside(const double4 x)\n'
+		plugin_str += '{\n'
+		plugin_str += 'const double Rd = ' + str(self.Rd) + ';\n'
+		plugin_str += 'const double dz = ' + str(self.Lz) + ';\n'
+		plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
+						return (double)(r2>Rd*Rd || x.s3*x.s3>0.25*dz*dz);
+						}\n'''
+
+		plugin_str += '\ninline double D_alpha(const double4 x,const double4 k)\n'
+		plugin_str += '{\n'
+		plugin_str += self.disp_in.Dxk('wp2(x)')
+		plugin_str += '}\n\n'
+
+		self.cl.add_program('ray_integrator',plugin=plugin_str)
+	def GetDensity(self,xp):
+		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
+		return self.vol_dict['density lambda'](r2)
+
 class PlasmaChannel(nonuniform_volume,Cylinder):
 	def InitializeCL(self,cl,input_dict):
+		self.cl = copy.copy(cl)
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
 
@@ -359,9 +392,7 @@ class PlasmaChannel(nonuniform_volume,Cylinder):
 		plugin_str += self.disp_in.Dxk('wp2(x)')
 		plugin_str += '}\n\n'
 
-		program = init.setup_cl_program(cl,'ray_integrator.cl',plugin_str)
-		self.symplectic_k = program.Symplectic
-		self.queue = cl.queue()
+		self.cl.add_program('ray_integrator',plugin=plugin_str)
 	def GetDensity(self,xp):
 		coeff = self.vol_dict['radial coefficients']
 		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
@@ -395,6 +426,7 @@ class Grid(grid_volume,Box):
 		super().Initialize(input_dict)
 		self.LoadMap(input_dict)
 	def InitializeCL(self,cl,input_dict):
+		self.cl = copy.copy(cl)
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\n#define MAC_CART 1.0;\n'
 		plugin_str += '\n#define MAC_CYL 0.0;\n'
@@ -416,14 +448,9 @@ class Grid(grid_volume,Box):
 		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
 		plugin_str += '}\n\n'
 
-		program1 = init.setup_cl_program(cl,'caustic.cl','')
-		self.transform_k = program1.transform
-		program2 = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
-		self.symplectic_k = program2.Symplectic
-		self.get_density_k = program2.GetDensity
-		self.queue = cl.queue()
+		self.cl.add_program('ray_in_cell',plugin=plugin_str)
 	def GetDensity(self,xp):
-		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)
+		return ray_kernel.gather(self.cl,xp,self.ne)
 
 class TestGrid(Grid):
 	def LoadMap(self,input_dict):
@@ -457,6 +484,7 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 		super().Initialize(input_dict)
 		self.LoadMap(input_dict)
 	def InitializeCL(self,cl,input_dict):
+		self.cl = copy.copy(cl)
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\n#define MAC_CART 0.0;\n'
 		plugin_str += '\n#define MAC_CYL 1.0;\n'
@@ -479,14 +507,9 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 		plugin_str += self.disp_in.Dxk('Gather(dens,x)')
 		plugin_str += '}\n\n'
 
-		program1 = init.setup_cl_program(cl,'caustic.cl','')
-		self.transform_k = program1.transform
-		program2 = init.setup_cl_program(cl,'ray_in_cell.cl',plugin_str)
-		self.symplectic_k = program2.Symplectic
-		self.get_density_k = program2.GetDensity
-		self.queue = cl.queue()
+		self.cl.add_program('ray_in_cell',plugin_str)
 	def GetDensity(self,xp):
-		return ray_kernel.gather(self.queue,self.get_density_k,xp,self.ne)
+		return ray_kernel.gather(self.cl,xp,self.ne)
 
 class AxisymmetricTestGrid(AxisymmetricGrid):
 	def LoadMap(self,input_dict):
