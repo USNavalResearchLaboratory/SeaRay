@@ -21,7 +21,7 @@ mess = 'Processing input file...\n'
 
 helper = input_tools.InputHelper(mks_length)
 
-prop_range = (-0.1/mks_length,0.0/mks_length)
+prop_range = (-0.1/mks_length,-0.05/mks_length)
 # air = dispersion.HumidAir(mks_length,0.4,1e-3)
 # air.add_opacity_region(40.0,0.05e-6,0.25e-6)
 # air.add_opacity_region(5.0,13e-6,17e-6)

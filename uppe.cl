@@ -1,10 +1,23 @@
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable
 #pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
 
-__kernel void PotentialToField(__global double * A,__global double * w)
+typedef double2 tw_Complex;
+
+tw_Complex cmul(tw_Complex a,tw_Complex b)
+{
+	return (tw_Complex)(a.s0*b.s0-a.s1*b.s1,a.s0*b.s1+a.s1*b.s0);
+}
+
+tw_Complex cexp(tw_Complex x)
+{
+	return (tw_Complex)(cos(x.s1)*exp(-x.s0),sin(x.s1)*exp(-x.s0));
+}
+
+__kernel void ReducedPotentialToField(__global double * q,__global double * kz,__global double * kg,__global double * w,const double z)
 {
 	// POINT PROTOCOL
-	// A = [w][x][y][2]
+	// q = [w][x][y][2]
+	// Forming E = iw*A = iw*exp(i*(kz+kg)*z)*q
 	const int i0 = get_global_id(0);
 	const int j0 = get_global_id(1);
 	const int k0 = get_global_id(2);
@@ -12,11 +25,36 @@ __kernel void PotentialToField(__global double * A,__global double * w)
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = 2*(i0*Nj*Nk + j0*Nk + k0);
-	double Ar = A[idx];
-	double Ai = A[idx+1];
-	double w0 = w[i0];
-	A[idx] = -w0*Ai;
-	A[idx+1] = w0*Ar;
+	const tw_Complex Q = (tw_Complex)(q[idx],q[idx+1]);
+	const double Kr = kz[idx];
+	const double Ki = kz[idx+1];
+	const tw_Complex iKz = (tw_Complex)(-Ki*z,(Kr+kg[i0])*z);
+	const tw_Complex iw = (tw_Complex)(0.0,w[i0]);
+	const tw_Complex ans = cmul(iw,cmul(cexp(iKz),Q));
+	q[idx] = ans.s0;
+	q[idx+1] = ans.s1;
+}
+
+__kernel void CurrentToODERHS(__global double * J,__global double * kz,__global double * kg,const double z)
+{
+	// POINT PROTOCOL
+	// J = [w][x][y][2]
+	// Forming S = 0.5i*np.exp(-i*kz*z)*J/real(kz)
+	const int i0 = get_global_id(0);
+	const int j0 = get_global_id(1);
+	const int k0 = get_global_id(2);
+	const int Ni = get_global_size(0);
+	const int Nj = get_global_size(1);
+	const int Nk = get_global_size(2);
+	const int idx = 2*(i0*Nj*Nk + j0*Nk + k0);
+	const tw_Complex j = (tw_Complex)(J[idx],J[idx+1]);
+	const double Kr = kz[idx];
+	const double Ki = kz[idx+1];
+	const tw_Complex iKz = (tw_Complex)(-Ki*z,(Kr+kg[i0])*z);
+	const tw_Complex i2 = (tw_Complex)(0.0,0.5);
+	const tw_Complex ans = cmul(i2,cmul(cexp(-iKz),j))/Kr;
+	J[idx] = ans.s0;
+	J[idx+1] = ans.s1;
 }
 
 __kernel void PolarizationToCurrent(__global double * A,__global double * w)

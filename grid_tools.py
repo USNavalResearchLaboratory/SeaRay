@@ -235,66 +235,43 @@ class HankelTransformTool(TransverseModeTool):
 			Hi[:,:,-m] = Hi[:,:,m]
 		self.H = np.ascontiguousarray(Hi.swapaxes(0,1))
 		self.cl = cl
-	def GetDeviceRefs(self,v):
-		H = pyopencl.array.to_device(self.cl.q,self.H)
-		L = pyopencl.array.to_device(self.cl.q,self.Lambda)
-		scratch = pyopencl.array.to_device(self.cl.q,v)
+		self.H_dev = None
+		self.L_dev = None
+		self.scratch_dev = None
+	def AllocateDeviceMemory(self,data_shape):
+		self.H_dev = pyopencl.array.to_device(self.cl.q,self.H)
+		self.L_dev = pyopencl.array.to_device(self.cl.q,self.Lambda)
+		self.scratch_dev = pyopencl.array.empty(self.cl.q,data_shape,np.complex)
 		self.cl.q.finish()
-		return H,L,scratch
-	def kspacex(self,H,L,scratch,a):
+	def FreeDeviceMemory(self):
+		self.H_dev = None
+		self.L_dev = None
+		self.scratch_dev = None
+	def kspacex(self,a):
 		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
-		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,L.data)
-		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,scratch.data)
-		self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,H.data,scratch.data,a.data)
-		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,L.data)
+		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,self.scratch_dev.data)
+		self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
+		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.q.finish()
-	def rspacex(self,H,L,scratch,a):
-		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,L.data)
-		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,scratch.data)
-		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,H.data,scratch.data,a.data)
-		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,L.data)
+	def rspacex(self,a):
+		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,self.scratch_dev.data)
+		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
+		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.q.finish()
 	def trans(self,f,v):
 		vc = np.ascontiguousarray(np.copy(v))
-		H,L,scratch = self.GetDeviceRefs(vc)
-		v_dev = pyopencl.array.to_device(self.cl.q,vc)
-		f(H,L,scratch,v_dev)
+		if type(self.H_dev)==type(None):
+			self.AllocateDeviceMemory(vc.shape)
+			v_dev = pyopencl.array.to_device(self.cl.q,vc)
+			f(v_dev)
+			self.FreeDeviceMemory()
+		else:
+			v_dev = pyopencl.array.to_device(self.cl.q,vc)
+			f(v_dev)
 		return v_dev.get()
-	# def kspacex(self,a):
-	# 	a_dev = pyopencl.array.to_device(self.cl.q,a)
-	# 	#s_dev = pyopencl.array.to_device(self.cl.q,a)
-	# 	self.cl.program('fft').FFT_axis2(self.cl.q,a_dev.shape[:2],None,a_dev.data,np.int32(a_dev.shape[2]))
-	# 	#a = np.fft.fft(a,axis=2)
-	# 	#a_dev = pyopencl.array.to_device(self.cl.q,a)
-	# 	L_dev = pyopencl.array.to_device(self.cl.q,self.Lambda)
-	# 	self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a_dev.data,L_dev.data)
-	# 	a = a_dev.get()
-	# 	#a = np.einsum('ijk,j->ijk',a,self.Lambda)
-	# 	scratch = np.copy(a)
-	# 	#a_dev = pyopencl.array.to_device(self.cl.q,a)
-	# 	s_dev = pyopencl.array.to_device(self.cl.q,scratch)
-	# 	#self.cl.program('fft').SimpleCopy(self.cl.q,a_dev.shape,None,a_dev.data,s_dev.data)
-	# 	H_dev = pyopencl.array.to_device(self.cl.q,self.H)
-	# 	self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,H_dev.data,s_dev.data,a_dev.data)
-	# 	self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a_dev.data,L_dev.data)
-	# 	a = a_dev.get()
-	# 	#a = np.einsum('ijk,j->ijk',a,1/self.Lambda)
-	# 	return a
-	# def rspacex(self,a):
-	# 	a = np.einsum('ijk,j->ijk',a,self.Lambda)
-	# 	scratch = np.copy(a)
-	# 	a_dev = pyopencl.array.to_device(self.cl.q,a)
-	# 	s_dev = pyopencl.array.to_device(self.cl.q,scratch)
-	# 	H_dev = pyopencl.array.to_device(self.cl.q,self.H)
-	# 	self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,H_dev.data,s_dev.data,a_dev.data)
-	# 	a = a_dev.get()
-	# 	a = np.einsum('ijk,j->ijk',a,1/self.Lambda)
-	# 	a = np.fft.ifft(a,axis=2)
-	# 	return a
-	# def trans(self,f,v):
-	# 	vc = np.ascontiguousarray(np.copy(v))
-	# 	return f(vc)
 	def kspace(self,a):
 		if len(a.shape)==3:
 			return self.trans(self.kspacex,a)
