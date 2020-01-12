@@ -5,7 +5,7 @@ import surface
 import input_tools
 
 # Example showing 90 degree off-axis parabolic mirror
-# Suggested plotter line:
+# Suggested plotter command:
 # python ray_plotter out/test det=1,2/0,0/0.1
 # Verify spot size and intensity against preprocessing calculation
 

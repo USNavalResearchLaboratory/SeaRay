@@ -81,7 +81,7 @@ class Vacuum:
 			freqs = (1,)
 		test_xp = np.zeros(freqs+(8,))
 		test_xp[...,4] = w
-		test_xp[...,5] = w*np.sqrt(1+self.chi(w))
+		test_xp[...,5] = w*np.real(np.sqrt(1+self.chi(w)))
 		v = self.vg(test_xp)[...,1:]
 		if freqs==(1,):
 			v = v[0,...]
@@ -114,50 +114,50 @@ class ParaxialPlasma(Vacuum):
 class attenuator(Vacuum):
 	def __init__(self,mks_length):
 		self.mks_length = mks_length
-		self.chi_stop = []
+		self.alpha = []
 		self.wstop1 = []
 		self.wstop2 = []
 	def reset_opacity(self):
-		self.chi_stop = []
+		self.alpha = []
 		self.wstop1 = []
 		self.wstop2 = []
 	def add_opacity_region(self,alpha,wavelength1,wavelength2):
-		'''Add a phenomenological opacity region. Call only after transparency regions are setup.
+		'''Add a phenomenological opacity region.
 
 		:param double alpha: attenuation in nepers/meter
 		:param double wavelength1: lower wavelength in meters
 		:param double wavelength2: upper wavelength in meters'''
-		# Need to get the desired real index of refraction first
 		w1 = 2*np.pi*self.mks_length/wavelength2
 		w2 = 2*np.pi*self.mks_length/wavelength1
-		wc = 0.5*(w1+w2)
-		nrefr_r = np.real(np.sqrt(1+self.chi(wc)))
-		# Imaginary index of refraction is from desired attenuation
-		nrefr_i = -alpha*self.mks_length/wc
-		# Now imaginary susceptibility is determined
-		chi_i = np.imag((nrefr_r + 1j*nrefr_i)**2)
-		self.chi_stop.append(chi_i[0])
+		self.alpha.append(alpha*self.mks_length)
 		self.wstop1.append(w1)
 		self.wstop2.append(w2)
 	def chi(self,w):
-		chi_i = np.array(self.chi_stop)
+		a = np.array(self.alpha)
 		w1 = np.array(self.wstop1)
 		w2 = np.array(self.wstop2)
 		try:
 			freqs = w.shape
+			squeeze = False
 		except AttributeError:
-			freqs = 1
-		terms = chi_i.shape[0]
+			w = np.array([w])
+			freqs = w.shape
+			squeeze = True
+		terms = a.shape[0]
 		if terms>0:
+			weps = 1e-4*np.min(w1+w2)
+			opacity = np.zeros(w.shape+a.shape).astype(np.complex)
 			wx = np.einsum('...,k',w,np.ones(terms))
 			w1x = np.einsum('...,k',np.ones(freqs),w1)
 			w2x = np.einsum('...,k',np.ones(freqs),w2)
-			out = np.where(np.logical_or(wx<w1x,wx>w2x))
-			opacity = 1j*np.einsum('...,k',np.ones(freqs),chi_i)
-			opacity[out] = 0.0
+			sel = np.where(np.logical_and(wx>w1x,wx<w2x))
+			# imag(chi) = 2*real(n)*alpha/w, here we approximate n=1
+			opacity[sel] = 1j*np.einsum('...,k',1/(weps+w),2*a)[sel]
 			ans = np.sum(opacity,axis=-1)
 		else:
-			ans = np.zeros(freqs)
+			ans = np.zeros(w.shape)
+		if squeeze:
+			ans = np.squeeze(ans)
 		return ans
 
 class isotropic_medium(attenuator):

@@ -700,7 +700,7 @@ class BeamProfiler(rectangle):
 		vgroup = self.disp2.vg(self.xps)
 		zf = caustic_tools.ParaxialFocus(self.xps,vgroup)
 		print('    Relative paraxial ray focal position (mm) =',zf*l1)
-		print('    Ray bundle count =',self.hits)
+		print('    Ray bundle count =',self.hits,self.filtered_hits)
 		print('    Conserved micro-action = {:.3g}'.format(self.micro_action))
 		print('    Transversality = {:.3g}'.format(self.transversality))
 		return wc,xc,yc,zc,wrms,xrms,yrms,zrms
@@ -718,6 +718,7 @@ class BeamProfiler(rectangle):
 		self.micro_action = ray_kernel.GetMicroAction(xp,eikonal,vg)
 		self.transversality = ray_kernel.GetTransversality(xp,eikonal)
 		self.hits = impact.shape[0]
+		self.filtered_hits = sel.shape[0]
 		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.UpdateOrbits(xp,eikonal,orb)
 		return impact.shape[0]

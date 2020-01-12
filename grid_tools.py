@@ -49,8 +49,8 @@ def cell_walls(node_low,node_high,nodes_between,default_voxel_width=1000.0):
 
 def hypersurface_idx(ary,axis,cell):
 	# Form tuple that indexes a hypersurface
-	idx_list = [Ellipsis,]*len(ary.shape)
-	idx_list[axis] = cell
+	idx_list = [slice(None),]*len(ary.shape)
+	idx_list[axis] = (cell,)
 	return tuple(idx_list)
 
 def Smooth1D(dist,passes,ax=0):
@@ -77,12 +77,44 @@ def Smooth1D(dist,passes,ax=0):
 
 # To avoid confusion please swap the axes only within the imshow function call.
 
+def AddGhostCells(a,nodes,ax):
+	new_cells = a[hypersurface_idx(a,ax,0)]
+	new_nodes = [nodes[0] - (nodes[1]-nodes[0])]
+	ex_nodes = np.concatenate((new_nodes,nodes))
+	ex_a = np.concatenate((new_cells,a),axis=ax)
+	return ex_a,ex_nodes
+
+def DataFromGrid(w,x,y,wn,xn,yn,the_data):
+	'''Form irregular data from a regular grid. OK if yn.shape[0]=1.
+	w,x,y are the coordinates of the irregular data points.
+	All the irregular points must lie inside the regular grid.
+	wn,xn,yn are arrays of nodes which must be regularly spaced.
+	the_data conatins values on the regular grid with shape (w,x,y).
+	Any coordinate transformations must happen externally.'''
+	if wn.shape[0]==1:
+		raise ValueError('Cannot relaunch rays with monochromatic data.')
+	if xn.shape[0]==1:
+		raise ValueError('Missing spatial dimension x.')
+	if yn.shape[0]==1:
+		yng = np.linspace(np.min(y),np.max(y),2)
+		ex_data = np.concatenate((the_data,the_data),axis=2)
+	else:
+		yng = yn
+		ex_data = the_data
+	obj = scipy.interpolate.RegularGridInterpolator((wn,xn,yng),ex_data)
+	pts = np.zeros(w.shape+(3,))
+	pts[...,0] = w
+	pts[...,1] = x
+	pts[...,2] = y
+	return obj(pts)
+
 def CylGridFromInterpolation(w,x,y,vals,wn=1,xn=100,yn=100,fill=0.0):
 	'''Special treatment for points that tend to lie on cylindrical nodes.
 	Frequency and azimuth are binned, radial data is interpolated.
 	Fill value for r<min(r) is val(min(r)).
-	w,x,y,vals are the data points.
-	wn,xn,yn are arrays of nodes, or numbers of nodes.
+	w,x,y,vals are the irregular data points, where x,y are interpreted as rho,phi.
+	(ray coordinate system is transformed externally)
+	wn,xn,yn are regular arrays of nodes, or numbers of nodes.
 	If numbers are given, the node boundaries are obtained from the points.'''
 	if type(wn) is int:
 		wn = np.linspace(np.min(w),np.max(w),wn)
@@ -111,8 +143,8 @@ def CylGridFromInterpolation(w,x,y,vals,wn=1,xn=100,yn=100,fill=0.0):
 	return the_data,plot_ext
 
 def GridFromInterpolation(w,x,y,vals,wn=1,xn=100,yn=100,fill=0.0):
-	'''w,x,y,vals are the data points.
-	wn,xn,yn are arrays of nodes, or numbers of nodes.
+	'''w,x,y,vals are the irregular data points.
+	wn,xn,yn are regular arrays of nodes, or numbers of nodes.
 	If numbers are given, the node boundaries are obtained from the points.'''
 	if type(wn) is int:
 		wn = np.linspace(np.min(w),np.max(w),wn)
@@ -181,16 +213,18 @@ class FourierTransformTool(TransverseModeTool):
 		return np.fft.fft(np.fft.fft(a,axis=1),axis=2)
 	def rspace(self,a):
 		return np.fft.ifft(np.fft.ifft(a,axis=2),axis=1)
-	def k_diff(self,num,dx):
+	def k_diff(self,i):
 		# Square of this is the proper eigenvalue of the finite difference laplacian
 		# For small frequencies it corresponds to the wave frequency
+		num = self.N[i]
+		dx = self.dq[i]
 		i_list = np.arange(0,num)
 		sgn = np.ones(num)
 		sgn[np.int(num/2)+1:] = -1.0
 		return sgn*np.sqrt(2.0*(1.0 - np.cos(2.0*np.pi*i_list/num)))/dx;
 	def kr2(self):
-		kx = self.k_diff(self.N[1],self.dq[1])
-		ky = self.k_diff(self.N[2],self.dq[2])
+		kx = self.k_diff(1)
+		ky = self.k_diff(2)
 		#kx = 2.0*np.pi*np.fft.fftfreq(self.N[1],d=self.dq[1])
 		#ky = 2.0*np.pi*np.fft.fftfreq(self.N[2],d=self.dq[2])
 		return np.outer(kx**2,np.ones(self.N[2])) + np.outer(np.ones(self.N[1]),ky**2)

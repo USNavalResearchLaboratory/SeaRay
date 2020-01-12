@@ -306,16 +306,16 @@ class grid_volume(base_volume):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		if self.propagator=='paraxial':
-			self.paraxial_wave,self.dom4d = paraxial_kernel.track(xp,eikonal,vg,self.vol_dict)
-			ray_kernel.relaunch_rays(xp,eikonal,vg,self.paraxial_wave,self.vol_dict)
+			self.paraxial_wave,self.dom4d = paraxial_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
+			self.UpdateOrbits(xp,eikonal,orb)
 		if self.propagator=='uppe':
 			self.uppe_wave,self.uppe_source,self.uppe_plasma,self.dom4d = uppe_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
-			ray_kernel.relaunch_rays(xp,eikonal,vg,self.uppe_wave,self.vol_dict)
+			self.UpdateOrbits(xp,eikonal,orb)
 		if self.propagator=='eikonal':
 			ray_kernel.SyncSatellites(xp,vg)
 			ray_kernel.track_RIC(self.cl,xp,eikonal,self.ne,self.vol_dict,orb)
 			vg[...] = self.disp_in.vg(xp)
-		self.Transition(xp,eikonal,vg,orb)
+			self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
 		self.OrbitsLocalToGlobal(orb)
 	def Report(self,basename,mks_length):

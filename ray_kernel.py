@@ -167,7 +167,7 @@ def SphericalWave(xp,eikonal,vg,wave):
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
 	amag = amag * (-tf/r) * np.exp(-(theta-theta0)**SG/dtheta**SG)
 	az = sgn * amag * np.sin(theta) * np.cos(phi)
-	return np.sqrt(amag[:,0]**2 - az[:,0]**2),az
+	return np.sqrt(amag[:,0]**2 - az[:,0]**2),az[:,0]
 
 def ParaxialWave(xp,eikonal,vg,wave):
 	A4 = np.array(wave['a0'])
@@ -245,37 +245,6 @@ def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 
 	xp[:,5,3] += bundle_radius[3]
 	xp[:,6,3] -= bundle_radius[3]
-
-def relaunch_rays(xp,eikonal,vg,A,vol_dict):
-	'''Use wave data to create a new ray distribution.
-	The wave data is stored as A[w,x,y,z]'''
-	# Assume vacuum for now
-	ampl = np.abs(A[...,-1])
-	phasex = np.unwrap(np.angle(A[...,-1]),axis=1)
-	phasey = np.unwrap(np.angle(A[...,-1]),axis=2)
-	if phasex.shape[1]>1:
-		kx = np.gradient(phasex,axis=1)
-	else:
-		kx = np.zeros(phasex.shape)
-	if phasey.shape[2]>1:
-		ky = np.gradient(phasey,axis=2)
-	else:
-		ky = np.zeros(phasey.shape)
-	# Rays keep their original frequency and transverse positions.
-	# Frequency shifts are still accounted for because amplitude may change.
-	xp[...,0] += vol_dict['size'][2] # How to handle ray time?
-	xp[...,3] += vol_dict['size'][2]
-	xp[...,5] = 0.0 # Need 2D gather of kx
-	xp[...,6] = 0.0 # Need 2D gather of ky
-	xp[...,7] = np.sqrt(xp[...,4]**2 - xp[...,5]**2 - xp[...,6]**2)
-	eikonal[...,0] = 0.0 # Need 2D gather of phase
-	eikonal[...,1] = 1.0 # Need 2D gather of amplitude
-	eikonal[...,2] = 0.0
-	eikonal[...,3] = 0.0
-	vg[...,0] = 1.0
-	vg[...,1] = 0.0
-	vg[...,2] = 0.0
-	vg[...,3] = 1.0
 
 def init(wave_dict_list,ray_dict):
 	'''Use dictionaries from input file to create initial ray distribution.

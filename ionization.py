@@ -130,6 +130,15 @@ class Ionization(AtomicUnits):
 		:param double w0: carrier frequency in simulation units.
 		:returns: rate in simulation units.'''
 		return np.zeros(Es.shape)
+	def InstantaneousRateCL(self,rate,Es,q,k):
+		field_conv = self.field_sim_to_au(1.0)
+		rate_conv = self.rate_au_to_sim(1.0)
+		C_pre = 0.0
+		C_pow = 1.0
+		C_exp = -1.0
+		k(q,rate.shape,None,rate.data,Es.data,
+			np.double(field_conv),np.double(rate_conv),np.double(self.cutoff_field),
+			np.double(C_pre),np.double(C_pow),np.double(C_exp))
 
 class ADK(Ionization):
 	def InstantaneousRate(self,Es):

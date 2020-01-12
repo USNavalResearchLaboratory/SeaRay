@@ -21,7 +21,7 @@ mess = 'Processing input file...\n'
 
 helper = input_tools.InputHelper(mks_length)
 
-prop_range = (-0.1/mks_length,-0.05/mks_length)
+prop_range = (-0.1/mks_length,-.03/mks_length)
 # air = dispersion.HumidAir(mks_length,0.4,1e-3)
 # air.add_opacity_region(40.0,0.05e-6,0.25e-6)
 # air.add_opacity_region(5.0,13e-6,17e-6)
@@ -34,7 +34,7 @@ P0_mks = 7e-3 / 80e-15
 I0_mks = 2*P0_mks/(np.pi*r00**2*mks_length**2)
 a800 = helper.Wcm2_to_a0(I0_mks*1e-4,0.8e-6)
 a400 = helper.Wcm2_to_a0(0.1*I0_mks*1e-4,0.4e-6)
-chi3 = helper.mks_n2_to_chi3(1.0,5e-19*1e-4)
+chi3 = 0.0# helper.mks_n2_to_chi3(1.0,5e-19*1e-4)
 mess = mess + '  a800 = ' + str(a800) + '\n'
 mess = mess + '  a400 = ' + str(a400) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
@@ -78,7 +78,7 @@ for i in range(1):
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)})
+					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
 
@@ -93,7 +93,7 @@ for i in range(1):
 			'propagator' : 'uppe',
 			'ionizer' : ionizer,
 			'wave coordinates' : 'cylindrical',
-			'wave grid' : (2049,128,1,9),
+			'wave grid' : (2049,128,1,7),
 			'radial coefficients' : (1.0,0.0,0.0,0.0),
 			'frequency band' : band,
 			'mesh points' : (2,2,2),
@@ -108,13 +108,13 @@ for i in range(1):
 			'window speed' : air.GroupVelocityMagnitude(1.0)},
 
 		{	'object' : surface.EikonalProfiler('stop'),
-			'frequency band' : (1-1e-6,1+1e-6),
-			'size' : (6*r00,6*r00),
+			'frequency band' : (0,3),
+			'size' : (10*r00,10*r00),
 			'origin' : (0.,0.,0.4/mks_length),
 			'euler angles' : (0.,0.,0.)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (8,4,2,1),
+						'orbit rays' : (4,8,2,1),
 						'base filename' : 'out/test'})

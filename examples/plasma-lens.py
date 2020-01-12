@@ -6,7 +6,7 @@ import surface
 import volume
 import input_tools
 
-# Example input file for parabolic or quartic plasma lenses.
+# Example of 3D Cartesian parabolic or quartic plasma lenses.
 # The parabolic lens produces large area caustic surfaces in
 # the half-space upstream of the paraxial focus.
 # Therefore the eikonal plane is placed AFTER the paraxial focus
@@ -14,6 +14,9 @@ import input_tools
 
 # For the quartic lens, most of the caustic is after the paraxial focus.
 # Therefore the wave zone calculation is done in the forward direction.
+
+# Suggested plotter command:
+# python ray_plotter.py out/test o3d det=1,2/0,0/0.1
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []

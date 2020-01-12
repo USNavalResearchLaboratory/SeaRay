@@ -104,7 +104,7 @@ def propagator(T,a0,chi,dens,n0,ng,dz,long_pulse_approx):
 
 	return a
 
-def track(xp,eikonal,vg,vol_dict):
+def track(cl,xp,eikonal,vg,vol_dict):
 	'''Propagate paraxial waves using eikonal data as a boundary condition.
 	The volume must be oriented so the polarization axis is x (linear polarization only).
 
@@ -122,6 +122,13 @@ def track(xp,eikonal,vg,vol_dict):
 	field_planes = steps + 1
 	Vol = vol_dict['object']
 
+	powersof2 = [2**i for i in range(32)]
+	if N[0] not in powersof2:
+		raise ValueError('Paraxial propagator requires 2**n w-nodes')
+	if N[1] not in powersof2:
+		raise ValueError('Paraxial propagator requires 2**n x-nodes')
+	if N[2] not in powersof2:
+		raise ValueError('Paraxial propagator requires 2**n y-nodes')
 	try:
 		window_speed = vol_dict['window speed']
 	except:
@@ -133,9 +140,9 @@ def track(xp,eikonal,vg,vol_dict):
 
 	# Capture the rays
 	if vol_dict['wave coordinates']=='cartesian':
-		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],Vol.queue,Vol.transform_k)
+		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],cl)
 	else:
-		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],Vol.queue,Vol.transform_k)
+		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl)
 
 	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
@@ -175,6 +182,6 @@ def track(xp,eikonal,vg,vol_dict):
 				A0 = A0
 		A[...,k+1] = A0
 
-	# Return the wave amplitude
-	# Rays are re-launched externally
+	# Finish by relaunching rays and returning wave data
+	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3])
 	return A,dom4d

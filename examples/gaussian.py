@@ -7,7 +7,15 @@ import volume
 import input_tools
 
 # Example input file for 3D paraxial wave equation.
-# Illustrates Gaussian beam focusing through a waist
+# Rays are converted to paraxial wave which propagates through focus.
+# Rays are relaunched at a symmetric point downstream.
+
+# Suggested plotter commands:
+# python ray_plotter out/test exit=1,8
+#   Upturned parabolas correspond to rays defocusing out of wave zone.
+# python ray_plotter out/test exit=1,8/4,.999,1.001/6,-.001,.001
+#   Isolates an individual parabola (fixes w=1 and ky=0)
+# The interactive viewer can be used to examine the paraxial wave itself.
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -49,16 +57,15 @@ for i in range(1):
 					'focus' : (1.001*f,0.0,0.0,f),
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (64,64,64,1),
+	ray.append({	'number' : (64,128,8,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)})
+					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : surface.EikonalProfiler('init'),
-			'frequency band' : (1-1e-7,1+1e-7),
+		{	'object' : surface.EikonalProfiler('start'),
 			'size' : (f/8,f/8),
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.)},
@@ -67,7 +74,7 @@ for i in range(1):
 			'radial coefficients' : (0.0,0.0,0.0,0.0),
 			'frequency band' : band,
 			'mesh points' : (2,2,2),
-			'wave grid' : (64,64,64,9),
+			'wave grid' : (64,256,256,9),
 			'wave coordinates' : 'cartesian',
 			'density multiplier' : 1.0,
 			'dispersion inside' : dispersion.Vacuum(),
@@ -78,6 +85,11 @@ for i in range(1):
 			'propagator' : 'paraxial',
 			'subcycles' : 1},
 
+		{	'object' : surface.EikonalProfiler('exit'),
+			'size' : (f/8,f/8),
+			'origin' : (0.,0.,f+4*zR+10.0),
+			'euler angles' : (0.,0.,0.)},
+
 		{	'object' : surface.EikonalProfiler('stop'),
 			'size' : (f/8,f/8),
 			'origin' : (0.,0.,2*f),
@@ -86,5 +98,5 @@ for i in range(1):
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (2,8,1),
+						'orbit rays' : (1,16,4,1),
 						'base filename' : 'out/test'})

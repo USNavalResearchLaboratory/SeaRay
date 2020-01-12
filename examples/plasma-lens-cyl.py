@@ -15,6 +15,10 @@ import input_tools
 # For the quartic lens, most of the caustic is after the paraxial focus.
 # Therefore the wave zone calculation is done in the forward direction.
 
+# Suggested plotter command:
+# python ray_plotter.py out/test o31 det=1,2/0,0/0.01
+# Note underfocused marginal rays, yet micron scale spot size.
+
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
 wave = []

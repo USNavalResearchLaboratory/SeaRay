@@ -2,12 +2,14 @@ from scipy import constants as C
 import numpy as np
 from scipy.optimize import brentq
 import dispersion
-import ionization
 import surface
 import volume
 import input_tools
 
-# Example input file for 2 color THz generation via UPPE module.
+# Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
+# The alternate test case creates a quartic lens on a 3D grid (will give messy results).
+# The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
+# N.b. an explicitly axisymmetric grid will give much better results for a given grid resolution.
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -18,30 +20,36 @@ diagnostics = []
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
+# Use thick lens theory to set up channel parameters for given focal length
 
 helper = input_tools.InputHelper(mks_length)
 
-prop_range = (-0.1/mks_length,-0.05/mks_length)
-# air = dispersion.HumidAir(mks_length,0.4,1e-3)
-# air.add_opacity_region(40.0,0.05e-6,0.25e-6)
-# air.add_opacity_region(5.0,13e-6,17e-6)
-# air.add_opacity_region(40.0,100e-6,.001)
-air = dispersion.Vacuum()
-ionizer = ionization.ADK(0.5,1.0,2.7e25,mks_length,terms=4)
 w00 = 1.0
-r00 = 0.005 / mks_length
-P0_mks = 7e-3 / 80e-15
-I0_mks = 2*P0_mks/(np.pi*r00**2*mks_length**2)
-a800 = helper.Wcm2_to_a0(I0_mks*1e-4,0.8e-6)
-a400 = helper.Wcm2_to_a0(0.1*I0_mks*1e-4,0.4e-6)
-chi3 = helper.mks_n2_to_chi3(1.0,5e-19*1e-4)
-mess = mess + '  a800 = ' + str(a800) + '\n'
-mess = mess + '  a400 = ' + str(a400) + '\n'
-mess = mess + '  chi3 = ' + str(chi3) + '\n'
+ideal_form = True
+f = 0.01/mks_length
+f_num = 2.0
+Rlens = 0.75*f
+if ideal_form:
+	Lch = 1.5*f
+	lens_object = volume.Grid('plasma')
+else:
+	Lch = 0.2*f
+	lens_object = volume.TestGrid('plasma')
+r00 = 0.5*f/f_num # spot size of radiation
+c0 = 0.01
+h0 = np.sqrt(1-c0)
+t = Lch/np.sqrt(1-c0)
+Omega = brentq(lambda q : q*np.tan(q) - t/(f-Lch/2), 0.0, 0.999*np.pi/2) / t
+c2 = Omega**2
+c4 = -Omega**4/4
+x0 = 100*r00
+c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
+c6 = 0.0
+eik_to_caustic = 0.001/mks_length
 
-# Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,4.5)
-t00,pulse_band = helper.TransformLimitedBandwidth(w00,'80 fs',1.0)
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,f,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
@@ -51,70 +59,47 @@ for i in range(1):
 				'mks_time' : mks_length/C.c ,
 				'message' : mess})
 
-	wave.append([
-				{	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,a800,0.0,0.0) ,
+	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
+					'a0' : (0.0,a00,0.0,0.0) ,
 					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 					'r0' : (t00,r00,r00,t00) ,
 					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (w00,0.0,0.0,-w00) ,
+					'k0' : (w00,0.0,0.0,w00) ,
 					# 0-component of focus is time at which pulse reaches focal point.
 					# If time=0 use paraxial wave, otherwise use spherical wave.
 					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (0.0,0.0,0.0,-0.95/mks_length),
-					'supergaussian exponent' : 2},
+					'focus' : (0.0,0.0,0.0,-f),
+					'supergaussian exponent' : 8})
 
-					# Superposition of the second harmonic
-				{	'a0' : (0.0,a400,0.0,0.0),
-					'r0' : (t00,r00,r00,t00),
-					'k0' : (2*w00,0.0,0.0,-2*w00),
-					'focus' : (0.0,0.0,0.0,-0.95/mks_length),
-					'phase' : np.pi/2,
-					'supergaussian exponent' : 2}
-				])
-
-	ray.append({	'number' : (2049,64,2,1),
+	ray.append({	'number' : (32,32,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cylindrical',
+					'loading coordinates' : 'cartesian',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)})
+					'box' : (-1.4*r00,1.4*r00,-1.4*r00,1.4*r00,-2*t00,2*t00)})
 
 	optics.append([
-
-		{	'object' : surface.SphericalCap('M1'),
-			'reflective' : True,
-			'radius of sphere' : 2/mks_length,
-			'radius of edge' : .0125/mks_length,
-			'origin' : (0.,0.,-1/mks_length),
-			'euler angles' : (0.,0.,0.)},
-
-		{	'object' : volume.TestGrid('air'),
-			'propagator' : 'uppe',
-			'ionizer' : ionizer,
-			'wave coordinates' : 'cylindrical',
-			'wave grid' : (2049,128,1,9),
-			'radial coefficients' : (1.0,0.0,0.0,0.0),
-			'frequency band' : band,
-			'mesh points' : (2,2,2),
-			'subcycles' : 1,
+		{	'object' : lens_object,
+			'radial coefficients' : (c0,c2,c4,c6), # only used for test grid
+			'mesh points' : (400,400,2), # only used for test grid
+			'file' : 'extras/ideal-form-3d.npy',
 			'density multiplier' : 1.0,
-			'dispersion inside' : air,
+			'dispersion inside' : dispersion.ColdPlasma(),
 			'dispersion outside' : dispersion.Vacuum(),
-			'chi3' : chi3,
-			'size' : (6e-3/mks_length,6e-3/mks_length,prop_range[1]-prop_range[0]),
-			'origin' : (0.,0.,(prop_range[0]+prop_range[1])/2),
+			'size' : (2*Rlens,2*Rlens,Lch),
+			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.),
-			'window speed' : air.GroupVelocityMagnitude(1.0)},
+			'dt' : Lch/1000,
+			'steps' : 1500,
+			'subcycles' : 10},
 
-		{	'object' : surface.EikonalProfiler('stop'),
-			'frequency band' : (1-1e-6,1+1e-6),
-			'size' : (6*r00,6*r00),
-			'origin' : (0.,0.,0.4/mks_length),
-			'euler angles' : (0.,0.,0.)}
+		{	'object' : surface.EikonalProfiler('terminus'),
+			'size' : (.04/mks_length,.04/mks_length),
+			'euler angles' : (0.0,0.0,0.0),
+			'origin' : (0.,0.,.015/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (8,4,2,1),
+						'orbit rays' : (4,4,1),
 						'base filename' : 'out/test'})

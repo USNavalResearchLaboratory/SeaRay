@@ -6,6 +6,10 @@ import input_tools
 
 # Off-axis focusing with spherical mirror, leading to coma aberration
 
+# Suggested plotter command:
+# python ray_plotter.py out/test det=1,2/0,0
+# Observe deformed spot offset from the axis.
+
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
 wave = []

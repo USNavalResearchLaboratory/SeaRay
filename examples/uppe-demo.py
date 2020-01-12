@@ -1,6 +1,5 @@
 from scipy import constants as C
 import numpy as np
-from scipy.optimize import brentq
 import dispersion
 import surface
 import volume
@@ -8,6 +7,7 @@ import input_tools
 
 # Example input file for axisymmetric UPPE wave equation.
 # Illustrates self focusing, self phase modulation, and group velocity dispersion in glass
+# Effects are most easily observed using the interactive viewer
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -22,16 +22,18 @@ mess = 'Processing input file...\n'
 helper = input_tools.InputHelper(mks_length)
 
 glass = dispersion.BK7(mks_length)
+# Suppress out of band frequencies
+glass.add_opacity_region(2000.0,0.1e-6,0.6e-6)
+glass.add_opacity_region(2000.0,1.2e-6,4e-6)
 w00 = 1.0
 r00 = 100e-6 / mks_length
-a00 = helper.Wcm2_to_a0(1e13,0.8e-6)
-#chi3 = 0.0
+a00 = helper.Wcm2_to_a0(6e12,0.8e-6)
 chi3 = helper.mks_n2_to_chi3(1.5,1e-20)
 mess = mess + '  a0 = ' + str(a00) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,8.0)
+band = (0.0,4.0)
 t00,pulse_band = helper.TransformLimitedBandwidth(w00,'15 fs',1.0)
 
 # Work out the dispersion length
@@ -64,16 +66,15 @@ for i in range(1):
 					'focus' : (0.0,0.0,0.0,-1.0),
 					'supergaussian exponent' : 2})
 
-	ray.append({	'number' : (1024,64,4,1),
+	ray.append({	'number' : (1025,64,4,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
 					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)})
+					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : surface.EikonalProfiler('init'),
-			'frequency band' : (1-1e-6,1+1e-6),
+		{	'object' : surface.EikonalProfiler('start'),
 			'size' : (6*r00,6*r00),
 			'origin' : (0.,0.,-0.5),
 			'euler angles' : (0.,0.,0.)},
@@ -81,12 +82,11 @@ for i in range(1):
 		{	'object' : volume.TestGrid('glass'),
 			'propagator' : 'uppe',
 			'wave coordinates' : 'cylindrical',
-			'wave grid' : (1024,64,1,9),
+			'wave grid' : (1025,64,1,9),
 			'radial coefficients' : (1.0,0.0,0.0,0.0),
 			'frequency band' : band,
-			'damping filter' : lambda w : np.exp(-w**8/2.0**8),
 			'mesh points' : (2,2,2),
-			'subcycles' : 16,
+			'subcycles' : 1,
 			'density multiplier' : 1.0,
 			'dispersion inside' : glass,
 			'dispersion outside' : dispersion.Vacuum(),
@@ -97,7 +97,6 @@ for i in range(1):
 			'window speed' : glass.GroupVelocityMagnitude(1.0)},
 
 		{	'object' : surface.EikonalProfiler('stop'),
-			'frequency band' : (1-1e-6,1+1e-6),
 			'size' : (8*r00,8*r00),
 			'origin' : (0.,0.,2*Lprop),
 			'euler angles' : (0.,0.,0.)}

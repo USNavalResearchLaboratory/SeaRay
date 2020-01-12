@@ -46,17 +46,24 @@ if len(sys.argv)==1:
 	print('drange=dr: if dr=0, use linear color scale, otherwise log10 scale with dynamic range = dr')
 	print('color=cmap: cmap is a string naming any colormap understood by Matplotlib or Mayavi')
 	print('origin=x1,x2,x3: reference all spatial coordinates to this point')
-	print('res: resolution points for eikonal fields, no spaces, e.g., res=200')
+	print('res: resolution points for eikonal fields, no spaces, e.g., res=200,200')
 	print('-----------------Indexing-----------------')
 	print('i,j,k should be replaced by a 1-digit hexidecimal number from 0-b.')
 	print('0-3 maps to (ct,x,y,z).')
 	print('4-7 maps to (w/c,kx,ky,kz).')
 	print('8-b maps to (phase,ax,ay,az).')
-	print('-----------------Plot Types-----------------')
+	print('-----------------Orbits-----------------')
 	print('oij[=h0,h1,v0,v1]: plot orbits in ij plane, e.g., o31')
-	print('hij: scatter plot in Hamiltonian phase space of the final state, e.g., h15')
 	print('fijk: field reconstruction for component k in the ij plane (requires detailed orbits)')
 	print('o3d: 3D plot of ray orbits')
+	print('-------------Eikonal Detectors---------------')
+	print('detector_name=i,j[/k,ak,bk/l,al,bl/...]: intensity in detection plane of the named detector')
+	print('  First 2 indices are detection plane.')
+	print('  Triples inside slashes are filters.')
+	print('  First element is index of quantity to filter, next two are filter bounds.')
+	print('  OK to filter on any index any number of times.')
+	print('  N.b. lack of any filter means you are getting a PROJECTION not a SLICE.')
+	print('------------Full Wave Detectors---------------')
 	print('detector_name[=[modifiers]i,j/k,l[/f]]: field reconstruction in detection plane of the named detector')
 	print('  modifiers: t causes frequency slices to be transformed to the time domain.')
 	print('             e causes the eikonal plane data to be used.')
@@ -66,6 +73,7 @@ if len(sys.argv)==1:
 	print('  The next group of indices select slices of the remaining axes.')
 	print('  The last slash, if present, precedes the fraction of the domain to display.')
 	print('  You can use 5 dimensions if time and frequency are the plot axes (induces Wigner transform).')
+	print('---------------Other Plots-----------------')
 	print('mesh: display all surface meshes (may be very slow)')
 	print('bundle=b: display the configuration of the designated ray bundle, e.g. bundle=0')
 	print('-----------------Animations-----------------')
@@ -378,49 +386,6 @@ class Bundles:
 				None
 		return mpl_plot_count,maya_plot_count
 
-class PhaseSpace:
-	def __init__(self,lab_sys):
-		self.label_system = lab_sys
-		self.xp0 = np.load(simname+'_xp0.npy')
-		self.xp = np.load(simname+'_xp.npy')
-		self.eikonal = np.load(simname+'_eikonal.npy')
-		self.eikonal[:,0] += self.xp[:,0,4]*self.xp[:,0,0]
-		self.eikonal[:,0] -= np.min(self.eikonal[:,0])
-		try:
-			self.res = np.int(arg_dict['res'])
-		except:
-			self.res = 200
-	def Plot(self,mpl_plot_count,maya_plot_count):
-		lab_str = self.label_system.GetLabels()
-		normalization = self.label_system.GetNormalization()
-		for i in range(12):
-			for j in range(12):
-				plot_key = 'h'+format(i,'01X').lower()+format(j,'01X').lower()
-				if plot_key in sys.argv:
-					mpl_plot_count += 1
-					plt.figure(mpl_plot_count,figsize=(7,6))
-					if i<8:
-						x = self.xp[:,0,i]
-					else:
-						x = self.eikonal[:,i-8]
-					if j<8:
-						y = self.xp[:,0,j]
-					else:
-						y = self.eikonal[:,j-8]
-					weights = self.eikonal[:,1]**2 + self.eikonal[:,2]**2 + self.eikonal[:,3]**2
-					sel = np.logical_and(np.logical_not(np.isnan(x)),np.logical_not(np.isnan(y)))
-					harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],self.res,self.res)
-					#harray = grid_tools.Smooth1D(harray,4,0)
-					#harray = grid_tools.Smooth1D(harray,4,1)
-					pre_str = TransformColorScale(harray,dynamic_range)
-					plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=plot_ext)
-					b=plt.colorbar()
-					b.set_label(pre_str+r'$|a|^2$',size=18)
-					plt.xlabel(lab_str[i],size=18)
-					plt.ylabel(lab_str[j],size=18)
-					plt.tight_layout()
-		return mpl_plot_count,maya_plot_count
-
 class Orbits:
 	def __init__(self,mesh_list,lab_sys):
 		self.label_system = lab_sys
@@ -430,7 +395,7 @@ class Orbits:
 		# extract spatial part of phase (assumes monochromatic mode)
 		self.xpo[:,8] += self.xpo[:,4]*self.xpo[:,0]
 		self.mesh_list = mesh_list
-		self.res = 200
+		self.res = (200,200)
 	def Plot(self,mpl_plot_count,maya_plot_count):
 		lab_str = self.label_system.GetLabels()
 		normalization = self.label_system.GetNormalization()
@@ -468,7 +433,7 @@ class Orbits:
 					s = s[np.where(test)]
 					if x.shape[0]>0:
 						characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
-						mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size,vmin=0.9,vmax=1.1)
+						mlab.plot3d(x,y,z,s,tube_radius=.0001*characteristic_size,vmin=0.0,vmax=3.0)
 						#mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
 				for path in self.mesh_list:
 					mesh = np.load(path)
@@ -533,48 +498,58 @@ class EikonalWaveProfiler:
 		l = GetPrefixList('xps')
 		for prefix in l:
 			self.name.append(prefix.split('_')[-2])
-			self.xp.append(np.load(prefix+'xps.npy'))
-			self.eik.append(np.load(prefix+'eiks.npy'))
+			self.xp.append(prefix+'xps.npy')
+			self.eik.append(prefix+'eiks.npy')
 		try:
-			self.res = np.int(arg_dict['res'])
+			self.res = (np.int(arg_dict['res'].split(',')[0]) , np.int(arg_dict['res'].split(',')[1]))
 		except:
-			self.res = 200
+			self.res = (200,200)
 		print('eikonal detectors =',self.name)
 	def Plot(self,mpl_plot_count,maya_plot_count):
-		for det_idx,eik in enumerate(self.name):
-			if eik in sys.argv:
-				xps = self.xp[det_idx]
-				eiks = self.eik[det_idx]
-				if np.max(xps[:,4])-np.min(xps[:,4]) > 1e-10:
-					print('WARNING: finite bandwidth detected, consider filtering.')
-				mpl_plot_count += 1
-				plt.figure(eik,figsize=(6,7))
-				phase = eiks[:,0]
-				phase -= np.min(phase)
-
-				plt.subplot(211)
-				a1,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,1],1,self.res,self.res)
-				a2,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,2],1,self.res,self.res)
-				a3,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],eiks[:,3],1,self.res,self.res)
-				intens = self.label_system.GetWcm2(a1**2+a2**2+a3**2,1.0)
-				cbar_str = TransformColorScale(intens,dynamic_range)
+		for det_idx,det_name in enumerate(self.name):
+			try:
+				arg = arg_dict[det_name]
+				xps = np.load(self.xp[det_idx])
+				eiks = np.load(self.eik[det_idx])
 				lab_str = self.label_system.GetLabels()
-				lab_range = self.label_system.PlotExt(list(plot_ext)+[0.0,1.0],(1,2))
-				plt.imshow(intens[0,...].swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=lab_range)
+				normalization = self.label_system.GetNormalization()
+				det_plane = arg.split('/')[0]
+				filters = arg.split('/')[1:]
+				i = int(det_plane.split(',')[0],16)
+				j = int(det_plane.split(',')[1],16)
+				sel = np.array([True]*xps.shape[0])
+				for filt in filters:
+					f = int(filt.split(',')[0],16)
+					band = (np.double(filt.split(',')[1]),np.double(filt.split(',')[2]))
+					if f<8:
+						w = np.logical_and(xps[:,f]>=band[0],xps[:,f]<band[1])
+					else:
+						w = np.logical_and(eiks[:,f-8]>=band[0],eiks[:,f-8]<band[1])
+					sel = np.logical_and(sel,w)
+				mpl_plot_count += 1
+				plt.figure(mpl_plot_count,figsize=(7,6))
+				if i<8:
+					x = xps[:,i]
+				else:
+					x = eiks[:,i-8]
+				if j<8:
+					y = xps[:,j]
+				else:
+					y = eiks[:,j-8]
+				weights = eiks[:,1]**2 + eiks[:,2]**2 + eiks[:,3]**2
+				sel = np.logical_and(sel,np.logical_and(np.logical_not(np.isnan(x)),np.logical_not(np.isnan(y))))
+				harray,plot_ext = grid_tools.GridFromBinning(normalization[i]*x[sel],normalization[j]*y[sel],weights[sel],self.res[0],self.res[1])
+				#harray = grid_tools.Smooth1D(harray,4,0)
+				#harray = grid_tools.Smooth1D(harray,4,1)
+				pre_str = TransformColorScale(harray,dynamic_range)
+				plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=plot_ext)
 				b=plt.colorbar()
-				b.set_label(cbar_str + r'Intensity (W/cm$^2$)',size=18)
-				plt.xlabel(lab_str[1],size=18)
-				plt.ylabel(lab_str[2],size=18)
-
-				plt.subplot(212)
-				psi,plot_ext = grid_tools.GridFromInterpolation(xps[:,4],xps[:,1],xps[:,2],phase,1,self.res,self.res,fill=np.min(phase))
-				plt.imshow(psi[0,...].swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=lab_range)
-				b=plt.colorbar()
-				b.set_label(r'$\psi + \omega t$',size=18)
-				plt.xlabel(lab_str[1],size=18)
-				plt.ylabel(lab_str[2],size=18)
-
+				b.set_label(pre_str+r'$|a|^2$',size=18)
+				plt.xlabel(lab_str[i],size=18)
+				plt.ylabel(lab_str[j],size=18)
 				plt.tight_layout()
+			except KeyError:
+				print('INFO:',det_name,'not used.')
 		return mpl_plot_count,maya_plot_count
 
 class FullWaveProfiler:
@@ -587,16 +562,16 @@ class FullWaveProfiler:
 		l = GetPrefixList(type_key+'_wave')
 		for prefix in l:
 			self.name.append(prefix.split('_')[-2])
-			self.wave.append(np.load(prefix+type_key+'_wave.npy'))
-			self.eik.append(np.load(prefix+type_key+'_eik.npy'))
-			self.ext.append(np.load(prefix+type_key+'_plot_ext.npy'))
+			self.wave.append(prefix+type_key+'_wave.npy')
+			self.eik.append(prefix+type_key+'_eik.npy')
+			self.ext.append(prefix+type_key+'_plot_ext.npy')
 	def Plot(self,mpl_plot_count,maya_plot_count):
 		for det_idx,det_name in enumerate(self.name):
 			try:
 				arg = arg_dict[det_name]
-				dom = self.ext[det_idx]
-				E = self.eik[det_idx]
-				A = self.wave[det_idx]
+				dom = np.load(self.ext[det_idx])
+				E = np.load(self.eik[det_idx])
+				A = np.load(self.wave[det_idx])
 				# Make dom[0..1] the time window and dom[8..9] the frequency window
 				dom = np.concatenate((dom,dom[:2]))
 				w00 = 0.5*(dom[8]+dom[9])
@@ -787,9 +762,6 @@ mpl_plot_count,maya_plot_count = bundlePlots.Plot(mpl_plot_count,maya_plot_count
 
 orbitPlots = Orbits(meshPlots.GetMeshList(),Units(label_type))
 mpl_plot_count,maya_plot_count = orbitPlots.Plot(mpl_plot_count,maya_plot_count)
-
-phaseSpacePlots = PhaseSpace(Units(label_type))
-mpl_plot_count,maya_plot_count = phaseSpacePlots.Plot(mpl_plot_count,maya_plot_count)
 
 eikonalPlots = EikonalWaveProfiler(Units(label_type))
 mpl_plot_count,maya_plot_count = eikonalPlots.Plot(mpl_plot_count,maya_plot_count)

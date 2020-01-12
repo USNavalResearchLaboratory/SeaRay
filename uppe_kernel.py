@@ -72,13 +72,13 @@ def update_current(cl,src,dchi,chi3,ionizer):
 	ionizer.InstantaneousRateCL(src.ne_dev,src.Et_dev,cl.q,cl.program('uppe').ComputeRate)
 	ionizer.GetPlasmaDensityCL(src.ng_dev,src.ne_dev,cl.q,cl.program('uppe').ComputePlasmaDensity)
 	cl.program('uppe').ComputePlasmaPolarization(cl.q,src.transverse_shape,None,src.P_dev.data,
-		src.Et_dev.data,src.ne_dev.data,np.double(0.01),np.double(0.1),np.double(src.dt),np.int32(src.steps))
+		src.Et_dev.data,src.ne_dev.data,np.double(0.05),np.double(0.05),np.double(src.dt),np.int32(src.steps))
 
 	# Nonuniform susceptibility
 	#cl.program('uppe').AddNonuniformPolarization(cl.q,src.freq_domain_shape,None,src.P_dev,src.Ew_dev.data,dchi_dev.data)
 
 	# Kerr effect
-	#cl.program('uppe').AddKerrPolarization(cl.q,src.time_domain_shape,None,src.P_dev.data,src.Et_dev.data,np.double(chi3))
+	cl.program('uppe').AddKerrPolarization(cl.q,src.time_domain_shape,None,src.P_dev.data,src.Et_dev.data,np.double(chi3))
 
 	# Get the current density in the frequency domain
 	cl.program('fft').RFFT(cl.q,src.transverse_shape,None,src.P_dev.data,src.J_dev.data,np.int32(src.steps))
@@ -96,7 +96,9 @@ def uppe_rhs(z,q,cl,T,src,dchi,chi3,ionizer,is_diagnostic_step=False):
 	:param source_cluster src: stores references to OpenCL buffers particular to UPPE
 	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y)
 	:param double chi3: nonlinear susceptibility
-	:param Ionization ionizer: class for encapsulating ionization models'''
+	:param Ionization ionizer: class for encapsulating ionization models
+
+	:returns: flattened S(z;w,kx,ky) if is_diagnostic_step is ``False``.  Otherwise J(w,x,y),ne(w,x,y).'''
 	src.StoreReducedPotential(cl.q,q.reshape(src.kz.shape))
 	cl.program('uppe').ReducedPotentialToField(cl.q,src.freq_domain_shape,None,src.Ew_dev.data,src.kz_dev.data,src.kg_dev.data,src.w_dev.data,np.double(z))
 	T.rspacex(src.Ew_dev)
@@ -151,7 +153,7 @@ def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,dz):
 	a = T.kspace(a)
 	src = source_cluster(cl.q,a,dens,w,kz,kGalileo)
 	dqdz = lambda z,q : uppe_rhs(z,q,cl,T,src,dchi,chi3,ionizer)
-	sol = scipy.integrate.solve_ivp(dqdz,[0.0,dz],a.flatten(),t_eval=[dz],rtol=1e-3,atol=1e-5)
+	sol = scipy.integrate.solve_ivp(dqdz,[0.0,dz],a.flatten(),t_eval=[dz])
 
 	# Get the diagnostic quantities at the new z-plane
 	q = sol.y[...,-1].reshape(kz.shape)
@@ -179,6 +181,13 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	steps = diagnostic_steps*subcycles
 	field_planes = steps + 1
 
+	powersof2 = [2**i for i in range(32)]
+	if N[0]-1 not in powersof2:
+		raise ValueError('UPPE propagator requires 2**n+1 w-nodes')
+	if N[1] not in powersof2:
+		raise ValueError('UPPE propagator requires 2**n x-nodes')
+	if N[2] not in powersof2:
+		raise ValueError('UPPE propagator requires 2**n y-nodes')
 	try:
 		window_speed = vol_dict['window speed']
 	except:
@@ -245,6 +254,6 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		J[...,k+1] = J0
 		ne[...,k+1] = ne0
 
-	# Return the wave amplitude
-	# Rays are re-launched externally
+	# Finish by relaunching rays and returning UPPE data
+	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3])
 	return A,J,ne,dom4d

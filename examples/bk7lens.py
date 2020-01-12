@@ -11,6 +11,10 @@ import input_tools
 # A trick that can be used is to put the eikonal plane after the focus and reverse the Helmholtz propagator,
 # but this input file does not do that.
 
+# Suggested plotter command:
+# python ray_plotter.py out/test o3d
+# The imperfection of the focus should be obvious
+
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
 wave = []

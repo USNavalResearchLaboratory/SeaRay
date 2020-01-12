@@ -1,6 +1,6 @@
 import numpy as np
-import scipy.optimize
 import scipy.interpolate
+import scipy.integrate
 import pyopencl
 import pyopencl.array
 import grid_tools
@@ -59,6 +59,14 @@ class CausticTool:
 		z_ext = np.array([-self.size[3]/2,self.size[3]/2])
 		dom4d = np.concatenate((plot_ext,z_ext))
 		return ans,dom4d
+	def ClipRaysToGrid(self,xp):
+		wn,xn,yn,ext = self.GetGridInfo()
+		x = xp[...,1]
+		y = xp[...,2]
+		condx = np.logical_or(np.logical_and(x>=xn[0],x<=xn[-1]),xn.shape[0]==1)
+		condy = np.logical_or(np.logical_and(y>=yn[0],y<=yn[-1]),yn.shape[0]==1)
+		cond = np.logical_and(condx,condy)
+		return np.where(cond[:,0])[0]
 	def kspace(self,A):
 		return self.T.kspace(A)
 	def rspace(self,A):
@@ -102,6 +110,64 @@ class FourierTool(CausticTool):
 		psi,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
 		return A*np.exp(1j*psi) , plot_ext
 
+	def RelaunchRays(self,xp,eikonal,vg,a,L):
+		'''Use wave data to create a new ray distribution.
+
+		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
+		:param float L: length of the wave zone'''
+		# Assume vacuum for now
+		wn,xn,yn,ext = self.GetGridInfo()
+		# Work out the eikonal wavevectors indirectly
+		# This is equivalent to k = grad(phase), but does not require unwrapping phase
+		eps = np.max(np.abs(a))*1e-6
+		if xn.shape[0]>1:
+			dx = xn[1]-xn[0]
+			adxastar = a*np.gradient(np.conj(a),dx,axis=1)
+			kx = np.real(0.5j*(adxastar-np.conj(adxastar)))/(eps+np.abs(a))**2
+		else:
+			dx = 1.0
+			kx = np.zeros(a.shape)
+		if yn.shape[0]>1:
+			dy = yn[1]-yn[0]
+			adyastar = a*np.gradient(np.conj(a),dy,axis=2)
+			ky = np.real(0.5j*(adyastar-np.conj(adyastar)))/(eps+np.abs(a))**2
+		else:
+			dy = 1.0
+			ky = np.zeros(a.shape)
+		# Work out the phase using del^2(phase) = div(k)
+		# Solve in Fourier space: -K2*phase = iKx*kx + iKy*ky
+		iKx = 1j*np.outer(self.T.k_diff(1),np.ones(kx.shape[2]))
+		iKy = 1j*np.outer(np.ones(ky.shape[1]),self.T.k_diff(2))
+		source = iKx*np.fft.fft(np.fft.fft(kx,axis=1),axis=2) + iKy*np.fft.fft(np.fft.fft(ky,axis=1),axis=2)
+		K2m = iKx**2 + iKy**2
+		source[:,0,0] = 0.0
+		K2m[0,0] = 1.0
+		phase = np.real(np.fft.ifft(np.fft.ifft(source/K2m,axis=2),axis=1))
+		# Rays keep their original frequency and transverse positions.
+		# Frequency shifts are still accounted for because amplitude may change.
+		impact = self.ClipRaysToGrid(xp)
+		w = xp[impact,:,4]
+		x = xp[impact,:,1]
+		y = xp[impact,:,2]
+		k1 = grid_tools.DataFromGrid(w,x,y,wn,xn,yn,kx)
+		k2 = grid_tools.DataFromGrid(w,x,y,wn,xn,yn,ky)
+		sel = np.where(k1**2 + k2**2 >= w**2)
+		k1[sel] = 0.0
+		k2[sel] = 0.0
+		xp[impact,:,0] += L
+		xp[impact,:,3] += L
+		xp[impact,:,5] = k1
+		xp[impact,:,6] = k2
+		xp[impact,:,7] = np.sqrt(w**2 - k1**2 - k2**2)
+		eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
+		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		eikonal[impact,2] = 0.0
+		eikonal[impact,3] = 0.0
+		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
+
 class BesselBeamTool(CausticTool):
 
 	def __init__(self,pts,band,center,size,cl):
@@ -125,25 +191,73 @@ class BesselBeamTool(CausticTool):
 		plot_ext = np.array([w_walls[0],w_walls[-1],rho_walls[0],rho_walls[-1],phi_walls[0],phi_walls[-1]])
 		return w_nodes,rho_nodes,phi_nodes,plot_ext
 
+	def GetCylCoords(self,xp):
+		dx = xp[...,1:4] - self.center[1:4]
+		rho = np.sqrt(dx[...,0]**2 + dx[...,1]**2)
+		phi = np.arctan2(dx[...,1],dx[...,0])
+		return rho,phi
+
 	def GetBoundaryFields(self,xps,eiks,c):
 		'''Eikonal field component c on (w,rho,phi) grid.
 		The radial points do not include the origin.
 		The azimuthal points are [-pi,...,pi-2*pi/N].'''
 		w = xps[:,4]
-		dx = xps[:,1:4] - self.center[1:4]
+		rho,phi = self.GetCylCoords(xps)
 		w_nodes,rho_nodes,phi_nodes,plot_ext = self.GetGridInfo()
 		time_window = 2*np.pi*self.pts[0]/self.size[0]
 		# Reference time to the largest amplitude ray
 		largest = np.argmax(np.einsum('...i,...i',eiks[:,1:3],eiks[:,1:3]))
 		kr = eiks[:,0] - xps[:,4]*(xps[largest,0] + 0.5*time_window)
 		# Perform interpolation
-		rho = np.sqrt(dx[:,0]**2 + dx[:,1]**2)
-		phi = np.arctan2(dx[:,1],dx[:,0])
 		# Keep angles in range pi to -pi, and favor -pi over +pi
 		phi[np.where(phi>0.9999*np.pi)] -= 2*np.pi
 		A,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,eiks[:,c],w_nodes,rho_nodes,phi_nodes)
 		psi,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
 		return A*np.exp(1j*psi),plot_ext
+
+	def RelaunchRays(self,xp,eikonal,vg,a,L):
+		'''Use wave data to create a new ray distribution.
+		At present azimuthal phase variation is ignored.
+
+		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
+		:param float L: length of the wave zone'''
+		# Assume vacuum for now
+		wn,xn,yn,ext = self.GetGridInfo()
+		a,xn = grid_tools.AddGhostCells(a,xn,1)
+		# Work out the eikonal wavevectors indirectly
+		# This is equivalent to k = grad(phase), but does not require unwrapping phase
+		eps = np.max(np.abs(a))*1e-6
+		if xn.shape[0]>1:
+			dx = xn[1]-xn[0]
+			adxastar = a*np.gradient(np.conj(a),dx,axis=1)
+			kx = np.real(0.5j*(adxastar-np.conj(adxastar)))/(eps+np.abs(a))**2
+		else:
+			dx = 1.0
+			kx = np.zeros(a.shape)
+		phase = scipy.integrate.cumtrapz(kx,dx=dx,axis=1,initial=0.0)
+		phase -= 0.25*kx[:,(0,),:]*dx
+		# Rays keep their original frequency and transverse positions.
+		# Frequency shifts are still accounted for because amplitude may change.
+		rho,phi = self.GetCylCoords(xp)
+		impact = np.where(rho[:,0]<xn[-1])[0]
+		w = xp[impact,:,4]
+		x = rho[impact,:]
+		y = phi[impact,:]
+		kr = grid_tools.DataFromGrid(w,x,y,wn,xn,yn,kx)
+		kr[np.where(kr**2>=w**2)] = 0.0
+		xp[impact,:,0] += L
+		xp[impact,:,3] += L
+		xp[impact,:,5] = kr*np.cos(y)
+		xp[impact,:,6] = kr*np.sin(y)
+		xp[impact,:,7] = np.sqrt(w**2 - xp[impact,:,5]**2 - xp[impact,:,6]**2)
+		eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
+		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		eikonal[impact,2] = 0.0
+		eikonal[impact,3] = 0.0
+		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
 
 def get_waist(rho_list,intensity,which_axis):
 	rms_size = np.sqrt(np.sum(intensity*rho_list**2,axis=which_axis)/np.sum(intensity,axis=which_axis))

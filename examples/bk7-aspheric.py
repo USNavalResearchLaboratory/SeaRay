@@ -9,7 +9,8 @@ import input_tools
 # The aspheric surface is modeled using a surface mesh
 # IMPORTANT: frequency and azimuthal nodes in source and detector must match
 
-# Suggested plotter arguments: det=0,4/0,0,0
+# Suggested plotter command
+# python ray_plotter.py out/test det=0,4/0,0,0
 # Illustrates induced chirp via Wigner transform
 
 mks_length = 0.4e-6 / (2*np.pi)
