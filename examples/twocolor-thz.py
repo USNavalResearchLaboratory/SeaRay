@@ -21,7 +21,8 @@ mess = 'Processing input file...\n'
 
 helper = input_tools.InputHelper(mks_length)
 
-prop_range = (-0.1/mks_length,-.03/mks_length)
+prop_range = (-0.1/mks_length,0.0/mks_length)
+L = prop_range[1]-prop_range[0]
 # air = dispersion.HumidAir(mks_length,0.4,1e-3)
 # air.add_opacity_region(40.0,0.05e-6,0.25e-6)
 # air.add_opacity_region(5.0,13e-6,17e-6)
@@ -34,7 +35,7 @@ P0_mks = 7e-3 / 80e-15
 I0_mks = 2*P0_mks/(np.pi*r00**2*mks_length**2)
 a800 = helper.Wcm2_to_a0(I0_mks*1e-4,0.8e-6)
 a400 = helper.Wcm2_to_a0(0.1*I0_mks*1e-4,0.4e-6)
-chi3 = 0.0# helper.mks_n2_to_chi3(1.0,5e-19*1e-4)
+chi3 = 0.0#helper.mks_n2_to_chi3(1.0,5e-19*1e-4)
 mess = mess + '  a800 = ' + str(a800) + '\n'
 mess = mess + '  a400 = ' + str(a400) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
@@ -89,16 +90,16 @@ for i in range(1):
 			'origin' : (0.,0.,-1/mks_length),
 			'euler angles' : (0.,0.,0.)},
 
-		{	'object' : volume.TestGrid('air'),
+		{	'object' : volume.AnalyticBox('air'),
 			'propagator' : 'uppe',
 			'ionizer' : ionizer,
 			'wave coordinates' : 'cylindrical',
 			'wave grid' : (2049,128,1,7),
-			'radial coefficients' : (1.0,0.0,0.0,0.0),
-			'frequency band' : band,
-			'mesh points' : (2,2,2),
-			'subcycles' : 1,
+			'density function' : 'exp(-4*x.s3*x.s3/'+str(L**2)+')',
+			'density lambda' : lambda x,y,z,r2 : np.exp(-4*z**2/L**2),
 			'density multiplier' : 1.0,
+			'frequency band' : band,
+			'subcycles' : 10,
 			'dispersion inside' : air,
 			'dispersion outside' : dispersion.Vacuum(),
 			'chi3' : chi3,

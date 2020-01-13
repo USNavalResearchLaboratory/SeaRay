@@ -54,6 +54,8 @@ class base_volume:
 			self.propagator = input_dict['propagator']
 		except KeyError:
 			self.propagator = 'eikonal'
+		if self.propagator not in ['eikonal','paraxial','uppe']:
+			raise ValueError('Unrecognized propagator type.')
 	def InitializeCL(self,cl,input_dict):
 		self.cl = cl
 	def RaysGlobalToLocal(self,xp,eikonal,vg):
@@ -282,27 +284,7 @@ class nonuniform_volume(base_volume):
 			return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
 		except KeyError:
 			return 2
-	def Propagate(self,xp,eikonal,vg,orb):
-		self.RaysGlobalToLocal(xp,eikonal,vg)
-		self.Transition(xp,eikonal,vg,orb)
-		ray_kernel.SyncSatellites(xp,vg)
-		ray_kernel.track(self.cl,xp,eikonal,self.vol_dict,orb)
-		vg[...] = self.disp_in.vg(xp)
-		self.Transition(xp,eikonal,vg,orb)
-		self.RaysLocalToGlobal(xp,eikonal,vg)
-		self.OrbitsLocalToGlobal(orb)
-
-class grid_volume(base_volume):
-	def Initialize(self,input_dict):
-		super().Initialize(input_dict)
-		self.vol_dict = input_dict
-		self.ne = np.zeros(1)
-	def OrbitPoints(self):
-		try:
-			return 2+np.int(self.vol_dict['steps']/self.vol_dict['subcycles'])
-		except KeyError:
-			return 2
-	def Propagate(self,xp,eikonal,vg,orb):
+	def Propagate(self,xp,eikonal,vg,orb,dens=None):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		if self.propagator=='paraxial':
@@ -313,7 +295,10 @@ class grid_volume(base_volume):
 			self.UpdateOrbits(xp,eikonal,orb)
 		if self.propagator=='eikonal':
 			ray_kernel.SyncSatellites(xp,vg)
-			ray_kernel.track_RIC(self.cl,xp,eikonal,self.ne,self.vol_dict,orb)
+			if np.any(dens==None):
+				ray_kernel.track(self.cl,xp,eikonal,self.vol_dict,orb)
+			else:
+				ray_kernel.track_RIC(self.cl,xp,eikonal,dens,self.vol_dict,orb)
 			vg[...] = self.disp_in.vg(xp)
 			self.Transition(xp,eikonal,vg,orb)
 		self.RaysLocalToGlobal(xp,eikonal,vg)
@@ -331,20 +316,46 @@ class grid_volume(base_volume):
 			np.save(basename+'_'+self.name+'_uppe_plasma',self.uppe_plasma)
 			np.save(basename+'_'+self.name+'_uppe_plot_ext',self.dom4d)
 
-class AxisymmetricChannel(nonuniform_volume,Cylinder):
+class grid_volume(nonuniform_volume):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.ne = np.zeros(1)
+	def Propagate(self,xp,eikonal,vg,orb):
+		super().Propagate(xp,eikonal,vg,orb,dens=self.ne)
+
+class AnalyticDensity(nonuniform_volume):
+	'''Base class used to create an analytical density profile.
+	Input dictionary key "density function" is a string containing a CL expression which may depend on x and r2.
+	  here x is a double4, x.s1 = x, x.s2 = y, x.s3 = z, and r2 = x**2 + y**2
+	Input dictionary key "density lambda" is a Python lambda function of (x,y,z,r2).
+	  here the arguments are numpy arrays with shape (bundles,rays), and the return value **must have the same shape**.'''
+	def get_density_plugin(self,input_dict):
+		# Set up the dispersion function in OpenCL kernel
+		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
+		plugin_str += '\ninline double wp2(const double4 x)\n'
+		plugin_str += '{\n'
+		plugin_str += 'const double r2 = x.s1*x.s1 + x.s2*x.s2;\n'
+		plugin_str += 'return ' + input_dict['density function'] + ';'
+		plugin_str += '}\n'
+		plugin_str += '\ninline double D_alpha(const double4 x,const double4 k)\n'
+		plugin_str += '{\n'
+		plugin_str += self.disp_in.Dxk('wp2(x)')
+		plugin_str += '}\n\n'
+		return plugin_str
+	def GetDensity(self,xp):
+		x = xp[...,1]
+		y = xp[...,2]
+		z = xp[...,3]
+		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
+		return self.vol_dict['density lambda'](x,y,z,r2)
+
+class AnalyticCylinder(AnalyticDensity,Cylinder):
+	'''Fill a cylinder with an analytical density profile.  See also AnalyticDensity class.'''
 	def InitializeCL(self,cl,input_dict):
 		# Here and below we are writing a unique OpenCL program for this object.
 		# Therefore do not assign to self.cl by reference, instead use copy.
 		self.cl = copy.copy(cl)
-		# Set up the dispersion function in OpenCL kernel
-		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
-
-		plugin_str += '\ninline double wp2(const double4 x)\n'
-		plugin_str += '{\n'
-		plugin_str += 'const double r2 = x.s1*x.s1 + x.s2*x.s2;\n'
-		plugin_str += 'return ' + input_dict['density function']
-		plugin_str += '}\n'
-
+		plugin_str = super().get_density_plugin(input_dict)
 		plugin_str += '\ninline double outside(const double4 x)\n'
 		plugin_str += '{\n'
 		plugin_str += 'const double Rd = ' + str(self.Rd) + ';\n'
@@ -352,51 +363,22 @@ class AxisymmetricChannel(nonuniform_volume,Cylinder):
 		plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
 						return (double)(r2>Rd*Rd || x.s3*x.s3>0.25*dz*dz);
 						}\n'''
-
-		plugin_str += '\ninline double D_alpha(const double4 x,const double4 k)\n'
-		plugin_str += '{\n'
-		plugin_str += self.disp_in.Dxk('wp2(x)')
-		plugin_str += '}\n\n'
-
 		self.cl.add_program('ray_integrator',plugin=plugin_str)
-	def GetDensity(self,xp):
-		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
-		return self.vol_dict['density lambda'](r2)
 
-class PlasmaChannel(nonuniform_volume,Cylinder):
+class AnalyticBox(AnalyticDensity,Box):
+	'''Fill a box with an analytical density profile.  See also AnalyticDensity class.'''
 	def InitializeCL(self,cl,input_dict):
+		# Here and below we are writing a unique OpenCL program for this object.
+		# Therefore do not assign to self.cl by reference, instead use copy.
 		self.cl = copy.copy(cl)
-		# Set up the dispersion function in OpenCL kernel
-		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'
-
-		plugin_str += '\ninline double wp2(const double4 x)\n'
-		plugin_str += '{\n'
-		plugin_str += 'const double c0 = ' + str(input_dict['radial coefficients'][0]) + ';\n'
-		plugin_str += 'const double c2 = ' + str(input_dict['radial coefficients'][1]) + ';\n'
-		plugin_str += 'const double c4 = ' + str(input_dict['radial coefficients'][2]) + ';\n'
-		plugin_str += 'const double c6 = ' + str(input_dict['radial coefficients'][3]) + ';\n'
-		plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
-						return c0 + c2*r2 + c4*r2*r2 + c6*r2*r2*r2;
-						}\n'''
-
+		plugin_str = super().get_density_plugin(input_dict)
 		plugin_str += '\ninline double outside(const double4 x)\n'
 		plugin_str += '{\n'
-		plugin_str += 'const double Rd = ' + str(self.Rd) + ';\n'
-		plugin_str += 'const double dz = ' + str(self.Lz) + ';\n'
-		plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
-						return (double)(r2>Rd*Rd || x.s3*x.s3>0.25*dz*dz);
-						}\n'''
-
-		plugin_str += '\ninline double D_alpha(const double4 x,const double4 k)\n'
-		plugin_str += '{\n'
-		plugin_str += self.disp_in.Dxk('wp2(x)')
-		plugin_str += '}\n\n'
-
+		plugin_str += 'const double Lx = ' + str(self.size[0]) + ';\n'
+		plugin_str += 'const double Ly = ' + str(self.size[1]) + ';\n'
+		plugin_str += 'const double Lz = ' + str(self.size[2]) + ';\n'
+		plugin_str += 'return (double)(x.s1*x.s1>0.25*Lx*Lx || x.s2*x.s2>0.25*Ly*Ly || x.s3*x.s3>0.25*Lz*Lz);\n}\n'
 		self.cl.add_program('ray_integrator',plugin=plugin_str)
-	def GetDensity(self,xp):
-		coeff = self.vol_dict['radial coefficients']
-		r2 = np.einsum('...i,...i',xp[...,1:3],xp[...,1:3])
-		return coeff[0] + coeff[1]*r2 + coeff[2]*r2**2 + coeff[3]*r2**3
 
 class Grid(grid_volume,Box):
 	def LoadMap(self,input_dict):

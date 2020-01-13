@@ -6,10 +6,9 @@ import surface
 import volume
 import input_tools
 
-# Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
-# The alternate test case creates a quartic lens on a 3D grid (will give messy results).
-# The ideal form lens data must be in ./extras.  Generate with synth-lens-3d.py.
-# N.b. an explicitly axisymmetric grid will give much better results for a given grid resolution.
+# Example input file for ray-in-cell propagation through ideal form plasma lens.
+# The alternate test case creates a quartic lens on a grid (will have caustics).
+# The ideal form lens data must be in ./extras.  Generate with synth-lens.py.
 
 mks_length = 0.8e-6 / (2*np.pi)
 sim = []
@@ -27,14 +26,14 @@ helper = input_tools.InputHelper(mks_length)
 w00 = 1.0
 ideal_form = True
 f = 0.01/mks_length
-f_num = 2.0
+f_num = 1.0
 Rlens = 0.75*f
 if ideal_form:
 	Lch = 1.5*f
-	lens_object = volume.Grid('plasma')
+	lens_object = volume.AxisymmetricGrid('plasma')
 else:
 	Lch = 0.2*f
-	lens_object = volume.TestGrid('plasma')
+	lens_object = volume.AxisymmetricTestGrid('plasma')
 r00 = 0.5*f/f_num # spot size of radiation
 c0 = 0.01
 h0 = np.sqrt(1-c0)
@@ -71,35 +70,43 @@ for i in range(1):
 					'focus' : (0.0,0.0,0.0,-f),
 					'supergaussian exponent' : 8})
 
-	ray.append({	'number' : (32,32,1),
+	ray.append({	'number' : (128,16,1),
 					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cartesian',
+					'loading coordinates' : 'cylindrical',
 					# Ray box is always put at the origin
 					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : (-1.4*r00,1.4*r00,-1.4*r00,1.4*r00,-2*t00,2*t00)})
+					'box' : (0,1.4*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
 		{	'object' : lens_object,
-			'radial coefficients' : (c0,c2,c4,c6), # only used for test grid
-			'mesh points' : (400,400,2), # only used for test grid
-			'file' : 'extras/ideal-form-3d.npy',
+			'radial coefficients' : (c0,c2,c4,c6),
+			'mesh points' : (400,400),
+			'file' : 'extras/ideal-form.npy',
 			'density multiplier' : 1.0,
 			'dispersion inside' : dispersion.ColdPlasma(),
 			'dispersion outside' : dispersion.Vacuum(),
-			'size' : (2*Rlens,2*Rlens,Lch),
+			'radius' : Rlens,
+			'length' : Lch,
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.),
 			'dt' : Lch/1000,
 			'steps' : 1500,
 			'subcycles' : 10},
 
+		# {	'object' : surface.CylindricalProfiler('det'),
+		# 	'integrator' : 'transform',
+		# 	'size' : (.001/mks_length,.001/mks_length,.0001/mks_length),
+		# 	'wave grid' : (16000,4,256),
+		# 	'distance to caustic' : eik_to_caustic,
+		# 	'origin' : (0.,0.,f - eik_to_caustic)},
+
 		{	'object' : surface.EikonalProfiler('terminus'),
-			'size' : (.04/mks_length,.04/mks_length),
+			'size' : (.01/mks_length,.01/mks_length),
 			'euler angles' : (0.0,0.0,0.0),
 			'origin' : (0.,0.,.015/mks_length)}
 		])
 
 	diagnostics.append({'suppress details' : False,
 						'clean old files' : True,
-						'orbit rays' : (4,4,1),
+						'orbit rays' : (8,4,1),
 						'base filename' : 'out/test'})

@@ -77,14 +77,15 @@ for i in range(1):
 					'box' : band + (0,1.5*r00,0.0,2*np.pi,-2*t00,2*t00)})
 
 	optics.append([
-		{	'object' : volume.PlasmaChannel('plasma'),
+		{	'object' : volume.AnalyticCylinder('plasma'),
 			'dispersion inside' : dispersion.ColdPlasma(),
 			'dispersion outside' : dispersion.Vacuum(),
 			'radius' : Rlens,
 			'length' : Lch,
 			'origin' : (0.,0.,0.),
 			'euler angles' : (0.,0.,0.),
-			'radial coefficients' : (c0,c2,c4,c6),
+			'density function' : str(c0)+'+'+str(c2)+'*r2+'+str(c4)+'*r2*r2',
+			'density lambda' : lambda x,y,z,r2 : c0 + c2*r2 + c4*r2*r2,
 			'dt' : Lch/1000,
 			# Use enough steps to make sure rays reach end of box.
 			# Too many steps is OK, SeaRay can adjust down automatically.
