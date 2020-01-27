@@ -340,6 +340,22 @@ class triangle(base_surface):
 		cond_table1 = np.logical_and(xp[...,1]>lb(xp[...,2]) , xp[...,1]<ub(xp[...,2]))
 		cond_table2 = np.logical_and(xp[...,2]>-safety , xp[...,2]<self.v2[1]+safety)
 		return np.logical_not(np.logical_and(cond_table1,cond_table2))
+	def GetPackedMesh(self):
+		# Component 0 is the "color"
+		# Triangles have a degenerate point in this scheme
+		packed_data = np.zeros((2,2,4))
+		packed_data[...,0] = 1.0
+		packed_data[0,0,1] = 0.0
+		packed_data[0,1,1] = self.v1[0]
+		packed_data[1,0,1] = self.v2[0]
+		packed_data[1,1,1] = self.v2[0]
+		packed_data[0,0,2] = 0.0
+		packed_data[0,1,2] = self.v1[1]
+		packed_data[1,0,2] = self.v2[1]
+		packed_data[1,1,2] = self.v2[1]
+		self.orientation.ExpressInStdBasis(packed_data[...,1:])
+		packed_data[...,1:] += self.P_ref
+		return packed_data
 
 class surface_mesh(base_surface):
 	def Initialize(self,input_dict):
@@ -489,6 +505,23 @@ class LevelMap(surface_mesh,rectangle):
 		self.Ly = Ly - 2*Ly/(Ny-1)
 		self.ComputeNormalsFromOrderedMesh(Nx,Ny)
 		return Nx,Ny
+
+class Grating(rectangle):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.dord = np.double(input_dict['diffracted order'])
+		self.gdens = np.double(input_dict['groove density'])
+		self.reflective = True
+	def GetNormals(self,xp):
+		'''Premise is to select an effective normal based on ray frequency.
+		Then the base_surface Deflect function can be re-used.'''
+		normals = np.zeros(xp[...,1:4].shape)
+		normals[...,2] = 1.0
+		thetai = -np.arctan2(xp[...,5],xp[...,7])
+		thetar = np.arcsin(np.sin(thetai) - 2*np.pi*self.dord*self.gdens/xp[...,4])
+		yrot = 0.5*(thetar-thetai)
+		v3.BundleRotateY(normals,yrot)
+		return normals
 
 class AsphericCap(surface_mesh,disc):
 	'''Positive radius has concavity in +z direction, parallel to normals'''

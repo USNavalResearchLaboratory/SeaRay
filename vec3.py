@@ -21,6 +21,27 @@ def RotateX(v,q):
 	v[1] = yOld*ct - v[2]*st;
 	v[2] = yOld*st + v[2]*ct;
 
+def BundleRotateZ(v,q):
+	st = np.sin(q);
+	ct = np.cos(q);
+	xOld = np.copy(v[...,0]);
+	v[...,0] = xOld*ct - v[...,1]*st;
+	v[...,1] = xOld*st + v[...,1]*ct;
+
+def BundleRotateY(v,q):
+	st = np.sin(q);
+	ct = np.cos(q);
+	zOld =  np.copy(v[...,2]);
+	v[...,2] = zOld*ct - v[...,0]*st;
+	v[...,0] = zOld*st + v[...,0]*ct;
+
+def BundleRotateX(v,q):
+	st = np.sin(q);
+	ct = np.cos(q);
+	yOld = np.copy(v[...,1]);
+	v[...,1] = yOld*ct - v[...,2]*st;
+	v[...,2] = yOld*st + v[...,2]*ct;
+
 def EulerRotate(v,alpha,beta,gamma):
 	RotateZ(v,gamma)
 	RotateX(v,beta)

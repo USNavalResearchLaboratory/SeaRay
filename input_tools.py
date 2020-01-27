@@ -9,6 +9,7 @@ class InputHelper:
 		self.E1 = C.m_e*C.c*self.w1/C.e
 		self.n1 = C.epsilon_0*C.m_e*self.w1**2/C.e**2
 		self.P1 = self.n1*C.e*mks_length
+		self.curr_pos = [0.0,0.0,0.0]
 
 	def ProcessArg(self,arg):
 		if type(arg)==str:
@@ -91,3 +92,30 @@ class InputHelper:
 		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
 		chi3_mks = (2.0/3.0)*n0*n2_mks/eta0
 		return self.ProcessArg(str(chi3_mks)+' m2/V2')
+
+	def rot_zx(self,rad):
+		'''Returns Euler angles producing a counter-clockwise rotation in zx plane'''
+		return (np.pi/2,-rad,-np.pi/2)
+
+	def rot_zx_deg(self,deg):
+		'''Returns Euler angles producing a counter-clockwise rotation in zx plane'''
+		return (np.pi/2,-deg*np.pi/180,-np.pi/2)
+
+	def set_pos(self,pos):
+		self.curr_pos = pos
+		return pos
+
+	def move(self,dx,dy,dz):
+		x = self.curr_pos[0] + dx
+		y = self.curr_pos[1] + dy
+		z = self.curr_pos[2] + dz
+		self.curr_pos = [x,y,z]
+		return [x,y,z]
+
+	def polar_move_zx(self,dist,deg):
+		'''angle of 0 is in +x direction, 90 degrees is in +z direction, etc..'''
+		x = self.curr_pos[0] + dist*np.cos(deg*np.pi/180)
+		y = self.curr_pos[1]
+		z = self.curr_pos[2] + dist*np.sin(deg*np.pi/180)
+		self.curr_pos = [x,y,z]
+		return [x,y,z]

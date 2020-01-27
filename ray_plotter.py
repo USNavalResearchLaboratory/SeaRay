@@ -32,7 +32,7 @@ except:
 if len(sys.argv)==1:
 	print('==============BEGIN HELP FOR SEARAY PLOTTER==============')
 	print('Usage: ray_plotter.py base_filename [optional arguments...]')
-	print('Example: ray_plotter.py out/test units=ps,mm o31 o3d')
+	print('Example: ray_plotter.py out/test units=ps,mm,ev o31 o3d')
 	print('NOTE: plotter expects input file for run to be analyzed to be in working directory.')
 	print('-----------------General Argument Format-----------------')
 	print('Arguments with values take form key=val1,val2,val3... (NO spaces)')
@@ -41,7 +41,8 @@ if len(sys.argv)==1:
 	print('-----------------Required Argument-----------------')
 	print('base_filename: path and prefix for data files, e.g., out/test')
 	print('-----------------Formatting Options-----------------')
-	print('units=time,length: time may be fs,ps,ns,us,s; length may be um,mm,cm,m,in.')
+	print('units=time,length,frequency: time may be fs,ps,ns,us,s; length may be um,mm,cm,m,in;')
+	print('  frequency may be ev,icm or else omitted to use normalized units.')
 	print('labels=system: system may be indexed,cart,cyl,sph')
 	print('drange=dr: if dr=0, use linear color scale, otherwise log10 scale with dynamic range = dr')
 	print('color=cmap: cmap is a string naming any colormap understood by Matplotlib or Mayavi')
@@ -234,6 +235,10 @@ class Units:
 		except:
 			t_str = plotter_defaults['time']
 			l_str = plotter_defaults['length']
+		try:
+			w_str = arg_dict['units'].split(',')[2]
+		except:
+			w_str = 'normalized'
 
 		if type(inputs.wave[0])==dict:
 			carrier = inputs.wave[0]['k0'][0]
@@ -250,7 +255,7 @@ class Units:
 			l1 = mks_length
 		if l_str=='in':
 			l1 = mks_length*1e2/2.54
-		l_str = l_str.replace('um',r'$\mu$m')
+		l_lab = l_str.replace('um',r'$\mu$m')
 
 		if t_str=='fs':
 			t1 = mks_time*1e15
@@ -262,21 +267,35 @@ class Units:
 			t1 = mks_time*1e6
 		if t_str=='s':
 			t1 = mks_time
+		t_lab = t_str.replace('us',r'$\mu$s')
+
+		if w_str=='normalized':
+			w1 = carrier
+			w_lab = r'$k_{00}$'
+		if w_str=='ev' or w_str=='eV':
+			w1 = C.hbar*(C.c/mks_length)/C.e
+			w_lab = 'eV'
+		if w_str=='icm':
+			w1 = .01/(2*np.pi*mks_length)
+			w_lab = r'$cm^{-1}$'
 
 		self.length_label = l_str
 		self.time_label = t_str
 		self.mks_length = mks_length
 		self.mks_time = mks_time
 
-		self.normalization = np.concatenate(([t1],np.ones(3)*l1,np.ones(4)/carrier,np.ones(4)))
-		self.lab_str = [r'$x_0$ ',r'$x_1$ ',r'$x_2$ ',r'$x_3$ ',
-			r'$k_0/k_{00}$',r'$k_1/k_{00}$',r'$k_2/k_{00}$',r'$k_3/k_{00}$',
-			r'$\psi$',r'$a_1$',r'$a_2$',r'$a_3$']
-		self.lab_str[0] += '('+t_str+')'
-		self.lab_str[1] += '('+l_str+')'
-		self.lab_str[2] += '('+l_str+')'
-		self.lab_str[3] += '('+l_str+')'
-
+		self.normalization = np.concatenate(([t1],np.ones(3)*l1,np.ones(4)*w1,np.ones(4)))
+		self.lab_str = [r'$x_0$ ',r'$x_1$ ',r'$x_2$ ',r'$x_3$ ']
+		if w_str=='eV':
+			self.lab_str += [r'$\hbar k_0$ ',r'$\hbar k_1$ ',r'$\hbar k_2$ ',r'$\hbar k_3$ ']
+		elif w_str=='icm':
+			self.lab_str += [r'$\lambda^{-1}$ ',r'$k_1$ ',r'$k_2$ ',r'$k_3$ ']
+		else:
+			self.lab_str += [r'$k_0$ ',r'$k_1$ ',r'$k_2$ ',r'$k_3$ ']
+		self.lab_str += [r'$\psi$',r'$a_1$',r'$a_2$',r'$a_3$']
+		self.lab_str[0] += '('+t_lab+')'
+		self.lab_str[1:4] = [s+'('+l_lab+')' for s in self.lab_str[1:4]]
+		self.lab_str[4:8] = [s+'('+w_lab+')' for s in self.lab_str[4:8]]
 		if label_type=='cart':
 			self.lab_str[0] = self.lab_str[0].replace('x_0','t')
 			self.lab_str[1] = self.lab_str[1].replace('x_1','x')
@@ -415,14 +434,19 @@ class Orbits:
 						plt.ylabel(lab_str[j],size=18)
 						plt.tight_layout()
 		if 'o3d' in sys.argv:
+			a2 = self.orbits[...,9]**2 + self.orbits[...,10]**2 + self.orbits[...,11]**2
+			a2max = np.max(a2[0,:])
+			wmin = np.min(self.orbits[...,4])
+			wmax = np.max(self.orbits[...,4])
+			characteristic_size = normalization[1]*(np.max(self.orbits[...,1:4]) - np.min(self.orbits[...,1:4]))
 			if maya_loaded:
 				maya_plot_count += 1
 				for j in range(self.orbits.shape[1]):
 					x = normalization[1]*self.orbits[:,j,1]
 					y = normalization[2]*self.orbits[:,j,2]
 					z = normalization[3]*self.orbits[:,j,3]
-					s = self.orbits[:,j,4]
-					#s = self.orbits[:,j,9]**2 + self.orbits[:,j,10]**2 + self.orbits[:,j,11]**2
+					w = self.orbits[:,j,4]
+					o = a2[:,j]
 					xtest = np.roll(x,1)!=x
 					ytest = np.roll(y,1)!=y
 					ztest = np.roll(z,1)!=z
@@ -430,11 +454,10 @@ class Orbits:
 					x = x[np.where(test)]
 					y = y[np.where(test)]
 					z = z[np.where(test)]
-					s = s[np.where(test)]
+					w = w[np.where(test)]
+					o = o[np.where(test)]
 					if x.shape[0]>0:
-						characteristic_size = np.max([np.max(x)-np.min(x),np.max(y)-np.min(y),np.max(z)-np.min(z)])
-						mlab.plot3d(x,y,z,s,tube_radius=.0001*characteristic_size,vmin=0.0,vmax=3.0)
-						#mlab.plot3d(x,y,z,s,tube_radius=.001*characteristic_size)
+						mlab.plot3d(x,y,z,w,tube_radius=.001*characteristic_size,vmin=wmin,vmax=wmax,colormap='gist_rainbow',opacity=0.5)
 				for path in self.mesh_list:
 					mesh = np.load(path)
 					c = mesh[:,:,0]
@@ -447,23 +470,34 @@ class Orbits:
 				fig = plt.figure(mpl_plot_count,figsize=(7,6))
 				ax = fig.add_subplot(111,projection='3d')
 				for j in range(self.orbits.shape[1]):
-					ax.plot(normalization[1]*self.orbits[:,j,1],normalization[2]*self.orbits[:,j,2],normalization[3]*self.orbits[:,j,3])
+					x = normalization[1]*self.orbits[:,j,1]
+					y = normalization[2]*self.orbits[:,j,2]
+					z = normalization[3]*self.orbits[:,j,3]
+					line_color = mpl.colors.hsv_to_rgb([0.8*(self.orbits[0,j,4]-wmin)/(wmax-wmin),1.0,1.0])
+					line_color = np.concatenate((line_color,[a2[0,j]/a2max]))
+					ax.plot(x,y,z,color=line_color)
 				surf = []
 				cmap = mpl.cm.ScalarMappable(cmap=plotter_defaults['level colors'])
 				needsBar = False
 				for path in self.mesh_list:
 					mesh = np.load(path)
 					needsBar = needsBar or np.max(mesh[...,0])!=np.min(mesh[...,0])
-					c = cmap.to_rgba(mesh[:,:,0]*normalization[3])
+					c = cmap.to_rgba(mesh[:,:,0]*normalization[3],alpha=0.5)
 					x = mesh[:,:,1]
 					y = mesh[:,:,2]
 					z = mesh[:,:,3]
 					#surf.append(ax.plot_surface(x*normalization[1],y*normalization[2],z*normalization[3],rcount=16,ccount=16,facecolors=c))
 					surf.append(ax.plot_surface(x*normalization[1],y*normalization[2],z*normalization[3],facecolors=c))
 					cmap.set_array(mesh[:,:,0]*normalization[3])
-				ax.set_xlabel(lab_str[1])
-				ax.set_ylabel(lab_str[2])
-				ax.set_zlabel(lab_str[3])
+				ax.set(xlabel=lab_str[1],ylabel=lab_str[2],zlabel=lab_str[3])
+				# mplot3d fixes the projection as a cube, so pad the axis limits to preserve physical aspect ratios
+				xl,xh = ax.get_xlim()
+				yl,yh = ax.get_ylim()
+				zl,zh = ax.get_zlim()
+				padding = 0.5*(np.max([xh-xl,yh-yl,zh-zl]) - np.array([xh-xl,yh-yl,zh-zl]))
+				ax.set_xlim(xl-padding[0],xh+padding[0])
+				ax.set_ylim(yl-padding[1],yh+padding[1])
+				ax.set_zlim(zl-padding[2],zh+padding[2])
 				if len(self.mesh_list)>0 and needsBar:
 					fig.colorbar(cmap, shrink=0.5, aspect=10, label='height ('+units.LengthLabel()+')')
 				plt.tight_layout()

@@ -445,3 +445,17 @@ class NaCl(sellmeier_medium):
 		super().__init__(mks_length,
 			A=np.array([0.00055,0.198,0.48398,0.38696,0.25998,0.08796,3.17064,0.30038]),
 			L=np.array([0.0,0.05,0.1,0.128,0.158,40.5,60.98,120.34])**2)
+
+class ZnSe(sellmeier_medium):
+	# Sellmeier formula from https://refractiveindex.info/?shelf=main&book=ZnSe&page=Connolly
+	def __init__(self,mks_length):
+		super().__init__(mks_length,
+			A=np.array([4.45813734,0.467216334,2.89566290]),
+			L=np.array([0.200859853,0.391371166,47.1362108])**2)
+
+class Ge(sellmeier_medium):
+	# Sellmeier formula from https://refractiveindex.info/?shelf=main&book=Ge&page=Burnett
+	def __init__(self,mks_length):
+		super().__init__(mks_length,
+			A=np.array([0.4886331,14.5142535,0.0091224]),
+			L=np.array([1.393959,0.1626427,752.190]))

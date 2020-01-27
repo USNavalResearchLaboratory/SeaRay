@@ -111,6 +111,7 @@ class base_volume:
 		print(self.name,': write surface meshes...')
 		for idx,surf in enumerate(self.surfaces):
 			packed_data = surf.GetPackedMesh()
+			self.orientation.ExpressInStdBasis(packed_data[...,1:])
 			if packed_data.shape[0]>1:
 				packed_data[...,0] = 0.3
 				packed_data[...,1:] += self.P_ref
@@ -246,6 +247,148 @@ class Box(base_volume):
 			'euler angles' : (0,0,0),
 			'size' : (self.size[0],self.size[1]) }
 		self.surfaces[-1].Initialize(surf_dict)
+
+class Prism(base_volume):
+	'''Isoceles prism.  Dispersion is in local xz plane.  Base is in the plane x = -size[0]/2.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		yrot = lambda q : (-np.pi/2,-q,np.pi/2)
+		self.size = input_dict['size']
+		halfangle = np.arctan(0.5*self.size[2]/self.size[0])
+		hyp = self.size[0]/np.cos(halfangle)
+		self.surfaces.append(surface.rectangle('base'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (-self.size[0]/2,0,0),
+			'euler angles' : yrot(-np.pi/2),
+			'size' : (self.size[2],self.size[1]) }
+		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('in'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0,0,-np.sin(halfangle)*hyp/2),
+			'euler angles' : yrot(np.pi-halfangle),
+			'size' : (hyp,self.size[1]) }
+		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('out'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (0,0,np.sin(halfangle)*hyp/2),
+			'euler angles' : yrot(halfangle),
+			'size' : (hyp,self.size[1]) }
+		self.surfaces[-1].Initialize(surf_dict)
+		a = np.array([self.size[0]/2,self.size[1]/2,0.0])
+		b = np.array([-self.size[0]/2,self.size[1]/2,self.size[2]/2])
+		c = np.array([-self.size[0]/2,self.size[1]/2,-self.size[2]/2])
+		n = np.array([0.0,1.0,0.0])
+		self.surfaces.append(surface.triangle(a,b,c,n,n,n,self.disp_in,self.disp_out))
+		a[1] *= -1
+		b[1] *= -1
+		c[1] *= -1
+		n = np.array([0.0,-1.0,0.0])
+		self.surfaces.append(surface.triangle(c,b,a,n,n,n,self.disp_in,self.disp_out))
+
+class PellinBroca(base_volume):
+	'''Pellin-Broca Prism.  Dispersion is in local xz plane.  Pivot point is at the origin.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		yrot = lambda q : (-np.pi/2,-q,np.pi/2)
+		sin = np.sin
+		cos = np.cos
+		sqrt = np.sqrt
+		pi = np.pi
+		cot = lambda q : 1/np.tan(q)
+		qr = input_dict['angle']*180/np.pi # design refraction angle in degrees, conventionally 30 degrees
+		A = input_dict['size'][0] # input plane length
+		h = input_dict['size'][1] # height
+		B = input_dict['size'][2] # output plane length
+		# The following formulas are pasted in from sympy, and assume origin is at vertex DA
+		C = (sqrt(2)*A*sin(pi*(qr/90 + 1/4)) + A + sqrt(2)*B*cos(pi*(qr/90 + 1/4)) - B)/(2*sin(pi*(qr/180 + 1/4)))
+		D = sqrt(2)*(-A*cos(pi*(qr/180 + 1/4)) + B*sin(pi*(qr/180 + 1/4)))
+		CDx = -sqrt(2)*A*sin(pi*(qr/90 + 1/4))/2 + A/2 - sqrt(2)*B*cos(pi*(qr/90 + 1/4))/2 + B/2
+		CDz = B - (sqrt(2)*A*sin(pi*(qr/90 + 1/4)) + A + sqrt(2)*B*cos(pi*(qr/90 + 1/4)) - B)*cos(pi*(qr/180 + 1/4))/(2*sin(pi*(qr/180 + 1/4)))
+		Cx = A - 0.5*C*np.cos((45-qr)*np.pi/180) # midpoint of C
+		Cz = B - 0.5*C*np.sin((45-qr)*np.pi/180)
+		Dx = CDx - 0.5*D*np.cos((90-qr)*np.pi/180) # midpoint of D
+		Dz = CDz - 0.5*D*np.sin((90-qr)*np.pi/180)
+		# Pivot point at Px,Pz
+		Px = (A*cot(pi*qr/180 + pi/4) + A - B)/(cot(pi*qr/180 + pi/4) + 1)
+		Pz = A - (A*cot(pi*qr/180 + pi/4) + A - B)/(cot(pi*qr/180 + pi/4) + 1)
+		piv = np.array([Px,0.0,Pz])
+		self.surfaces.append(surface.rectangle('in'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (A/2-Px,0,-Pz),
+			'euler angles' : yrot(np.pi),
+			'size' : (A,h) }
+		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('out'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (A-Px,0,B/2-Pz),
+			'euler angles' : yrot(np.pi/2),
+			'size' : (B,h) }
+		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('back'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'reflective' : True,
+			'origin' : (Cx-Px,0,Cz-Pz),
+			'euler angles' : yrot(-(45-qr)*np.pi/180),
+			'size' : (C,h) }
+		self.surfaces[-1].Initialize(surf_dict)
+		self.surfaces.append(surface.rectangle('extra'))
+		surf_dict = { 'dispersion beneath' : self.disp_in,
+			'dispersion above' : self.disp_out,
+			'origin' : (Dx-Px,0,Dz-Pz),
+			'euler angles' : yrot(-(90-qr)*np.pi/180),
+			'size' : (D,h) }
+		self.surfaces[-1].Initialize(surf_dict)
+		# Form quadrilateral from two triangles
+		a = np.array([0.0,h/2,0.0]) - piv
+		b = np.array([A,h/2,0.0]) - piv
+		c = np.array([A,h/2,B]) - piv
+		n = np.array([0.0,1.0,0.0])
+		self.surfaces.append(surface.triangle(a,b,c,n,n,n,self.disp_in,self.disp_out))
+		a[1] *= -1
+		b[1] *= -1
+		c[1] *= -1
+		n = np.array([0.0,-1.0,0.0])
+		self.surfaces.append(surface.triangle(c,b,a,n,n,n,self.disp_in,self.disp_out))
+		a = np.array([0.0,h/2,0.0]) - piv
+		b = np.array([A,h/2,B]) - piv
+		c = np.array([CDx,h/2,CDz]) - piv
+		n = np.array([0.0,1.0,0.0])
+		self.surfaces.append(surface.triangle(a,b,c,n,n,n,self.disp_in,self.disp_out))
+		a[1] *= -1
+		b[1] *= -1
+		c[1] *= -1
+		n = np.array([0.0,-1.0,0.0])
+		self.surfaces.append(surface.triangle(c,b,a,n,n,n,self.disp_in,self.disp_out))
+	def OrbitPoints(self):
+		return 3
+	def Propagate(self,xp,eikonal,vg,orb):
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		self.Transition(xp,eikonal,vg,orb)
+		self.Transition(xp,eikonal,vg,orb)
+		self.Transition(xp,eikonal,vg,orb)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		self.OrbitsLocalToGlobal(orb)
+
+class RetroPrism(Prism):
+	'''Same as Prism but assumes TIR on one surface.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.surfaces[0].reflective = True
+	def OrbitPoints(self):
+		return 3
+	def Propagate(self,xp,eikonal,vg,orb):
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		self.Transition(xp,eikonal,vg,orb)
+		self.Transition(xp,eikonal,vg,orb)
+		self.Transition(xp,eikonal,vg,orb)
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		self.OrbitsLocalToGlobal(orb)
 
 class Cylinder(base_volume):
 	def Initialize(self,input_dict):

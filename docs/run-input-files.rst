@@ -69,8 +69,17 @@ Geometry
 The simulation defines a global three dimensional Cartesian coordinate system.  Each object also has its own coordinate system, called the local system.  Rays are initially loaded into the global space.  Internally they are always represented by Cartesian vectors, although the initial configuration can be chosen to have n-fold radial symmetry.  As the rays enter or exit various optical elements, they are generally transformed into and out of the local system of the object.
 
 The euler angles :math:`(\alpha,\beta,\gamma)` are used to set the orientation of an object.  In the active view of the transformation, the object is first rotated about the z axis by :math:`\gamma`, then about the x axis by :math:`\beta`, and finally about the z axis again by :math:`\alpha`.  These are all right handed rotations.
-Most optical elements have their default orientation such that the z axis is coincident with the center ray of a beam perfectly aligned with the object.  Typically it is most convenient, therefore, to orient the optical system to lie in z-y plane, so that the single Euler angle :math:`\beta` can be used to direct the beam anywhere in the plane.
-When visualizing the z-y plane, it is most convenient to picture positive z as toward the top of the screen, positive y as toward the right of the screen, and positive x as out of the screen.
+
+Most optical elements have their default orientation such that the z axis is coincident with the center ray of a beam perfectly aligned with the object. Objects with transverse asymmetry are typically oriented such that beams are deflected in the xz plane.
+
+The position of an object is given in the input file as a global Cartesian coordinate.  Each object has a reference point, typically the centroid of the object, or some other signficant point, which coincides with the global coordinate of the object.
+
+When positioning and orienting an object, the rotation about the reference point happens first, then the translation to the global position.
+
+Helper Class
+,,,,,,,,,,,,
+
+There is a helper class that can be imported into an input file to assist with positioning and orienting objects, among other things.
 
 Four Dimensional Object Properties
 ----------------------------------
