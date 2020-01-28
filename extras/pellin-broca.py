@@ -20,9 +20,9 @@ import sympy as sy
 # The walk starts at vertex AD and proceeds counter-clockwise (see diagram above).
 
 A,B,C,D,a,b,c,d,qr = sy.symbols('A B C D a b c d qr')
-def num(obj,A0,B0):
-    # Plug in actual numbers A0 and B0
-    return sy.N(obj.subs([(A,A0),(B,B0)]))
+def num(obj,A0,B0,qr0):
+    # Plug in actual numbers A0 and B0 and qr0
+    return sy.N(obj.subs([(A,A0),(B,B0),(qr,qr0)]))
 
 a = (90-qr)*sy.pi/180
 b = 90*sy.pi/180
@@ -64,3 +64,8 @@ x = sy.symbols('x')
 x = sy.solveset(A-x - (B-(A-x)*sy.tan(sy.pi/2-c)),x).args[0] # note slope = 1 for first line
 pivot = (x,A-x)
 print('pivot point =',pivot)
+
+print('Numerical A =',num(A,2,1.5,30))
+print('Numerical B =',num(B,2,1.5,30))
+print('Numerical CDx =',num(CD[0],2,1.5,30))
+print('Numerical CDy =',num(CD[1],2,1.5,30))
