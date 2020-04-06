@@ -188,14 +188,31 @@ class PPT(Ionization):
 		return self.rate_au_to_sim(ans)
 	def InstantaneousRate(self,Es):
 		'''Evaluate cycle averaged rate in the tunneling limit (gam=0) and unwind cycle averaging.
-		Put ADK here for now, get real PPT tunneling later.'''
+		We are using Popov's note to undo the application of the Stirling formula.'''
 		E = self.field_sim_to_au(np.abs(Es)) + self.cutoff_field
 		Uion = self.Uion
 		Z = self.Z
 		nstar = Z/np.sqrt(2*Uion)
 		D = ((4.0*np.exp(1.0)*Z**3)/(E*nstar**4))**nstar
-		ans = (E*D*D/(8.0*np.pi*Z))*np.exp(-2*Z**3/(3.0*nstar**3*E))
-		return self.rate_au_to_sim(ans)
+		ADK = (E*D*D/(8.0*np.pi*Z))*np.exp(-2*Z**3/(3.0*nstar**3*E))
+		NPPT = (2**(2*nstar-1)/spsf.gamma(nstar+1))**2
+		NADK = (1/(8*np.pi*nstar))*(4*np.exp(1)/nstar)**(2*nstar)
+		return self.rate_au_to_sim(ADK*NPPT/NADK)
+	def InstantaneousRateCL(self,rate,Es,q,k):
+		Uion = self.Uion
+		Z = self.Z
+		nstar = Z/np.sqrt(2*Uion)
+		field_conv = self.field_sim_to_au(1.0)
+		rate_conv = self.rate_au_to_sim(1.0)
+		D = ((4.0*np.exp(1.0)*Z**3)/nstar**4)**nstar
+		NPPT = (2**(2*nstar-1)/spsf.gamma(nstar+1))**2
+		NADK = (1/(8*np.pi*nstar))*(4*np.exp(1)/nstar)**(2*nstar)
+		C_pre = (NPPT/NADK)*D*D/(8.0*np.pi*Z)
+		C_pow = 1.0-nstar
+		C_exp = -2*Z**3/(3.0*nstar**3)
+		k(q,rate.shape,None,rate.data,Es.data,
+			np.double(field_conv),np.double(rate_conv),np.double(self.cutoff_field),
+			np.double(C_pre),np.double(C_pow),np.double(C_exp))
 
 class YI(Ionization):
 	"""Yudin-Ivanov phase dependent ionization rate.

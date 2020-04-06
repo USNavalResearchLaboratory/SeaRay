@@ -154,9 +154,11 @@ def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,dz):
 	src = source_cluster(cl.q,a,dens,w,kz,kGalileo)
 	dqdz = lambda z,q : uppe_rhs(z,q,cl,T,src,dchi,chi3,ionizer)
 	sol = scipy.integrate.solve_ivp(dqdz,[0.0,dz],a.flatten(),t_eval=[dz])
+	# sol = scipy.integrate.odeint(dqdz,a.flatten(),[0.0,dz],tfirst=True)
 
 	# Get the diagnostic quantities at the new z-plane
 	q = sol.y[...,-1].reshape(kz.shape)
+	# q = sol.y[-1,...].reshape(kz.shape)
 	a = T.rspace(q*np.exp(1j*(kz+kGalileo)*dz))
 	J,ne = uppe_rhs(dz,q,cl,T,src,dchi,chi3,ionizer,is_diagnostic_step=True)
 

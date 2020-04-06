@@ -85,7 +85,6 @@ for i in range(1):
 			'wave grid' : (1025,64,1,9),
 			'density function' : '1.0',
 			'density lambda' : lambda x,y,z,r2 : np.ones(x.shape),
-			'density multiplier' : 1.0,
 			'frequency band' : band,
 			'subcycles' : 1,
 			'dispersion inside' : glass,

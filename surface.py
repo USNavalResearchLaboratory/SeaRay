@@ -75,6 +75,10 @@ class base_surface:
 			self.reflective = input_dict['reflective']
 		except KeyError:
 			print('INFO: defaulting to transmissive')
+		try:
+			self.bandpass = input_dict['bandpass']
+		except KeyError:
+			self.bandpass = None
 	def InitializeCL(self,cl,input_dict):
 		self.cl = cl
 	def PositionGlobalToLocal(self,xp):
@@ -166,6 +170,9 @@ class base_surface:
 			cutoff_rays = np.where(np.imag(dkmag_complex!=0.0))
 			dkmag = np.real(dkmag_complex)
 			dkmag[cutoff_rays] = -2*kdotn[cutoff_rays]
+		if self.bandpass!=None:
+			filtered_rays = np.where(np.logical_or(xp[...,4]<self.bandpass[0],xp[...,4]>self.bandpass[1]))
+			dkmag[filtered_rays] = 0.0
 		xp[...,5:8] += np.einsum('ij,ijk->ijk',dkmag,normals)
 		kdotn = np.einsum('...i,...i',xp[...,5:8],normals)
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)

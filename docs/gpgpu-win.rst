@@ -11,7 +11,13 @@ Under construction.
 Support for Proprietary Graphics
 --------------------------------
 
-If SeaRay fails to find your graphics card, first try updating to the latest drivers, and perhaps reinstall the ``conda`` environment.  Failing this, see :doc:`troubleshooting-ocl`.
+If SeaRay fails to find your graphics card:
+
+	#. Update to the latest drivers,
+	#. If using NVIDIA try installing CUDA developer tools
+	#. Activate the conda environment (if not already active)
+	#. :samp:`conda install -c conda-forge ocl-icd-system`
+	#. See also :doc:`troubleshooting-ocl`.
 
 TeX for premium plot labels
 ---------------------------
@@ -27,12 +33,12 @@ Advanced 3D Plotting
 
 The SeaRay plotter supports :samp:`matplotlib` and/or :samp:`mayavi` for 3d plotting. The 3D capabilities of :samp:`matplotlib` are at present nonideal (e.g., depth is not properly rendered in all cases). If you want robust 3D plots you should install :samp:`mayavi`.
 
-As of this writing the best way to install :samp:`mayavi` into a conda environment is with ``pip`` rather than the ``conda`` tool.  In some cases ``mayavi`` and ``matplotlib`` step on each other.  If this happens you may need separate environments for each.  The plotter is written to sense which library is available and react accordingly.
+ In some cases ``mayavi`` and ``matplotlib`` step on each other.  If this happens you may need separate environments for each.  The plotter is written to sense which library is available and react accordingly.
 
 	#. Install Visual Studio Community Edition
 	#. Open the Anaconda prompt (or PowerShell if configured).
 	#. Activate your ``conda`` environment.
-	#. :samp:`pip install mayavi`
+	#. :samp:`conda install -c conda-forge mayavi`
 
 Interactive Notebooks
 ----------------------

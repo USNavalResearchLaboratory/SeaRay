@@ -431,7 +431,7 @@ class nonuniform_volume(base_volume):
 		self.RaysGlobalToLocal(xp,eikonal,vg)
 		self.Transition(xp,eikonal,vg,orb)
 		if self.propagator=='paraxial':
-			self.paraxial_wave,self.dom4d = paraxial_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
+			self.paraxial_wave,self.paraxial_source,self.paraxial_plasma,self.dom4d = paraxial_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
 			self.UpdateOrbits(xp,eikonal,orb)
 		if self.propagator=='uppe':
 			self.uppe_wave,self.uppe_source,self.uppe_plasma,self.dom4d = uppe_kernel.track(self.cl,xp,eikonal,vg,self.vol_dict)
@@ -451,6 +451,8 @@ class nonuniform_volume(base_volume):
 		if self.propagator=='paraxial':
 			print('    Write paraxial wave data...')
 			np.save(basename+'_'+self.name+'_paraxial_wave',self.paraxial_wave)
+			np.save(basename+'_'+self.name+'_paraxial_source',self.paraxial_source)
+			np.save(basename+'_'+self.name+'_paraxial_plasma',self.paraxial_plasma)
 			np.save(basename+'_'+self.name+'_paraxial_plot_ext',self.dom4d)
 		if self.propagator=='uppe':
 			print('    Write UPPE wave data...')
@@ -469,9 +471,9 @@ class grid_volume(nonuniform_volume):
 class AnalyticDensity(nonuniform_volume):
 	'''Base class used to create an analytical density profile.
 	Input dictionary key "density function" is a string containing a CL expression which may depend on x and r2.
-	  here x is a double4, x.s1 = x, x.s2 = y, x.s3 = z, and r2 = x**2 + y**2
+	Here x is a double4, x.s1 = x, x.s2 = y, x.s3 = z, and r2 = x**2 + y**2
 	Input dictionary key "density lambda" is a Python lambda function of (x,y,z,r2).
-	  here the arguments are numpy arrays with shape (bundles,rays), and the return value **must have the same shape**.'''
+	Here the arguments are numpy arrays with shape (bundles,rays), and the return value **must have the same shape**.'''
 	def get_density_plugin(self,input_dict):
 		# Set up the dispersion function in OpenCL kernel
 		plugin_str = '\ninline double dot4(const double4 x,const double4 y);'

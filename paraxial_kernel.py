@@ -11,29 +11,9 @@ from scipy.linalg import eig_banded
 import scipy.sparse.linalg
 import caustic_tools
 import grid_tools
+import ionization
 
-pulse_dict = { 'exp' : lambda x: np.exp(-x**2),
-	'sech' : lambda x: 1/np.cosh(x) }
-
-def quintic_step(x):
-	if x<0:
-		return 0.0
-	elif x<1:
-		return 10*x**3 - 15*x**4 + 6*x**5;
-	else:
-		return 1.0
-
-def plasma_channel_dens(r,z,zperiod,ne0,nc):
-	# create a plasma channel with given "betatron" period
-	vg = 1/np.sqrt(1-ne0/nc)
-	Omega = 2*np.pi*vg/zperiod
-	ne2 = Omega**2 * nc
-	r2 = r**2
-	zfact = 1
-	ans = ne0 + ne2*r2
-	return ans*zfact
-
-def propagator(T,a0,chi,dens,n0,ng,dz,long_pulse_approx):
+def propagator(T,a0,chi,chi3,dens,ionizer,n0,ng,dz,long_pulse_approx):
 	'''Advance a0[w,x,y] to a new z plane using paraxial wave equation.
 	Works in either Cartesian or cylindrical geometry.
 	If cylindrical, intepret x as radial and y as azimuthal.
@@ -55,7 +35,6 @@ def propagator(T,a0,chi,dens,n0,ng,dz,long_pulse_approx):
 	else:
 		bandwidth = w[-1] - w[0] + w[1] - w[0]
 		dt = 2*np.pi/bandwidth
-	dx = (dt,x[1]-x[0],y[1]-y[0],dz)
 	dn = n0-ng
 	# Form uniform contribution to susceptibility
 	chi0 = np.copy(chi)
@@ -73,36 +52,48 @@ def propagator(T,a0,chi,dens,n0,ng,dz,long_pulse_approx):
 	a *= np.exp(-0.5*f*dz/g)
 	a = T.rspace(a)
 
-	# linear but nonuniform step
-	h = dchi * (w**2)[...,np.newaxis,np.newaxis]
-	a *= np.exp(-h*dz/g)
+	# plasma formation
+	ionizer.ResetParameters(timestep=dt)
+	# Form electric field envelope in the time domain
+	e = np.fft.ifft(np.fft.ifftshift(1j*w[...,np.newaxis,np.newaxis]*a,axes=0),axis=0)
+	# N.b. time index runs backwards due to FFT conventions
+	rate = ionizer.AverageRate(e,w0)
+	nplasma = ionizer.GetPlasmaDensity(dens,rate)
+	quintic = lambda x : 10*x**3 - 15*x**4 + 6*x**5
+	nplasma[:64,...] *= quintic(np.linspace(0,1,64))[:,np.newaxis,np.newaxis]
+	nplasma = np.fft.fftshift(np.fft.fft(nplasma,axis=0),axes=0)
 
-	# nonlinear step (assumes medium is plasma)
-	a = np.fft.ifft(np.fft.ifftshift(a,axes=0),axis=0)/dx[0]
-	a2 = np.abs(a)**2
+	# nonlinear/nonuniform step (material chi3 model assumes narrowband, plasma can be broader)
+	# The spectral amplitudes have been predefined to give the correct time domain amplitude upon
+	# performing an unmodified np.fft.ifft.
+	a = np.fft.ifft(np.fft.ifftshift(a,axes=0),axis=0)
+	nplasma = np.fft.ifft(np.fft.ifftshift(nplasma,axes=0),axis=0)
+	j3Coeff = -nplasma + (0.25*nplasma + (0.5*w0**4*chi3)[np.newaxis,...])*np.abs(a)**2
 	if long_pulse_approx or N[0]==1:
 		# Dropping tau derivative allows for simple exponential solution
 		# assuming we can evaluate |a|^2 at the old z
-		a *= np.exp(1j*dens[np.newaxis,...]*a2*dz/(8*n0*w0))
+		a *= np.exp(1j*j3Coeff*dz/(4*n0*w0))
 	else:
 		# Solve a tridiagonal system for each temporal strip
 		for i in range(N[1]):
 			for j in range(N[2]):
-				T1 = np.ones(N[0]-1)*ng/dx[0]
-				T2 = 2j*w0*n0+0.125*dz*dens[i,j]*a2[:,i,j]
-				T3 = -np.ones(N[0]-1)*ng/dx[0]
+				T1 = np.ones(N[0]-1)*ng/dt
+				T2 = 2j*w0*n0+0.5*dz*j3Coeff[:,i,j]
+				T3 = -np.ones(N[0]-1)*ng/dt
 				T = scipy.sparse.diags([T1,T2,T3],[-1,0,1]).tocsc()
-				b = np.roll(a[:,i,j],1)*ng/dx[0] - np.roll(a[:,i,j],-1)*ng/dx[0]
-				b += a[:,i,j]*(2j*w0*n0-0.125*dz*dens[i,j]*a2[:,i,j])
+				b = np.roll(a[:,i,j],1)*ng/dt - np.roll(a[:,i,j],-1)*ng/dt
+				b += a[:,i,j]*(2j*w0*n0-0.5*dz*j3Coeff[:,i,j])
 				a[:,i,j] = scipy.sparse.linalg.spsolve(T,b)
-	a = dx[0]*np.fft.fftshift(np.fft.fft(a,axis=0),axes=0)
+	a = np.fft.fftshift(np.fft.fft(a,axis=0),axes=0)
+	nplasma = np.fft.fftshift(np.fft.fft(nplasma,axis=0),axes=0)
+	j3 = np.fft.fftshift(np.fft.fft(j3Coeff*a,axis=0),axes=0)
 
 	# linear half-step
 	a = T.kspace(a)
 	a *= np.exp(-0.5*f*dz/g)
 	a = T.rspace(a)
 
-	return a
+	return a,j3,nplasma
 
 def track(cl,xp,eikonal,vg,vol_dict):
 	'''Propagate paraxial waves using eikonal data as a boundary condition.
@@ -146,12 +137,18 @@ def track(cl,xp,eikonal,vg,vol_dict):
 
 	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
+	J = np.zeros(N).astype(np.complex)
+	ne = np.zeros(N).astype(np.complex)
 	A0,dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
 	n0 = np.mean(np.sqrt(np.einsum('...i,...i',xp[:,0,5:8],xp[:,0,5:8]))/xp[:,0,4])
 	ng = 1.0/np.mean(np.sqrt(np.einsum('...i,...i',vg[:,0,1:4],vg[:,0,1:4])))
 
 	# Setup the wave propagation domain
 	chi = vol_dict['dispersion inside'].chi(w_nodes)
+	try:
+		ionizer = vol_dict['ionizer']
+	except KeyError:
+		ionizer = ionization.Ionization(1.0,1.0,1.0,1.0)
 	dens_nodes = grid_tools.cell_centers(-size[3]/2,size[3]/2,steps)
 	field_walls = grid_tools.cell_walls(dens_nodes[0],dens_nodes[-1],steps)
 	diagnostic_walls = np.linspace(-size[3]/2,size[3]/2,N[3])
@@ -170,18 +167,18 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		xp_eff[...,1] = np.outer(x1_nodes,np.cos(x2_nodes))
 		xp_eff[...,2] = np.outer(x1_nodes,np.sin(x2_nodes))
 	A[...,0] = A0
+	J[...,0] = 0.0
+	ne[...,0] = 0.0
 	for k in range(diagnostic_steps):
 		print('Advancing to diagnostic plane',k+1)
 		for s in range(subcycles):
 			xp_eff[...,3] = dens_nodes[k*subcycles + s]
 			dens = vol_dict['object'].GetDensity(xp_eff)
-			A0 = propagator(field_tool,A0,chi,dens,n0,ng,dz,True)
-			try:
-				A0 *= vol_dict['damping filter'](w_nodes)[:,np.newaxis,np.newaxis]
-			except KeyError:
-				A0 = A0
+			A0,J0,ne0 = propagator(field_tool,A0,chi,chi3,dens,ionizer,n0,ng,dz,True)
 		A[...,k+1] = A0
+		J[...,k+1] = J0
+		ne[...,k+1] = ne0
 
 	# Finish by relaunching rays and returning wave data
 	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3])
-	return A,dom4d
+	return A,J,ne,dom4d

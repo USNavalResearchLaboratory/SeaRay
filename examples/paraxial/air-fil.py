@@ -42,7 +42,7 @@ air = dispersion.HumidAir(mks_length,0.4,1e-3)
 Uion_au = 12.1 / (C.alpha**2*C.m_e*C.c**2/C.e)
 ngas_mks = 5.4e18 * 1e6
 Zeff = 0.53
-ionizer = ionization.PPT(Uion_au,Zeff,ngas_mks,mks_length,terms=32)
+ionizer = ionization.PPT(Uion_au,Zeff,ngas_mks,mks_length,terms=6)
 
 # Derived Parameters
 

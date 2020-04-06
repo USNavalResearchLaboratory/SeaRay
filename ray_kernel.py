@@ -115,7 +115,8 @@ def PulseSpectrum(xp,box,N,pulse_length,w0):
 		# Intepret as real carrier resolved field
 		envelope = np.fft.irfft(envelope)
 	else:
-		# Interpret as spectral envelope putting negative frequencies last
+		# Interpret as spectral envelope
+		# Put negative frequencies last for this calculation
 		envelope = np.fft.ifftshift(envelope)
 		# Get the corresponding time domain envelope
 		envelope = np.fft.ifft(envelope)

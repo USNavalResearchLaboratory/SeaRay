@@ -21,7 +21,7 @@ mess = 'Processing input file...\n'
 
 helper = input_tools.InputHelper(mks_length)
 
-prop_range = (-0.1/mks_length,0.0/mks_length)
+prop_range = (-0.1/mks_length,0.02/mks_length)
 L = prop_range[1]-prop_range[0]
 # air = dispersion.HumidAir(mks_length,0.4,1e-3)
 # air.add_opacity_region(40.0,0.05e-6,0.25e-6)
@@ -97,7 +97,6 @@ for i in range(1):
 			'wave grid' : (2049,128,1,7),
 			'density function' : 'exp(-4*x.s3*x.s3/'+str(L**2)+')',
 			'density lambda' : lambda x,y,z,r2 : np.exp(-4*z**2/L**2),
-			'density multiplier' : 1.0,
 			'frequency band' : band,
 			'subcycles' : 10,
 			'dispersion inside' : air,

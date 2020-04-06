@@ -26,57 +26,25 @@ Even if you get your GPU working using drivers from NVIDIA or AMD, it may still 
 		* :samp:`conda remove -n {NAME} --all`
 		* :samp:`conda create -n {NAME} -c conda-forge pyopencl scipy matplotlib`
 		* :samp:`conda activate {NAME}`
-
-	#. Copy the ICD registry files from system-wide installation to the Anaconda environment
-
-		* :samp:`cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
+		* :samp:`conda install -c conda-forge ocl-icd-system`
 
 Support for NVIDIA Graphics
 ----------------------------
 
-It is possible to install all the necessary packages using ``apt`` (no need to visit NVIDIA website).
-
 	#. :samp:`sudo apt update`
-	#. :samp:`sudo add-apt-repository ppa:graphics-drivers/ppa`
-	#. :samp:`sudo apt install nvidia-driver-{XXX}`
-
-		* Replace :samp:`{XXX}` with the version of your choice.  As of this writing the latest is 396.  Get a current list using :samp:`apt search nvidia-driver`.
-		* As an alternative :samp:`sudo ubuntu-drivers autoinstall` is supposed to automatically select a suitable version.
-
+	#. :samp:`sudo apt install nvidia-opencl-icd nvidia-opencl-dev`
 	#. :samp:`sudo apt update`
-	#. Copy the ICD registry files from the root environment to the Anaconda environment
-
-		* :samp:`sudo cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
-
+	#. Activate the conda environment (if not already active)
+	#. :samp:`conda install -c conda-forge ocl-icd-system`
 
 Support for AMD Graphics
 -------------------------
 
-It is possible to install all the necessary packages using ``apt`` (no need to visit AMD website).
-
 	#. :samp:`sudo apt update`
-	#. :samp:`sudo add-apt-repository ppa:oibaf/graphics-drivers`
-	#. :samp:`sudo apt install mesa-opencl-icd`
+	#. :samp:`sudo apt install mesa-opencl-icd ocl-icd-opencl-dev`
 	#. :samp:`sudo apt update`
-	#. Copy the ICD registry files from the root environment to the Anaconda environment
-
-		* :samp:`sudo cp /etc/OpenCL/vendors/* {path_to_anaconda}/envs/{NAME}/etc/OpenCL/vendors/`
-
-
-Display Recovery
-------------------
-
-Installing graphics drivers in Linux can sometimes cause you to lose your display.  If this happens, try to switch to console mode by pressing :samp:`Ctrl-Alt-F2` (you may have to try different function keys).  If this succeeds you can issue the following commands to rollback the graphics driver:
-
-	#. :samp:`sudo apt install ppa-purge`
-	#. Purge the drivers from the appropriate repositories
-
-		* :samp:`ppa-purge ppa:graphics-drivers/ppa`
-		* :samp:`ppa-purge ppa:oibaf/graphics-drivers`
-
-	#. Reboot using :samp:`sudo reboot`
-
-Of course upon doing this SeaRay GPU support may be lost.
+	#. Activate the conda environment (if not already active)
+	#. :samp:`conda install -c conda-forge ocl-icd-system`
 
 TeX for premium plot labels
 ---------------------------
@@ -93,10 +61,10 @@ Advanced 3D Plotting
 
 The SeaRay plotter supports :samp:`matplotlib` and/or :samp:`mayavi` for 3d plotting. The 3D capabilities of :samp:`matplotlib` are at present nonideal (e.g., depth is not properly rendered in all cases). If you want robust 3D plots you should install :samp:`mayavi`.
 
-As of this writing the best way to install :samp:`mayavi` into a conda environment is with ``pip`` rather than the ``conda`` tool.  In some cases ``mayavi`` and ``matplotlib`` step on each other.  If this happens you may need separate environments for each.  The plotter is written to sense which library is available and react accordingly.
+In some cases ``mayavi`` and ``matplotlib`` step on each other.  If this happens you may need separate environments for each.  The plotter is written to sense which library is available and react accordingly.
 
 	#. Activate your environment.
-	#. :samp:`pip install mayavi`
+	#. :samp:`conda install -c conda-forge mayavi`
 
 Interactive Notebooks
 ----------------------

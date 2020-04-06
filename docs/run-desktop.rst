@@ -19,7 +19,7 @@ Running an Example
 
 	#. Activate your virtual environment (see :doc:`generic-install`)
 	#. Pick some example from :samp:`{raysroot}/examples`.
-	#. For definiteness, let us use :samp:`{raysroot}/examples/parabola.py`
+	#. For definiteness, let us use :samp:`{raysroot}/examples/eikonal/parabola.py`
 	#. Open a terminal window and navigate to :samp:`{raysroot}`
 	#. :samp:`python rays.py list`
 	#. The above command lists the hardware acceleration platforms and devices available on your system.  A device may be available only within a given platform.  If there is more than one platform, choose the one you would like to use, and pick out some unique part of its name, such as :samp:`{cuda}`.  Case does not matter.  Similarly, if there is more than one device, choose some unique part of its name, such as :samp:`{titan}`
