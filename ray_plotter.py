@@ -8,6 +8,14 @@ import grid_tools
 import inputs
 import PIL.Image
 
+# Add the outer list if necessary
+if type(inputs.sim)==dict:
+	inputs.sim = [inputs.sim]
+	inputs.wave = [inputs.wave]
+	inputs.ray = [inputs.ray]
+	inputs.optics = [inputs.optics]
+	inputs.diagnostics = [inputs.diagnostics]
+
 plotter_defaults = {	'image colors' : 'viridis' ,
 						'level colors' : 'ocean' ,
 						'length' : 'mm' ,
@@ -644,7 +652,9 @@ class FullWaveProfiler:
 				if eikonal_plane:
 					A = E[...,np.newaxis,:]
 				if A.shape[0]==1:
-					bar_label = r'$|a|^2$'
+					#bar_label = r'$|a|^2$'
+					bar_label = r'Intensity (W/cm$^2$)'
+					A *= 1e-2*np.sqrt(0.5/377)*w00*(C.c/self.label_system.mks_length)*C.m_e*C.c/C.e
 				else:
 					if time_domain:
 						bar_label = r'$|a(t)|^2$'
@@ -708,7 +718,7 @@ class FullWaveProfiler:
 							plt.xlabel(xl,size=18)
 							plt.ylabel(yl,size=18)
 						else:
-							plt.plot(data_slice)
+							plt.plot(np.linspace(lab_range_red[0],lab_range_red[1],data_slice.shape[0]),data_slice)
 							plt.xlabel(lab_str[plot_ax[0]],size=18)
 							plt.ylabel(cbar_str+bar_label,size=18)
 						plt.tight_layout()

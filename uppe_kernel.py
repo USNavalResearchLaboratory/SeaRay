@@ -14,104 +14,132 @@ import ionization
 class source_cluster:
 	'''This class gathers references to host and device storage
 	that are used during the ODE integrator right-hand-side evaluation.'''
-	def __init__(self,queue,a,ng,w,kz,kg):
+	def __init__(self,queue,a,ng,w,kz,kg,L):
 		bandwidth = w[-1] - w[0] + w[1] - w[0]
 		self.dt = 2*np.pi/bandwidth
+		self.L = L
 		self.freqs = a.shape[0]
 		self.steps = self.freqs*2-2
 		self.transverse_shape = (a.shape[1],a.shape[2])
 		self.freq_domain_shape = (self.freqs,) + self.transverse_shape
 		self.time_domain_shape = (self.steps,) + self.transverse_shape
-		# Host arrays
-		self.kz = kz
-		self.kg = kg
-		self.Et = np.zeros(self.time_domain_shape)
-		self.J = np.zeros(self.freq_domain_shape).astype(np.complex)
-		self.P = np.zeros(self.time_domain_shape)
-		self.ne = np.zeros(self.time_domain_shape)
+		self.dphi = 0.3
+		self.rel_amin = 1e-3
 		# Device arrays
-		self.Ew_dev = pyopencl.array.to_device(queue,a)
+		self.q00_dev = pyopencl.array.to_device(queue,a)
+		self.q0_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.qw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.Aw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.At_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
+		self.Et_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
 		self.ng_dev= pyopencl.array.to_device(queue,ng)
 		self.w_dev = pyopencl.array.to_device(queue,w)
 		self.kz_dev = pyopencl.array.to_device(queue,kz)
 		self.kg_dev = pyopencl.array.to_device(queue,kg)
-		self.ne_dev = pyopencl.array.to_device(queue,self.ne)
-		self.P_dev = pyopencl.array.to_device(queue,self.P)
-		self.J_dev = pyopencl.array.to_device(queue,self.J)
-		self.Et_dev = pyopencl.array.to_device(queue,self.Et)
-	def StoreReducedPotential(self,queue,q):
-		'''Send the reduced vector potential to the compute device
-
-		:param class queue: OpenCL queue
-		:param numpy.array q: reduced vector potential in representation (w,x,y)'''
-		# This gets converted to electric field in place
-		self.Ew_dev = pyopencl.array.to_device(queue,q)
-	def GetCurrent(self,queue):
-		'''Retrieve current density from compute device
-
-		:param class queue: OpenCL queue
-		:returns: current density in representation (w,x,y)'''
-		return self.J_dev.get()
-	def GetPlasma(self,queue):
-		'''Retrieve electron density from compute device
-
-		:param class queue: OpenCL queue
-		:returns: electron density in representation (w,x,y)'''
-		return np.fft.rfft(self.ne_dev.get(),axis=0)
+		self.ne_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
+		self.Jt_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
+		self.Jw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.dz_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.double)
 
 def update_current(cl,src,dchi,chi3,ionizer):
-	'''Get current density from E[w,x,y]'''
+	'''Get current density from A[w,x,y]'''
 	ionizer.ResetParameters(timestep=src.dt)
 
-	# Form electric field in the time domain
+	# Setup some shorthand
+	s2 = src.transverse_shape
+	st = src.time_domain_shape
+	sw = src.freq_domain_shape
+	wdev = src.w_dev.data
+	Awdev = src.Aw_dev.data
+	Atdev = src.At_dev.data
+	Etdev = src.Et_dev.data
+	nedev = src.ne_dev.data
+	ngdev = src.ng_dev.data
+	Jtdev = src.Jt_dev.data
+	Jwdev = src.Jw_dev.data
+
+	# Form time domain fields
 	# N.b. time index runs backwards due to FFT conventions
-	cl.program('fft').IRFFT(cl.q,src.transverse_shape,None,src.Ew_dev.data,src.Et_dev.data,np.int32(src.freqs))
+	src.Jw_dev[...] = src.Aw_dev # use Jw as temporary so Aw is not destroyed
+	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Atdev,np.int32(src.freqs))
+	cl.program('fft').DtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(-1.0))
+	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Etdev,np.int32(src.freqs))
 
 	# Accumulate the source terms
 	# First handle plasma formation
-	ionizer.InstantaneousRateCL(src.ne_dev,src.Et_dev,cl.q,cl.program('uppe').ComputeRate)
-	ionizer.GetPlasmaDensityCL(src.ng_dev,src.ne_dev,cl.q,cl.program('uppe').ComputePlasmaDensity)
-	cl.program('uppe').ComputePlasmaPolarization(cl.q,src.transverse_shape,None,src.P_dev.data,
-		src.Et_dev.data,src.ne_dev.data,np.double(0.05),np.double(0.05),np.double(src.dt),np.int32(src.steps))
-
-	# Nonuniform susceptibility
-	#cl.program('uppe').AddNonuniformPolarization(cl.q,src.freq_domain_shape,None,src.P_dev,src.Ew_dev.data,dchi_dev.data)
+	ionizer.RateCL(cl,st,nedev,Etdev,False)
+	ionizer.GetPlasmaDensityCL(cl,st,nedev,ngdev)
+	cl.program('uppe').ComputePlasmaPolarization(cl.q,s2,None,Jtdev,Etdev,nedev,
+		np.double(0.05),np.double(0.05),np.double(src.dt),np.int32(src.steps))
 
 	# Kerr effect
-	cl.program('uppe').AddKerrPolarization(cl.q,src.time_domain_shape,None,src.P_dev.data,src.Et_dev.data,np.double(chi3))
+	cl.program('uppe').AddKerrPolarization(cl.q,st,None,Jtdev,Etdev,np.double(chi3))
 
 	# Get the current density in the frequency domain
-	cl.program('fft').RFFT(cl.q,src.transverse_shape,None,src.P_dev.data,src.J_dev.data,np.int32(src.steps))
-	cl.program('uppe').PolarizationToCurrent(cl.q,src.freq_domain_shape,None,src.J_dev.data,src.w_dev.data)
+	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
+	cl.program('fft').DtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(1.0))
 
-def uppe_rhs(z,q,cl,T,src,dchi,chi3,ionizer,is_diagnostic_step=False):
-	'''During UPPE step we are trying to advance q(z;w,kx,ky) = exp(-i*kz*z)*A(z;w,kx,ky).
-	We have an equation in the form dq/dz = S(z,q).  This is a callback that allows some
-	ODE integrator to evaluate S(z,q).
+def load_source(z,cl,T,src,dchi,chi3,ionizer,return_dz=False):
+	'''We are trying to advance q(z;w,kx,ky) = exp(-i*kz*z)*A(z;w,kx,ky).
+	We have an equation in the form dq/dz = S(z,q).
+	This loads src.Jw_dev with S(z,q), using src.qw_dev
 
 	:param double z: the integration variable, propagation distance.
-	:param numpy.array q: the reduced vector potential in representation (w,kx,ky)
 	:param cl_refs cl: OpenCL reference bundle
 	:param TransverseModeTool T: used for transverse mode transformations
 	:param source_cluster src: stores references to OpenCL buffers particular to UPPE
-	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y)
+	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y) as type complex
 	:param double chi3: nonlinear susceptibility
-	:param Ionization ionizer: class for encapsulating ionization models
-
-	:returns: flattened S(z;w,kx,ky) if is_diagnostic_step is ``False``.  Otherwise J(w,x,y),ne(w,x,y).'''
-	src.StoreReducedPotential(cl.q,q.reshape(src.kz.shape))
-	cl.program('uppe').ReducedPotentialToField(cl.q,src.freq_domain_shape,None,src.Ew_dev.data,src.kz_dev.data,src.kg_dev.data,src.w_dev.data,np.double(z))
-	T.rspacex(src.Ew_dev)
+	:param Ionization ionizer: class for encapsulating ionization models'''
+	# Setup some shorthand
+	sw = src.freq_domain_shape
+	kzdev = src.kz_dev.data
+	kgdev = src.kg_dev.data
+	Awdev = src.Aw_dev.data
+	qwdev = src.qw_dev.data
+	Jwdev = src.Jw_dev.data
+	dzdev = src.dz_dev.data
+	src.Aw_dev[...] = src.qw_dev
+	cl.program('uppe').PropagateLinear(cl.q,sw,None,Awdev,kzdev,kgdev,np.double(z))
+	T.rspacex(src.Aw_dev)
 	update_current(cl,src,dchi,chi3,ionizer)
-	if is_diagnostic_step:
-		return src.GetCurrent(cl.q),src.GetPlasma(cl.q)
-	else:
-		T.kspacex(src.J_dev)
-		cl.program('uppe').CurrentToODERHS(cl.q,src.freq_domain_shape,None,src.J_dev.data,src.kz_dev.data,src.kg_dev.data,np.double(z))
-		S = src.GetCurrent(cl.q)
-		return S.flatten()
+	T.kspacex(src.Jw_dev)
+	cl.program('uppe').CurrentToODERHS(cl.q,sw,None,Jwdev,kzdev,kgdev,np.double(z))
+	if return_dz:
+		cl.program('paraxial').LoadModulus(cl.q,sw,None,qwdev,dzdev)
+		amin = src.rel_amin * pyopencl.array.max(src.dz_dev).get()
+		cl.program('paraxial').LoadStepSize(cl.q,sw,None,qwdev,Jwdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
+		return pyopencl.array.min(src.dz_dev).get()
 
-def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,dz):
+def finish_iteration(z,cl,src):
+	'''Load qw and q00 with the new potential (q=a in the new plane)
+
+	:param double z: the integration variable, propagation distance.
+	:param cl_refs cl: OpenCL reference bundle
+	:param source_cluster src: stores references to OpenCL buffers'''
+	# Setup some shorthand
+	sw = src.Aw_dev.shape
+	qwdev = src.qw_dev.data
+	kzdev = src.kz_dev.data
+	kgdev = src.kg_dev.data
+	cl.program('uppe').PropagateLinear(cl.q,sw,None,qwdev,kzdev,kgdev,np.double(z))
+	src.q00_dev[...] = src.qw_dev
+
+def finish(cl,T,src,dchi,chi3,ionizer):
+	'''Finalize data at the end of the iterations and retrieve.
+
+	:param cl_refs cl: OpenCL reference bundle
+	:param TransverseModeTool T: used for transverse mode transformations
+	:param source_cluster src: stores references to OpenCL buffers
+	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y) as type complex
+	:param double chi3: nonlinear susceptibility
+	:param Ionization ionizer: class for encapsulating ionization models'''
+	src.Aw_dev[...] = src.qw_dev
+	T.rspacex(src.Aw_dev)
+	update_current(cl,src,dchi,chi3,ionizer)
+	return src.Aw_dev.get(),src.Jw_dev.get(),np.fft.rfft(src.ne_dev.get(),axis=0)
+
+def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,L,dzmin):
 	'''Advance a[w,x,y] to a new z plane using UPPE method.
 	Works in either Cartesian or cylindrical geometry.
 	If cylindrical, intepret x as radial and y as azimuthal.
@@ -119,11 +147,11 @@ def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,dz):
 	:param cl_refs cl: OpenCL reference bundle
 	:param CausticTool ctool: contains grid info and transverse mode tool
 	:param double vwin: speed of the pulse frame variable
-	:param numpy.array a: the vector potential in representation (w,x,y)
-	:param numpy.array chi: the susceptibility at reference density with shape (Nw,)
+	:param numpy.array a: the vector potential in representation (w,x,y) as type complex
+	:param numpy.array chi: the susceptibility at reference density with shape (Nw,) as type complex
 	:param numpy.array dens: the density normalized to the reference with shape (Nx,Ny)
 	:param Ionization ionizer: class for encapsulating ionization models
-	:param double dz: distance to the new z plane'''
+	:param double L: distance to the new z plane'''
 	w,x,y,ext = ctool.GetGridInfo()
 	T = ctool.GetTransverseTool()
 	N = (w.shape[0],x.shape[0],y.shape[0],1)
@@ -148,23 +176,43 @@ def propagator(cl,ctool,vwin,a,chi,chi3,dens,ionizer,dz):
 
 	T.AllocateDeviceMemory(a.shape)
 
-	# Advance a(w,kx,ky) using ODE solver.
+	# Advance a(w,kx,ky) using RK4.
 	# Define q(z;w,kx,ky) = exp(-i*kz*z)*a(z;w,kx,ky).  Note q=a in initial plane.
-	a = T.kspace(a)
-	src = source_cluster(cl.q,a,dens,w,kz,kGalileo)
-	dqdz = lambda z,q : uppe_rhs(z,q,cl,T,src,dchi,chi3,ionizer)
-	sol = scipy.integrate.solve_ivp(dqdz,[0.0,dz],a.flatten(),t_eval=[dz])
-	# sol = scipy.integrate.odeint(dqdz,a.flatten(),[0.0,dz],tfirst=True)
+	src = source_cluster(cl.q,a,dens,w,kz,kGalileo,L)
+	T.kspacex(src.q00_dev)
+	src.qw_dev[...] = src.q00_dev
+	z = 0.0
+	iterations = 0
 
-	# Get the diagnostic quantities at the new z-plane
-	q = sol.y[...,-1].reshape(kz.shape)
-	# q = sol.y[-1,...].reshape(kz.shape)
-	a = T.rspace(q*np.exp(1j*(kz+kGalileo)*dz))
-	J,ne = uppe_rhs(dz,q,cl,T,src,dchi,chi3,ionizer,is_diagnostic_step=True)
+	while z<L and (z-L)**2 > (L/1e6)**2:
+		iterations += 1
+		dz = load_source(0.0,cl,T,src,dchi,chi3,ionizer,return_dz=True) # load k1
+		if dz<dzmin:
+			dz = dzmin
+		if z+dz>L:
+			dz = L-z
+		else:
+			print('.',end='',flush=True)
+		if (L-z)/dz > 10:
+			print(int((L-z)/dz),end='',flush=True)
+		src.q0_dev = src.q00_dev + dz*src.Jw_dev/6
+		src.qw_dev = src.q00_dev + dz*src.Jw_dev/2
+		load_source(0.5*dz,cl,T,src,dchi,chi3,ionizer) # load k2
+		src.q0_dev += dz*src.Jw_dev/3
+		src.qw_dev = src.q00_dev + dz*src.Jw_dev/2
+		load_source(0.5*dz,cl,T,src,dchi,chi3,ionizer) # load k3
+		src.q0_dev += dz*src.Jw_dev/3
+		src.qw_dev = src.q00_dev + dz*src.Jw_dev
+		load_source(dz,cl,T,src,dchi,chi3,ionizer) # load k4
+		src.qw_dev = src.q0_dev + dz*src.Jw_dev/6
+		finish_iteration(dz,cl,src)
+		z += dz
+
+	a,J,ne = finish(cl,T,src,dchi,chi3,ionizer)
 
 	T.FreeDeviceMemory()
 
-	return a,J,ne,sol.nfev
+	return a,J,ne,4*iterations
 
 def track(cl,xp,eikonal,vg,vol_dict):
 	'''Propagate unidirectional fully dispersive waves using eikonal data as a boundary condition.
@@ -212,7 +260,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	A0,dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
 
 	# Setup the wave propagation domain
-	chi = vol_dict['dispersion inside'].chi(w_nodes)
+	chi = vol_dict['dispersion inside'].chi(w_nodes).astype(np.complex)
 	try:
 		ionizer = vol_dict['ionizer']
 	except KeyError:
@@ -220,6 +268,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	dens_nodes = grid_tools.cell_centers(-size[3]/2,size[3]/2,steps)
 	field_walls = grid_tools.cell_walls(dens_nodes[0],dens_nodes[-1],steps)
 	diagnostic_walls = np.linspace(-size[3]/2,size[3]/2,N[3])
+	dzmin = vol_dict['minimum step']
 	dz = field_walls[1]-field_walls[0]
 	Dz = diagnostic_walls[1]-diagnostic_walls[0]
 	dom4d = np.concatenate((dom3d,[field_walls[0],field_walls[-1]]))
@@ -243,12 +292,12 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		for s in range(subcycles):
 			if subcycles>1:
 				if s==0:
-					print('  subcycling .',end='',flush=True)
+					print('  subcycling *',end='',flush=True)
 				else:
-					print('.',end='',flush=True)
+					print('*',end='',flush=True)
 			xp_eff[...,3] = dens_nodes[k*subcycles + s]
 			dens = vol_dict['object'].GetDensity(xp_eff)
-			A0,J0,ne0,evals = propagator(cl,field_tool,window_speed,A0,chi,chi3,dens,ionizer,dz)
+			A0,J0,ne0,evals = propagator(cl,field_tool,window_speed,A0,chi,chi3,dens,ionizer,dz,dzmin)
 			A0[:4,...] = 0.0
 			rhs_evals += evals
 		print('',rhs_evals,'evaluations of j(w,kx,ky)')

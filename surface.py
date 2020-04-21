@@ -29,6 +29,7 @@ import pyopencl.array as cl_array
 import init
 import dispersion
 import ray_kernel
+import grid_tools
 import caustic_tools
 
 
@@ -295,13 +296,14 @@ class disc(base_surface):
 class triangle(base_surface):
 	'''Building block class, does not respond to input file dictionaries.
 	Meant to be used as an element in surface_mesh class.'''
-	def __init__(self,a,b,c,n0,n1,n2,disp1,disp2):
+	def __init__(self,a,b,c,n0,n1,n2,disp1,disp2,bandpass=(0.,100.)):
 		'''Arguments are given in the owner's coordinate system.
 		The reference point and orientation matrix for the triangle are derived from these.
 		In the local system the triangle is in xy plane. '''
 		base_surface.__init__(self,'tri')
 		self.disp1 = disp1
 		self.disp2 = disp2
+		self.bandpass = bandpass
 		# a,b,c,n0,n1,n2 are 3-vectors
 		# a,b,c are the vertex coordinates, the order of which defines the local coordinates
 		# n0,n1,n2 are normals attached to the vertices, used for interpolation
@@ -716,6 +718,55 @@ class Paraboloid(quadratic):
 		packed_data[...,1:] += self.P_ref
 		return packed_data
 
+class NoiseMask(rectangle):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		try:
+			self.band = input_dict['frequency band']
+		except KeyError:
+			self.band = (0.0,100.0)
+			print('INFO: defaulting to detection bandwidth',self.band)
+		km = 2*np.pi/input_dict['inner scale']
+		k0 = 2*np.pi/input_dict['outer scale']
+		Ns = input_dict['grid']
+		ds = (self.Lx/(Ns[0]-1),self.Ly/(Ns[1]-1)) # make it so outer nodes lie on boundary
+		kc = (np.pi/ds[0],np.pi/ds[1])
+		kx = np.fft.ifftshift(grid_tools.cyclic_nodes(-kc[0],kc[0],Ns[0]))
+		ky = np.fft.ifftshift(grid_tools.cyclic_nodes(-kc[1],kc[1],Ns[1]))
+		k2 = np.outer(kx**2,np.ones(Ns[1])) + np.outer(np.ones(Ns[0]),ky**2)
+		screen = np.exp(-k2/km**2)*(0j+k2+k0**2)**(-11/6)
+		pos = lambda i : slice(1,int(Ns[i]/2))
+		neg = lambda i : slice(int(Ns[i]/2)+1,Ns[i])
+		crit = lambda i : int(Ns[i]/2)
+		screen *= np.random.random(Ns)-0.5 + 1j*np.random.random(Ns)-0.5j
+		screen[neg(0),neg(1)] = np.conj(screen[pos(0),pos(1)][::-1,::-1])
+		screen[neg(0),pos(1)] = np.conj(screen[pos(0),neg(1)][::-1,::-1])
+		screen[0,:] = 0
+		screen[:,0] = 0
+		screen[crit(0),:] = np.real(screen[crit(0),:])
+		screen[:,crit(1)] = np.real(screen[:,crit(1)])
+		screen = np.real(np.fft.ifft(np.fft.ifft(screen,axis=0),axis=1))
+		self.screen = 1 + input_dict['amplitude']*screen/np.max(np.abs(screen))
+		self.xn = np.linspace(-self.Lx/2,self.Lx/2,Ns[0])
+		self.yn = np.linspace(-self.Ly/2,self.Ly/2,Ns[1])
+	def Propagate(self,xp,eikonal,vg,orb={'idx':0}):
+		self.RaysGlobalToLocal(xp,eikonal,vg)
+		dt,impact = self.Detect(xp,vg)
+		xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
+		ray_kernel.FullStep(dt[impact,...],xps,eiks,vgs)
+		ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
+		# Frequency filtering
+		sel = np.where(np.logical_and(xp[:,0,4]>self.band[0],xp[:,0,4]<self.band[1]))[0]
+		sel = np.intersect1d(sel,impact)
+		# Set up interpolation
+		obj = scipy.interpolate.RegularGridInterpolator((self.xn,self.yn),self.screen)
+		pts = np.stack((xp[sel,0,1],xp[sel,0,2]),axis=-1)
+		attenuations = obj(pts)
+		eikonal[sel,1:4] *= attenuations[:,np.newaxis]
+		self.RaysLocalToGlobal(xp,eikonal,vg)
+		self.UpdateOrbits(xp,eikonal,orb)
+		return impact.shape[0]
+
 class BeamProfiler(rectangle):
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
@@ -771,6 +822,8 @@ class EikonalProfiler(BeamProfiler):
 		np.save(basename+'_'+self.name+'_eiks',self.eiks)
 
 class FullWaveProfiler(BeamProfiler):
+	'''Place surface in an eikonal plane.  Set "distance to caustic" to the distance from the
+	eikonal plane to the center of the wave zone'''
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
@@ -799,6 +852,8 @@ class FullWaveProfiler(BeamProfiler):
 		np.save(basename+'_'+self.name+'_plane_plot_ext',dom4d)
 
 class CylindricalProfiler(FullWaveProfiler):
+	'''Place surface in an eikonal plane.  Set "distance to caustic" to the distance from the
+	eikonal plane to the center of the wave zone'''
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
 		print('    diagonalizing matrix...')

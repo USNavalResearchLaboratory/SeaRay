@@ -21,7 +21,7 @@ For dispersion that cannot be put in Sellmeier form you have to provide the foll
 
 .. py:method:: chi(w)
 
-	Calculate the susceptibility at a given frequency or set of frequenices.  For compressible media, the susceptibility is given at a specific reference density.
+	Calculate the susceptibility at a given frequency or set of frequenices.  For compressible media, the susceptibility is given at a specific reference density.  Dispersion objects are allowed to return either real or complex suceptibility, so higher level objects must be designed to handle either case.
 
 	:param double w: the frequency or array frequencies to evaluate
 	:returns: susceptibility or array of susceptibilities corresponding to ``w``

@@ -7,93 +7,226 @@ This module is the primary computational engine for advancing paraxial wave equa
 import numpy as np
 from numpy.fft import fft
 from numpy.fft import ifft
-from scipy.linalg import eig_banded
-import scipy.sparse.linalg
+import pyopencl
 import caustic_tools
 import grid_tools
 import ionization
 
-def propagator(T,a0,chi,chi3,dens,ionizer,n0,ng,dz,long_pulse_approx):
-	'''Advance a0[w,x,y] to a new z plane using paraxial wave equation.
+class source_cluster:
+	'''This class gathers references to host and device storage
+	that are used during the ODE integrator right-hand-side evaluation.'''
+	def __init__(self,queue,a,ng,w,kz,k0,L):
+		# Following shape calculations have redundancy.
+		# Keep this for parity with case of real fields.
+		# N.b. we must not assume anything about ordering of frequency array
+		if w.shape[0]==1:
+			bandwidth = 1.0
+		else:
+			bandwidth = (np.max(w) - np.min(w))*(1 + 1/(w.shape[0]-1))
+		self.dt = 2*np.pi/bandwidth
+		self.L = L
+		self.freqs = a.shape[0]
+		self.steps = self.freqs
+		self.transverse_shape = (a.shape[1],a.shape[2])
+		self.freq_domain_shape = (self.freqs,) + self.transverse_shape
+		self.time_domain_shape = (self.steps,) + self.transverse_shape
+		self.dphi = 1.0
+		self.rel_amin = 1e-2
+		# Device arrays
+		self.q00_dev = pyopencl.array.to_device(queue,a)
+		self.q0_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.qw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.Aw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+		self.At_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.complex)
+		self.Et_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.complex)
+		self.ng_dev= pyopencl.array.to_device(queue,ng)
+		self.w_dev = pyopencl.array.to_device(queue,w)
+		self.kz_dev = pyopencl.array.to_device(queue,kz)
+		self.k0_dev = pyopencl.array.to_device(queue,k0)
+		self.ne_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
+		self.J_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
+
+def update_current(cl,src,dchi,chi3,ionizer):
+	'''Get current density from A[w,x,y]'''
+	ionizer.ResetParameters(timestep=src.dt)
+
+	# Setup some shorthand
+	shp2 = src.transverse_shape
+	shp3 = src.Aw_dev.shape
+	wdev = src.w_dev.data
+	Awdev = src.Aw_dev.data
+	Atdev = src.At_dev.data
+	Etdev = src.Et_dev.data
+	nedev = src.ne_dev.data
+	ngdev = src.ng_dev.data
+	Jdev = src.J_dev.data
+
+	# Form time domain potential and field
+	# N.b. time index runs backwards due to FFT conventions
+	src.Et_dev[...] = src.Aw_dev
+	src.At_dev[...] = src.Aw_dev
+	cl.program('fft').DtSpectral(cl.q,shp3,None,Etdev,wdev,np.double(-1.0))
+	cl.program('fft').IFFT(cl.q,shp2,None,Etdev,np.int32(src.freqs))
+	cl.program('fft').IFFT(cl.q,shp2,None,Atdev,np.int32(src.freqs))
+
+	# Accumulate the source terms
+	# First handle plasma formation
+	ionizer.RateCL(cl,shp3,nedev,Etdev,True)
+	ionizer.GetPlasmaDensityCL(cl,shp3,nedev,ngdev)
+
+	# Current due to nonuniform and Kerr susceptibility
+	cl.program('paraxial').SetKerrPolarization(cl.q,shp3,None,Jdev,Etdev,np.double(chi3))
+	cl.program('fft').FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
+	#cl.program('paraxial').AddNonuniformChi(cl.q,shp3,None,Jdev,Ewdev,dchi)
+	cl.program('fft').DtSpectral(cl.q,shp3,None,Jdev,wdev,np.double(1.0))
+	cl.program('fft').IFFT(cl.q,shp2,None,Jdev,np.int32(src.freqs))
+
+	# Plasma current
+	cl.program('paraxial').AddPlasmaCurrent(cl.q,shp3,None,Jdev,Atdev,nedev)
+	cl.program('fft').FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
+
+def load_source(z,cl,T,src,dchi,chi3,ionizer,return_dz=False):
+	'''We are trying to advance q(z;w,kx,ky) = exp(-i*kz*z)*A(z;w,kx,ky).
+	We have an equation in the form dq/dz = S(z,q).
+	This loads src.J_dev with S(z,q), using q = src.qw_dev
+
+	:param double z: the integration variable, propagation distance.
+	:param cl_refs cl: OpenCL reference bundle
+	:param TransverseModeTool T: used for transverse mode transformations
+	:param source_cluster src: stores references to OpenCL buffers
+	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y) as type complex
+	:param double chi3: nonlinear susceptibility
+	:param Ionization ionizer: class for encapsulating ionization models'''
+	# Setup some shorthand
+	shp3 = src.Aw_dev.shape
+	qwdev = src.qw_dev.data
+	Awdev = src.Aw_dev.data
+	Jdev = src.J_dev.data
+	kzdev = src.kz_dev.data
+	k0dev = src.k0_dev.data
+	dzdev = src.ne_dev.data # re-use ne for the step size estimate
+	src.Aw_dev[...] = src.qw_dev
+	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(z))
+	T.rspacex(src.Aw_dev)
+	update_current(cl,src,dchi,chi3,ionizer)
+	T.kspacex(src.J_dev)
+	cl.program('paraxial').CurrentToODERHS(cl.q,shp3,None,Jdev,kzdev,k0dev,np.double(z))
+	if return_dz:
+		cl.program('paraxial').LoadModulus(cl.q,shp3,None,qwdev,dzdev)
+		amin = src.rel_amin * pyopencl.array.max(src.ne_dev).get()
+		cl.program('paraxial').LoadStepSize(cl.q,shp3,None,qwdev,Jdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
+		return pyopencl.array.min(src.ne_dev).get()
+
+def finish_iteration(z,cl,src):
+	'''Load qw and q00 with the updated potential (q=a in the new plane)
+
+	:param double z: the integration variable, propagation distance.
+	:param cl_refs cl: OpenCL reference bundle
+	:param source_cluster src: stores references to OpenCL buffers'''
+	# Setup some shorthand
+	shp3 = src.Aw_dev.shape
+	qwdev = src.qw_dev.data
+	kzdev = src.kz_dev.data
+	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,qwdev,kzdev,np.double(z))
+	src.q00_dev[...] = src.qw_dev
+
+def finish(cl,T,src,dchi,chi3,ionizer):
+	'''Finalize data at the end of the iterations and retrieve.
+
+	:param cl_refs cl: OpenCL reference bundle
+	:param TransverseModeTool T: used for transverse mode transformations
+	:param source_cluster src: stores references to OpenCL buffers
+	:param numpy.array dchi: nonuniform part of susceptibility in representation (w,x,y) as type complex
+	:param double chi3: nonlinear susceptibility
+	:param Ionization ionizer: class for encapsulating ionization models'''
+	src.Aw_dev[...] = src.qw_dev
+	T.rspacex(src.Aw_dev)
+	update_current(cl,src,dchi,chi3,ionizer)
+	return src.Aw_dev.get(),src.J_dev.get(),np.fft.fft(src.ne_dev.get(),axis=0)
+
+def propagator(cl,ctool,a,chi,chi3,dens,ionizer,n0,ng,L):
+	'''Advance a[w,x,y] to a new z plane using paraxial wave equation.
 	Works in either Cartesian or cylindrical geometry.
 	If cylindrical, intepret x as radial and y as azimuthal.
 
-	:param class T: instance of TransverseModeTool class
-	:param numpy.array a: the field to propagate with shape (Nw,Nx,Ny)
-	:param numpy.array chi: the susceptibility at reference density with shape (Nw,)
+	:param cl_refs cl: OpenCL reference bundle
+	:param CausticTool ctool: contains grid info and transverse mode tool
+	:param double vwin: speed of the pulse frame variable
+	:param numpy.array a: the vector potential in representation (w,x,y) as type complex
+	:param numpy.array chi: the susceptibility at reference density with shape (Nw,) as type complex
+	:param double chi3: the nonlinear susceptibility
 	:param numpy.array dens: the density normalized to the reference with shape (Nx,Ny)
+	:param Ionization ionizer: class for encapsulating ionization models
 	:param double n0: the reference index of refraction
 	:param double ng: the reference group index
-	:param double dz: step size,
-	:param bool long_pulse_approx: use a simplified nonlinear treatment suitable for long pulses'''
-	a = np.copy(a0)
-	w,x,y,ext = T.GetGridInfo()
+	:param double L: distance to the new z plane'''
+	w,x,y,ext = ctool.GetGridInfo()
+	T = ctool.GetTransverseTool()
 	N = (w.shape[0],x.shape[0],y.shape[0],1)
 	w0 = w[int(N[0]/2)]
-	if N[0]==1:
-		dt = 1.0
-	else:
-		bandwidth = w[-1] - w[0] + w[1] - w[0]
-		dt = 2*np.pi/bandwidth
-	dn = n0-ng
+
 	# Form uniform contribution to susceptibility
 	chi0 = np.copy(chi)
 	chi0[np.where(np.real(chi)>0.0)] *= np.min(dens)
 	chi0[np.where(np.real(chi)<0.0)] *= np.max(dens)
-	# Form spatial perturbation to susceptibility
+	# Form spatial perturbation to susceptibility - must be positive
 	dchi = np.einsum('i,jk',chi,dens) - chi0[...,np.newaxis,np.newaxis]
+	# Form the linear propagator
+	dn = n0-ng
 	kperp2 = T.kr2()
 	fw = w**2*(1+chi0-ng**2)-w0**2*dn**2-2*w*w0*ng*dn
-	f = fw[...,np.newaxis,np.newaxis] - kperp2[np.newaxis,...]
-	g = (2j*(w0*dn+w*ng))[...,np.newaxis,np.newaxis]
+	kappa2 = fw[...,np.newaxis,np.newaxis] - kperp2[np.newaxis,...]
+	k0 = (w0*dn+w*ng)[...,np.newaxis,np.newaxis]
+	kz = 0.5*kappa2/k0
 
-	# linear half-step
-	a = T.kspace(a)
-	a *= np.exp(-0.5*f*dz/g)
-	a = T.rspace(a)
+	T.AllocateDeviceMemory(a.shape)
 
-	# plasma formation
-	ionizer.ResetParameters(timestep=dt)
-	# Form electric field envelope in the time domain
-	e = np.fft.ifft(np.fft.ifftshift(1j*w[...,np.newaxis,np.newaxis]*a,axes=0),axis=0)
-	# N.b. time index runs backwards due to FFT conventions
-	rate = ionizer.AverageRate(e,w0)
-	nplasma = ionizer.GetPlasmaDensity(dens,rate)
-	quintic = lambda x : 10*x**3 - 15*x**4 + 6*x**5
-	nplasma[:64,...] *= quintic(np.linspace(0,1,64))[:,np.newaxis,np.newaxis]
-	nplasma = np.fft.fftshift(np.fft.fft(nplasma,axis=0),axes=0)
+	# Reorder frequencies for FFT processing
+	a = np.fft.ifftshift(a,axes=0)
+	kz = np.fft.ifftshift(kz,axes=0)
+	k0 = np.fft.ifftshift(k0,axes=0)
+	w = np.fft.ifftshift(w,axes=0)
+	dchi = np.fft.ifftshift(dchi,axes=0)
 
-	# nonlinear/nonuniform step (material chi3 model assumes narrowband, plasma can be broader)
-	# The spectral amplitudes have been predefined to give the correct time domain amplitude upon
-	# performing an unmodified np.fft.ifft.
-	a = np.fft.ifft(np.fft.ifftshift(a,axes=0),axis=0)
-	nplasma = np.fft.ifft(np.fft.ifftshift(nplasma,axes=0),axis=0)
-	j3Coeff = -nplasma + (0.25*nplasma + (0.5*w0**4*chi3)[np.newaxis,...])*np.abs(a)**2
-	if long_pulse_approx or N[0]==1:
-		# Dropping tau derivative allows for simple exponential solution
-		# assuming we can evaluate |a|^2 at the old z
-		a *= np.exp(1j*j3Coeff*dz/(4*n0*w0))
-	else:
-		# Solve a tridiagonal system for each temporal strip
-		for i in range(N[1]):
-			for j in range(N[2]):
-				T1 = np.ones(N[0]-1)*ng/dt
-				T2 = 2j*w0*n0+0.5*dz*j3Coeff[:,i,j]
-				T3 = -np.ones(N[0]-1)*ng/dt
-				T = scipy.sparse.diags([T1,T2,T3],[-1,0,1]).tocsc()
-				b = np.roll(a[:,i,j],1)*ng/dt - np.roll(a[:,i,j],-1)*ng/dt
-				b += a[:,i,j]*(2j*w0*n0-0.5*dz*j3Coeff[:,i,j])
-				a[:,i,j] = scipy.sparse.linalg.spsolve(T,b)
-	a = np.fft.fftshift(np.fft.fft(a,axis=0),axes=0)
-	nplasma = np.fft.fftshift(np.fft.fft(nplasma,axis=0),axes=0)
-	j3 = np.fft.fftshift(np.fft.fft(j3Coeff*a,axis=0),axes=0)
+	# Advance a(w,kx,ky) using RK4.
+	# Define q(z;w,kx,ky) = exp(-i*kz*z)*a(z;w,kx,ky).  Note q=a in initial plane.
+	src = source_cluster(cl.q,a,dens,w,kz,k0,L)
+	T.kspacex(src.q00_dev)
+	src.qw_dev[...] = src.q00_dev
+	z = 0.0
+	iterations = 0
 
-	# linear half-step
-	a = T.kspace(a)
-	a *= np.exp(-0.5*f*dz/g)
-	a = T.rspace(a)
+	while z<L and (z-L)**2 > (L/1e6)**2:
+		print('.',end='',flush=True)
+		iterations += 1
+		dz = load_source(0.0,cl,T,src,dchi,chi3,ionizer,return_dz=True) # load k1
+		if z+dz>L:
+			dz = L-z
+		if (L-z)/dz > 10:
+			print(int((L-z)/dz),end='',flush=True)
+		src.q0_dev = src.q00_dev + dz*src.J_dev/6
+		src.qw_dev = src.q00_dev + dz*src.J_dev/2
+		load_source(0.5*dz,cl,T,src,dchi,chi3,ionizer) # load k2
+		src.q0_dev += dz*src.J_dev/3
+		src.qw_dev = src.q00_dev + dz*src.J_dev/2
+		load_source(0.5*dz,cl,T,src,dchi,chi3,ionizer) # load k3
+		src.q0_dev += dz*src.J_dev/3
+		src.qw_dev = src.q00_dev + dz*src.J_dev
+		load_source(dz,cl,T,src,dchi,chi3,ionizer) # load k4
+		src.qw_dev = src.q0_dev + dz*src.J_dev/6
+		finish_iteration(dz,cl,src)
+		z += dz
 
-	return a,j3,nplasma
+	a,J,ne = finish(cl,T,src,dchi,chi3,ionizer)
+
+	T.FreeDeviceMemory()
+
+	# Sort frequencies
+	a = np.fft.fftshift(a,axes=0)
+	J = np.fft.fftshift(J,axes=0)
+	ne = np.fft.fftshift(ne,axes=0)
+
+	return a,J,ne,4*iterations
 
 def track(cl,xp,eikonal,vg,vol_dict):
 	'''Propagate paraxial waves using eikonal data as a boundary condition.
@@ -144,7 +277,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	ng = 1.0/np.mean(np.sqrt(np.einsum('...i,...i',vg[:,0,1:4],vg[:,0,1:4])))
 
 	# Setup the wave propagation domain
-	chi = vol_dict['dispersion inside'].chi(w_nodes)
+	chi = vol_dict['dispersion inside'].chi(w_nodes).astype(np.complex)
 	try:
 		ionizer = vol_dict['ionizer']
 	except KeyError:
@@ -171,10 +304,18 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	ne[...,0] = 0.0
 	for k in range(diagnostic_steps):
 		print('Advancing to diagnostic plane',k+1)
+		rhs_evals = 0
 		for s in range(subcycles):
+			if subcycles>1:
+				if s==0:
+					print('  subcycling *',end='',flush=True)
+				else:
+					print('*',end='',flush=True)
 			xp_eff[...,3] = dens_nodes[k*subcycles + s]
 			dens = vol_dict['object'].GetDensity(xp_eff)
-			A0,J0,ne0 = propagator(field_tool,A0,chi,chi3,dens,ionizer,n0,ng,dz,True)
+			A0,J0,ne0,evals = propagator(cl,field_tool,A0,chi,chi3,dens,ionizer,n0,ng,dz)
+			rhs_evals += evals
+		print('',rhs_evals,'evaluations of j(w,kx,ky)')
 		A[...,k+1] = A0
 		J[...,k+1] = J0
 		ne[...,k+1] = ne0

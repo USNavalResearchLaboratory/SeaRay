@@ -10,11 +10,6 @@ import input_tools
 # Effects are most easily observed using the interactive viewer
 
 mks_length = 0.8e-6 / (2*np.pi)
-sim = []
-wave = []
-ray = []
-optics = []
-diagnostics = []
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
@@ -33,7 +28,7 @@ mess = mess + '  a0 = ' + str(a00) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,4.0)
+band = (0.0,2.5)
 t00,pulse_band = helper.TransformLimitedBandwidth(w00,'15 fs',1.0)
 
 # Work out the dispersion length
@@ -48,60 +43,66 @@ mess = mess + '  Propagation length = ' + str(1e3*Lprop*mks_length) + ' mm\n'
 
 # Set up dictionaries
 
-for i in range(1):
+sim = {}
+ray = {}
+wave = []
+optics = []
+diagnostics = {}
 
-	sim.append({'mks_length' : mks_length ,
-				'mks_time' : mks_length/C.c ,
-				'message' : mess})
+sim['mks_length'] = mks_length
+sim['mks_time'] = mks_length/C.c
+sim['message'] = mess
 
-	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,a00,0.0,0.0) ,
-					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-					'r0' : (t00,r00,r00,t00) ,
-					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (w00,0.0,0.0,w00) ,
-					# 0-component of focus is time at which pulse reaches focal point.
-					# If time=0 use paraxial wave, otherwise use spherical wave.
-					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (0.0,0.0,0.0,-1.0),
-					'supergaussian exponent' : 2})
+ray['number'] = (1025,64,4,1)
+ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray['loading coordinates'] = 'cylindrical'
+# Ray box is always put at the origin
+# It will be transformed appropriately by SeaRay to start in the wave
+ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
 
-	ray.append({	'number' : (1025,64,4,1),
-					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cylindrical',
-					# Ray box is always put at the origin
-					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
+wave.append({})
+wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
+wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
+wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
+# 0-component of focus is time at which pulse reaches focal point.
+# If time=0 use paraxial wave, otherwise use spherical wave.
+# Thus in the paraxial case the pulse always starts at the waist.
+wave[-1]['focus'] = (0.0,0.0,0.0,-1.0)
+wave[-1]['supergaussian exponent'] = 2
 
-	optics.append([
-		{	'object' : surface.EikonalProfiler('start'),
-			'size' : (6*r00,6*r00),
-			'origin' : (0.,0.,-0.5),
-			'euler angles' : (0.,0.,0.)},
+optics.append({})
+optics[-1]['object'] = surface.EikonalProfiler('start')
+optics[-1]['frequency band'] = (0,3)
+optics[-1]['size'] = (6*r00,6*r00)
+optics[-1]['origin'] = (0.,0.,-0.5)
+optics[-1]['euler angles'] = (0.,0.,0.)
 
-		{	'object' : volume.AnalyticBox('glass'),
-			'propagator' : 'uppe',
-			'wave coordinates' : 'cylindrical',
-			'wave grid' : (1025,64,1,9),
-			'density function' : '1.0',
-			'density lambda' : lambda x,y,z,r2 : np.ones(x.shape),
-			'frequency band' : band,
-			'subcycles' : 1,
-			'dispersion inside' : glass,
-			'dispersion outside' : dispersion.Vacuum(),
-			'chi3' : chi3,
-			'size' : (6*r00,6*r00,Lprop),
-			'origin' : (0.,0.,Lprop/2),
-			'euler angles' : (0.,0.,0.),
-			'window speed' : glass.GroupVelocityMagnitude(1.0)},
+optics.append({})
+optics[-1]['object'] = volume.AnalyticBox('glass')
+optics[-1]['propagator'] = 'uppe'
+optics[-1]['wave coordinates'] = 'cylindrical'
+optics[-1]['wave grid'] = (1025,64,1,9)
+optics[-1]['density function'] = '1.0'
+optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
+optics[-1]['frequency band'] = band
+optics[-1]['subcycles'] = 4
+optics[-1]['minimum step'] = .3e-6/mks_length
+optics[-1]['dispersion inside'] = glass
+optics[-1]['dispersion outside'] = dispersion.Vacuum()
+optics[-1]['chi3'] = chi3
+optics[-1]['size'] = (6*r00,6*r00,Lprop)
+optics[-1]['origin'] = (0.,0.,Lprop/2)
+optics[-1]['euler angles'] = (0.,0.,0.)
+optics[-1]['window speed'] = glass.GroupVelocityMagnitude(1.0)
 
-		{	'object' : surface.EikonalProfiler('stop'),
-			'size' : (8*r00,8*r00),
-			'origin' : (0.,0.,2*Lprop),
-			'euler angles' : (0.,0.,0.)}
-		])
+optics.append({})
+optics[-1]['object'] = surface.EikonalProfiler('stop')
+optics[-1]['frequency band'] = (0,3)
+optics[-1]['size'] = (8*r00,8*r00)
+optics[-1]['origin'] = (0.,0.,2*Lprop)
+optics[-1]['euler angles'] = (0.,0.,0.)
 
-	diagnostics.append({'suppress details' : False,
-						'clean old files' : True,
-						'orbit rays' : (8,4,4,1),
-						'base filename' : 'out/test'})
+diagnostics['suppress details'] = False
+diagnostics['clean old files'] = True
+diagnostics['orbit rays'] = (8,4,4,1)
+diagnostics['base filename'] = 'out/test'

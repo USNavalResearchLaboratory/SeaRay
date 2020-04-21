@@ -33,13 +33,23 @@ print('--------------------')
 cl,args = init.setup_opencl(sys.argv)
 cl.add_program('fft')
 cl.add_program('uppe')
+cl.add_program('paraxial')
 cl.add_program('caustic')
+cl.add_program('ionization')
 
 # Get input file
 for arg in args:
 	if arg.split('=')[0]=='file':
 		shutil.copyfile(arg.split('=')[1],'inputs.py')
 import inputs
+
+# Add the outer list if necessary
+if type(inputs.sim)==dict:
+	inputs.sim = [inputs.sim]
+	inputs.wave = [inputs.wave]
+	inputs.ray = [inputs.ray]
+	inputs.optics = [inputs.optics]
+	inputs.diagnostics = [inputs.diagnostics]
 
 # Pre-simulation cleaning
 if inputs.diagnostics[0]['clean old files']:

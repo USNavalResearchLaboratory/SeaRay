@@ -89,7 +89,7 @@ def DataFromGrid(w,x,y,wn,xn,yn,the_data):
 	w,x,y are the coordinates of the irregular data points.
 	All the irregular points must lie inside the regular grid.
 	wn,xn,yn are arrays of nodes which must be regularly spaced.
-	the_data conatins values on the regular grid with shape (w,x,y).
+	the_data contains values on the regular grid with shape (w,x,y).
 	Any coordinate transformations must happen externally.'''
 	if wn.shape[0]==1:
 		raise ValueError('Cannot relaunch rays with monochromatic data.')
@@ -200,6 +200,10 @@ class TransverseModeTool:
 		self.N = N
 		self.dq = dq
 		self.cl = cl
+	def AllocateDeviceMemory(self,data_shape):
+		None
+	def FreeDeviceMemory(self):
+		None
 	def kspace(self,a):
 		return a
 	def rspace(self,a):
@@ -209,6 +213,14 @@ class TransverseModeTool:
 
 class FourierTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to plane wave basis'''
+	def kspacex(self,a):
+		self.cl.program('fft').FFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
+		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.q.finish()
+	def rspacex(self,a):
+		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.program('fft').IFFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
+		self.cl.q.finish()
 	def kspace(self,a):
 		return np.fft.fft(np.fft.fft(a,axis=1),axis=2)
 	def rspace(self,a):
@@ -284,13 +296,13 @@ class HankelTransformTool(TransverseModeTool):
 	def kspacex(self,a):
 		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
-		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,self.scratch_dev.data)
+		self.scratch_dev[...] = a
 		self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
 		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.q.finish()
 	def rspacex(self,a):
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
-		self.cl.program('fft').SimpleCopy(self.cl.q,a.shape,None,a.data,self.scratch_dev.data)
+		self.scratch_dev[...] = a
 		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
 		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))

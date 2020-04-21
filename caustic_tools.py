@@ -61,11 +61,15 @@ class CausticTool:
 		return ans,dom4d
 	def ClipRaysToGrid(self,xp):
 		wn,xn,yn,ext = self.GetGridInfo()
+		w = xp[...,4]
 		x = xp[...,1]
 		y = xp[...,2]
+		condw = np.logical_or(np.logical_and(w>=wn[0],w<=wn[-1]),wn.shape[0]==1)
 		condx = np.logical_or(np.logical_and(x>=xn[0],x<=xn[-1]),xn.shape[0]==1)
 		condy = np.logical_or(np.logical_and(y>=yn[0],y<=yn[-1]),yn.shape[0]==1)
-		cond = np.logical_and(condx,condy)
+		cond = np.logical_and(np.logical_and(condx,condy),condw)
+		for r in range(1,7):
+			cond[:,0] *= cond[:,r] # if any satellite is clipped throw out the bundle
 		return np.where(cond[:,0])[0]
 	def kspace(self,A):
 		return self.T.kspace(A)

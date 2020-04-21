@@ -17,16 +17,10 @@ import input_tools
 #   Isolates an individual parabola (fixes w=1 and ky=0)
 # The interactive viewer can be used to examine the paraxial wave itself.
 
-mks_length = 0.8e-6 / (2*np.pi)
-sim = []
-wave = []
-ray = []
-optics = []
-diagnostics = []
-mess = 'Processing input file...\n'
-
 # Preprocessing calculations
 
+mks_length = 0.8e-6 / (2*np.pi)
+mess = 'Processing input file...\n'
 helper = input_tools.InputHelper(mks_length)
 
 w00 = 1.0
@@ -39,64 +33,64 @@ mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
-for i in range(1):
+sim = {}
+ray = {}
+wave = []
+optics = []
+diagnostics = {}
 
-	sim.append({'mks_length' : mks_length ,
-				'mks_time' : mks_length/C.c ,
-				'message' : mess})
+sim['mks_length'] = mks_length
+sim['mks_time'] = mks_length/C.c
+sim['message'] = mess
 
-	wave.append({	# EM 4-potential (eA/mc^2) , component 0 not used
-					'a0' : (0.0,a00,0.0,0.0) ,
-					# 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-					'r0' : (t00,r00,r00,t00) ,
-					# 4-wavenumber: omega,kx,ky,kz
-					'k0' : (w00,0.0,0.0,w00) ,
-					# 0-component of focus is time at which pulse reaches focal point.
-					# If time=0 use paraxial wave, otherwise use spherical wave.
-					# Thus in the paraxial case the pulse always starts at the waist.
-					'focus' : (1.001*f,0.0,0.0,f),
-					'supergaussian exponent' : 2})
+ray['number'] = (64,64,8,1)
+ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray['loading coordinates'] = 'cylindrical'
+# Ray box is always put at the origin
+# It will be transformed appropriately by SeaRay to start in the wave
+ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
 
-	ray.append({	'number' : (64,128,8,1),
-					'bundle radius' : (.001*r00,.001*r00,.001*r00,.001*r00),
-					'loading coordinates' : 'cylindrical',
-					# Ray box is always put at the origin
-					# It will be transformed appropriately by SeaRay to start in the wave
-					'box' : band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)})
+wave.append({})
+wave[-1]['a0'] = (0.0,a00,0.0,0.0)
+wave[-1]['r0'] = (t00,r00,r00,t00)
+wave[-1]['k0'] = (w00,0.0,0.0,w00)
+wave[-1]['focus'] = (1.001*f,0.0,0.0,f)
+wave[-1]['supergaussian exponent'] = 2
 
-	optics.append([
-		{	'object' : surface.EikonalProfiler('start'),
-			'size' : (f/8,f/8),
-			'origin' : (0.,0.,0.),
-			'euler angles' : (0.,0.,0.)},
+optics.append({})
+optics[-1]['object'] = surface.EikonalProfiler('start')
+optics[-1]['size'] = (f/8,f/8)
+optics[-1]['origin'] = (0.,0.,0.)
+optics[-1]['euler angles'] = (0.,0.,0.)
 
-		{	'object' : volume.AnalyticBox('vacuum'),
-			'density function' : '1.0',
-			'density lambda' : lambda x,y,z,r2 : np.ones(x.shape),
-			'density multiplier' : 1.0,
-			'frequency band' : band,
-			'wave grid' : (64,256,256,9),
-			'wave coordinates' : 'cartesian',
-			'dispersion inside' : dispersion.Vacuum(),
-			'dispersion outside' : dispersion.Vacuum(),
-			'size' : (36*waist,36*waist,8*zR),
-			'origin' : (0.,0.,f),
-			'euler angles' : (0.,0.,0.),
-			'propagator' : 'paraxial',
-			'subcycles' : 1},
+optics.append({})
+optics[-1]['object'] = volume.AnalyticBox('vacuum')
+optics[-1]['density function'] = '1.0'
+optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(x.shape)
+optics[-1]['frequency band'] = band
+optics[-1]['wave grid'] = (64,128,128,9)
+optics[-1]['wave coordinates'] = 'cartesian'
+optics[-1]['dispersion inside'] = dispersion.Vacuum()
+optics[-1]['dispersion outside'] = dispersion.Vacuum()
+optics[-1]['size'] = (36*waist,36*waist,8*zR)
+optics[-1]['origin'] = (0.,0.,f)
+optics[-1]['euler angles'] = (0.,0.,0.)
+optics[-1]['propagator'] = 'paraxial'
+optics[-1]['subcycles'] = 1
 
-		{	'object' : surface.EikonalProfiler('exit'),
-			'size' : (f/8,f/8),
-			'origin' : (0.,0.,f+4*zR+10.0),
-			'euler angles' : (0.,0.,0.)},
+optics.append({})
+optics[-1]['object'] = surface.EikonalProfiler('exit')
+optics[-1]['size'] = (f/8,f/8)
+optics[-1]['origin'] = (0.,0.,f+4*zR+10.0)
+optics[-1]['euler angles'] = (0.,0.,0.)
 
-		{	'object' : surface.EikonalProfiler('stop'),
-			'size' : (f/8,f/8),
-			'origin' : (0.,0.,2*f),
-			'euler angles' : (0.,0.,0.)}
-		])
+optics.append({})
+optics[-1]['object'] = surface.EikonalProfiler('stop')
+optics[-1]['size'] = (f/8,f/8)
+optics[-1]['origin'] = (0.,0.,2*f)
+optics[-1]['euler angles'] = (0.,0.,0.)
 
-	diagnostics.append({'suppress details' : False,
-						'clean old files' : True,
-						'orbit rays' : (1,16,4,1),
-						'base filename' : 'out/test'})
+diagnostics['suppress details'] = False
+diagnostics['clean old files'] = True
+diagnostics['orbit rays'] = (1,16,4,1)
+diagnostics['base filename'] = 'out/test'

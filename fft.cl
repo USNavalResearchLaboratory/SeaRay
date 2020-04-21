@@ -3,7 +3,12 @@
 
 typedef int tw_Int;
 typedef double tw_Float;
-typedef double2 tw_Complex; // beware, * and / are not complex operations
+typedef double2 tw_Complex;
+// Operations with tw_Float and tw_Complex:
+// a*b : one or both operands must be tw_Float
+// a+b : both operands must be the same type
+// a/b : b must be tw_Float
+// a-b : both operands must be the same type
 
 __constant tw_Float pi = 3.141592653589793;
 
@@ -268,24 +273,49 @@ __kernel void IRFFT(__global tw_Float *in,__global tw_Float *out,tw_Int modes)
 	RealFFT(&out[offset],steps,s,true);
 }
 
+__kernel void DtSpectral(__global tw_Complex * A,__global double * w,const double sgn)
+{
+	// SPECTRAL POINT PROTOCOL
+	// A = [w][x][y]
+	// A --> -sgn*iw*A
+	const int i0 = get_global_id(0);
+	const int j0 = get_global_id(1);
+	const int k0 = get_global_id(2);
+	const int Ni = get_global_size(0);
+	const int Nj = get_global_size(1);
+	const int Nk = get_global_size(2);
+	const int idx = i0*Nj*Nk + j0*Nk + k0;
+	const double Ar = A[idx].s0;
+	const double Ai = A[idx].s1;
+	const double w0 = w[i0];
+	A[idx].s0 = sgn*w0*Ai;
+	A[idx].s1 = -sgn*w0*Ar;
+}
+
+__kernel void iDtSpectral(__global tw_Complex * A,__global double * w,const double sgn)
+{
+	// SPECTRAL POINT PROTOCOL
+	// A = [w][x][y]
+	// A --> i*sgn*A/w
+	const int i0 = get_global_id(0);
+	const int j0 = get_global_id(1);
+	const int k0 = get_global_id(2);
+	const int Ni = get_global_size(0);
+	const int Nj = get_global_size(1);
+	const int Nk = get_global_size(2);
+	const int idx = i0*Nj*Nk + j0*Nk + k0;
+	const double Ar = A[idx].s0;
+	const double Ai = A[idx].s1;
+	const double w0 = w[i0];
+	A[idx].s0 = -sgn*Ai/w0;
+	A[idx].s1 = sgn*Ar/w0;
+}
 
 /////////////////////////////////
 //                             //
 //  Hankel Transform Support   //
 //                             //
 /////////////////////////////////
-
-__kernel void SimpleCopy(__global tw_Complex *src,__global tw_Complex *dst)
-{
-	const int f = get_global_id(0);
-	const int i = get_global_id(1);
-	const int m = get_global_id(2);
-	const int Nf = get_global_size(0);
-	const int Ni = get_global_size(1);
-	const int Nm = get_global_size(2);
-
-	dst[f*Ni*Nm + i*Nm + m] = src[f*Ni*Nm + i*Nm + m];
-}
 
 __kernel void RootVolumeMultiply(__global tw_Complex *data,__global tw_Float *w)
 {
@@ -311,34 +341,60 @@ __kernel void RootVolumeDivide(__global tw_Complex *data,__global tw_Float *w)
 	data[f*Ni*Nm + i*Nm + m] /= w[i];
 }
 
-__kernel void FFT_axis2(__global tw_Float *data,tw_Int modes)
+__kernel void FFT_axis1(__global tw_Float *data,tw_Int N1)
 {
 	// Wrapper designed to be consistent with numpy.fft functions.
 	// STRIP PROTOCOL
-	// data = [w][r][phi][2], with shape (modes,...)
+	// data = [w][r/x][phi/y][2]
 	const int i0 = get_global_id(0);
-	const int j0 = get_global_id(1);
-	const int Ni = get_global_size(0);
-	const int Nj = get_global_size(1);
-	const int offset = 2*modes*(j0 + i0*Nj);
-	const int s = 2;
+	const int i2 = get_global_id(1);
+	const int N2 = get_global_size(1);
+	const int offset = 2*(i0*N1*N2 + i2);
+	const int s = 2*N2;
 
-	ComplexFFT(&data[offset],&data[offset+1],modes,s,1.0,-1.0);
+	ComplexFFT(&data[offset],&data[offset+1],N1,s,1.0,-1.0);
 }
 
-__kernel void IFFT_axis2(__global tw_Float *data,tw_Int modes)
+__kernel void FFT_axis2(__global tw_Float *data,tw_Int N2)
 {
 	// Wrapper designed to be consistent with numpy.fft functions.
 	// STRIP PROTOCOL
-	// data = [w][r][phi][2], with shape (modes,...)
+	// data = [w][r/x][phi/y][2]
 	const int i0 = get_global_id(0);
-	const int j0 = get_global_id(1);
-	const int Ni = get_global_size(0);
-	const int Nj = get_global_size(1);
-	const int offset = 2*modes*(j0 + i0*Nj);
+	const int i1 = get_global_id(1);
+	const int N1 = get_global_size(1);
+	const int offset = 2*(i0*N1*N2 + i1*N2);
 	const int s = 2;
 
-	ComplexFFT(&data[offset],&data[offset+1],modes,s,-1.0,-1.0);
+	ComplexFFT(&data[offset],&data[offset+1],N2,s,1.0,-1.0);
+}
+
+__kernel void IFFT_axis1(__global tw_Float *data,tw_Int N1)
+{
+	// Wrapper designed to be consistent with numpy.fft functions.
+	// STRIP PROTOCOL
+	// data = [w][r/x][phi/y][2]
+	const int i0 = get_global_id(0);
+	const int i2 = get_global_id(1);
+	const int N2 = get_global_size(1);
+	const int offset = 2*(i0*N1*N2 + i2);
+	const int s = 2*N2;
+
+	ComplexFFT(&data[offset],&data[offset+1],N1,s,-1.0,-1.0);
+}
+
+__kernel void IFFT_axis2(__global tw_Float *data,tw_Int N2)
+{
+	// Wrapper designed to be consistent with numpy.fft functions.
+	// STRIP PROTOCOL
+	// data = [w][r/x][phi/y][2]
+	const int i0 = get_global_id(0);
+	const int i1 = get_global_id(1);
+	const int N1 = get_global_size(1);
+	const int offset = 2*(i0*N1*N2 + i1*N2);
+	const int s = 2;
+
+	ComplexFFT(&data[offset],&data[offset+1],N2,s,-1.0,-1.0);
 }
 
 __kernel void RadialTransform(__global tw_Float *T,__global tw_Complex *vin,__global tw_Complex *vout)
