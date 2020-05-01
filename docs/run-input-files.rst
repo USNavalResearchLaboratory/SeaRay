@@ -11,32 +11,32 @@ General Principles
 
 The SeaRay input file is strictly speaking, a Python module.  However you do not need to know much Python to create one, and you need practically no knowledge of Python to edit one.
 
-The input file can be simple or complicated.  In its simplest form, it is a set of lists of Python dictionaries with hard coded values.  More sophisticated input files can be created by making the dictionary values variables.  The full power of the Python language can be employed to compute these variables inside the input file, if desired.
+The input file can be simple or complicated.  In its simplest form, it is a set of Python lists and dictionaries with hard coded values.  More sophisticated input files can be created by making the dictionary values variables.  The full power of the Python language can be employed to compute these variables inside the input file, if desired.
 
-The reason for the lists is that the input file can describe a set of simulations.  The lists are lists of simulations.  The five lists that must appear in the input file are as follows.
+In the simplest case, where you only need to describe a single simulation, we have the following five objects:
 
 	.. glossary::
 
 		``sim``
-			Contains dictionaries describing general parameters of the simulations, such as units.
+			Dictionary of general parameters of the simulations, such as units.
 
 		``wave``
-			Contains dictionaries describing the initial electromagnetic wave configurations
+			List of dictionaries, with each dictionary describing an initial electromagnetic wave.  The total initial field configuration is the superposition of all the waves.
 
 		``ray``
-			Contains dictionaries describing how the initial rays should be loaded
+			List of dictionaries describing how initial rays should be loaded.  At present only the first dictionary is used.
 
 		``optics``
-			Contains another list, containing dictionaries describing optical elements
+			List of dictionaries, with each dictionary describing an optical element, detection surface, or wave propagation region.
 
 		``diagnostics``
-			Contains dictionaries describing how to write out the data
+			Dictionary of general parameters pertaining to how diagnostics are written.
 
 	.. tip::
 
 		A useful perspective is that SeaRay ignores the whole input file except for the five lists named above.  It makes no difference how the lists are created within.  Best practice in post-processing is also to look only at the five lists.
 
-The first elements of ``sim``, ``wave``, ``ray``, ``optics``, and ``diagnostics`` describe the first simulation, the second elements describe the second simulation, etc..  It is possible to set up sophisticated batch jobs using this system.
+You can also describe multiple simulations in one input file.  Simply enclose each of the objects above in another list.  Now we have a list of simulations.  It is possible to set up sophisticated batch jobs using this system.
 
 Minimum Python
 --------------

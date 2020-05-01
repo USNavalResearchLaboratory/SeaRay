@@ -26,6 +26,12 @@ if len(sys.argv)==1:
 	print('==========END HELP FOR SEARAY==========')
 	exit(1)
 
+# Error check command line arguments
+valid_arg_keys = ['run','list','file','device','platform','iterations']
+for arg in sys.argv[1:]:
+	if arg.split('=')[0] not in valid_arg_keys:
+		raise SyntaxError('The argument <'+arg+'> was not understood.')
+
 # Set up OpenCL
 print('--------------------')
 print('Accelerator Hardware')
@@ -78,8 +84,10 @@ for irun in range(len(inputs.sim)):
 		opt_dict['object'].InitializeCL(cl,opt_dict)
 
 	print('\nSetting up rays and orbits...')
-	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun])
-	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,inputs.ray[irun],inputs.diagnostics[irun],inputs.optics[irun])
+	if len(inputs.ray[irun])>1:
+		raise ValueError('Only one ray box allowed at present.')
+	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun][0])
+	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,inputs.ray[irun][0],inputs.diagnostics[irun],inputs.optics[irun])
 	micro_action_0 = ray_kernel.GetMicroAction(xp,eikonal,vg)
 	xp0 = np.copy(xp)
 	eikonal0 = np.copy(eikonal)

@@ -6,7 +6,7 @@ import surface
 import volume
 import input_tools
 
-# Simple USPL air plasma using Paraxial module.
+# Simple axisymmetric USPL air plasma using Paraxial module.
 # Propagate from -L/2 to L/2 where L = propagation length
 
 # Control Parameters
@@ -60,7 +60,7 @@ t00,band = helper.TransformLimitedBandwidth(w00,tstr,50)
 # Set up dictionaries
 
 sim = {}
-ray = {}
+ray = []
 wave = []
 optics = []
 diagnostics = {}
@@ -69,12 +69,13 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
-ray['number'] = (512,64,2,1)
-ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
-ray['loading coordinates'] = 'cylindrical'
+ray.append({})
+ray[-1]['number'] = (512,64,2,1)
+ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used

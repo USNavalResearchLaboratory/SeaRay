@@ -16,7 +16,7 @@ tw_Complex cmul(tw_Complex a,tw_Complex b)
 
 tw_Complex cexp(tw_Complex x)
 {
-	return (tw_Complex)(cos(x.s1)*exp(-x.s0),sin(x.s1)*exp(-x.s0));
+	return (tw_Complex)(cos(x.s1)*exp(x.s0),sin(x.s1)*exp(x.s0));
 }
 
 tw_Float cmag(tw_Complex x)

@@ -6,7 +6,10 @@ import surface
 import volume
 import input_tools
 
-# Simple USPL air plasma using Paraxial module.
+# 3D USPL filamentation, using Paraxial module.
+# Initial beam is put through a random amplitude screen
+
+# Suggested visualization: use ray_viewer.ipynb to interactively view A(t,x,y)
 
 # Control Parameters
 
@@ -14,7 +17,7 @@ lambda_mks = 0.8e-6
 vac_waist_radius_mks = 100e-6
 pulse_energy_mks = 5e-3
 pulse_duration_mks = 50e-15
-propagation_range_mks = (-0.2,-0.19)
+propagation_range_mks = (-0.2,-0.15)
 sim_box_radius_mks = 2e-3
 n2_air_mks = 5e-23
 tstr = str(pulse_duration_mks*1e15) + ' fs'
@@ -59,7 +62,7 @@ t00,band = helper.TransformLimitedBandwidth(w00,tstr,16)
 # Set up dictionaries
 
 sim = {}
-ray = {}
+ray = []
 wave = []
 optics = []
 diagnostics = {}
@@ -68,12 +71,13 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
-ray['number'] = (128,32,32,1)
-ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
-ray['loading coordinates'] = 'cartesian'
+ray.append({})
+ray[-1]['number'] = (128,32,32,1)
+ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['loading coordinates'] = 'cartesian'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray['box'] = band + (-3*r00,3*r00,-3*r00,3*r00,-2*t00,2*t00)
+ray[-1]['box'] = band + (-3*r00,3*r00,-3*r00,3*r00,-2*t00,2*t00)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used

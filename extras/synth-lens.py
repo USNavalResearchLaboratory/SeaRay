@@ -38,9 +38,9 @@ for i,r in enumerate(r_pts):
 		R = lambda x : 1/((1-g(x/d))/Rm + g(x/d)/Rp)
 		merit = lambda x : r**2 + (z-x-R(x))**2 - R(x)**2
 		try:
-			psi[i,k] = scipy.optimize.brentq(merit,-f,f,tol=1e-12)
+			psi[i,k] = scipy.optimize.brentq(merit,-f,f,tol=1e-11)
 		except:
-			psi[i,k] = scipy.optimize.newton(merit,z,tol=1e-9)
+			psi[i,k] = scipy.optimize.newton(merit,z,tol=1e-8)
 
 grad = numpy.gradient(psi,dr,dz)
 nbar = 1.0 - (grad[0]**2 + grad[1]**2)

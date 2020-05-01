@@ -19,12 +19,12 @@ mks_length = 0.4e-6 / (2*np.pi)
 bundle_scale = 1e-4
 mm = 1000*mks_length
 fs = 1e15*mks_length/C.c
-w00 = 1.0
 helper = input_tools.InputHelper(mks_length)
 mess = 'Processing input file...\n'
 
 # Control parameters
 
+w00 = 1.0
 theta = 0 # direction of propagation, 0 is +z
 lens_D = 2.4/mm # lens diameter
 lens_t = 1/mm # lens thickness
@@ -48,7 +48,7 @@ mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 sim = {}
 wave = []
-ray = {}
+ray = []
 optics = []
 diagnostics = {}
 
@@ -56,12 +56,13 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
-ray['number'] = (64,128,4,1)
-ray['bundle radius'] = (rb,rb,rb,rb)
-ray['loading coordinates'] = 'cylindrical'
+ray.append({})
+ray[-1]['number'] = (64,128,4,1)
+ray[-1]['bundle radius'] = (rb,rb,rb,rb)
+ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used

@@ -23,12 +23,12 @@ glass.add_opacity_region(2000.0,1.2e-6,4e-6)
 w00 = 1.0
 r00 = 100e-6 / mks_length
 a00 = helper.Wcm2_to_a0(6e12,0.8e-6)
-chi3 = helper.mks_n2_to_chi3(1.5,1e-20)
+chi3 = helper.mks_n2_to_chi3(1.5,2e-20)
 mess = mess + '  a0 = ' + str(a00) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,2.5)
+band = (0.0,3.0)
 t00,pulse_band = helper.TransformLimitedBandwidth(w00,'15 fs',1.0)
 
 # Work out the dispersion length
@@ -44,7 +44,7 @@ mess = mess + '  Propagation length = ' + str(1e3*Lprop*mks_length) + ' mm\n'
 # Set up dictionaries
 
 sim = {}
-ray = {}
+ray = []
 wave = []
 optics = []
 diagnostics = {}
@@ -53,12 +53,13 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
-ray['number'] = (1025,64,4,1)
-ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
-ray['loading coordinates'] = 'cylindrical'
+ray.append({})
+ray[-1]['number'] = (1025,64,4,1)
+ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -81,10 +82,11 @@ optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('glass')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (1025,64,1,9)
+optics[-1]['wave grid'] = (1025,64,1,7)
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
+optics[-1]['nonlinear band'] = (0.0,0.5)
 optics[-1]['subcycles'] = 4
 optics[-1]['minimum step'] = .3e-6/mks_length
 optics[-1]['dispersion inside'] = glass

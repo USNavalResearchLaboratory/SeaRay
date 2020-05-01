@@ -34,7 +34,7 @@ mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 # Set up dictionaries
 
 sim = {}
-ray = {}
+ray = []
 wave = []
 optics = []
 diagnostics = {}
@@ -43,12 +43,13 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
-ray['number'] = (64,64,8,1)
-ray['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
-ray['loading coordinates'] = 'cylindrical'
+ray.append({})
+ray[-1]['number'] = (64,64,8,1)
+ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0)

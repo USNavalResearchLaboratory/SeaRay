@@ -311,6 +311,45 @@ __kernel void iDtSpectral(__global tw_Complex * A,__global double * w,const doub
 	A[idx].s1 = sgn*Ar/w0;
 }
 
+__kernel void Filter(__global tw_Complex *A,__global tw_Float *filter)
+{
+	// SPECTRAL POINT PROTOCOL
+	const int i0 = get_global_id(0);
+	const int j0 = get_global_id(1);
+	const int k0 = get_global_id(2);
+	const int Ni = get_global_size(0);
+	const int Nj = get_global_size(1);
+	const int Nk = get_global_size(2);
+	const int idx = i0*Nj*Nk + j0*Nk + k0;
+	A[idx] *= filter[i0];
+}
+
+__kernel void SoftTimeWindow(__global tw_Float *A,tw_Int cutoff,tw_Int width)
+{
+	// TEMPORAL POINT PROTOCOL
+	// A = [t][r/x][phi/y]
+	const int i0 = get_global_id(0);
+	const int j0 = get_global_id(1);
+	const int k0 = get_global_id(2);
+	const int Ni = get_global_size(0);
+	const int Nj = get_global_size(1);
+	const int Nk = get_global_size(2);
+	const int idx = i0*Nj*Nk + j0*Nk + k0;
+
+	if (i0<cutoff || i0>Ni-cutoff-1)
+		A[idx] = 0.0;
+	if (i0>=cutoff && i0<cutoff+width)
+	{
+		const tw_Float q = (tw_Float)(i0-cutoff)/(tw_Float)(width);
+		A[idx] *= 10*q*q*q - 15*q*q*q*q + 6*q*q*q*q*q;
+	}
+	if (i0<=Ni-cutoff-1 && i0>Ni-cutoff-width-1)
+	{
+		const tw_Float q = (tw_Float)(Ni-cutoff-1-i0)/(tw_Float)(width);
+		A[idx] *= 10*q*q*q - 15*q*q*q*q + 6*q*q*q*q*q;
+	}
+}
+
 /////////////////////////////////
 //                             //
 //  Hankel Transform Support   //
