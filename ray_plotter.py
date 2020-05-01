@@ -465,7 +465,7 @@ class Orbits:
 					w = w[np.where(test)]
 					o = o[np.where(test)]
 					if x.shape[0]>0:
-						mlab.plot3d(x,y,z,w,tube_radius=.001*characteristic_size,vmin=wmin,vmax=wmax,colormap='gist_rainbow',opacity=0.5)
+						mlab.plot3d(x,y,z,w,tube_radius=.001*characteristic_size,vmin=wmin,vmax=wmax,colormap='gist_rainbow',opacity=0.4)
 				for path in self.mesh_list:
 					mesh = np.load(path)
 					c = mesh[:,:,0]

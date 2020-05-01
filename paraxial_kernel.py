@@ -145,8 +145,7 @@ def update_current(cl,src,mat,ionizer):
 	cl.program('fft').FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
 
 def load_source(z0,z,cl,T,src,mat,ionizer,return_dz=False):
-	'''We are trying to advance q(z;w,kx,ky) = exp(-i*kz*z)*A(z;w,kx,ky).
-	We have an equation in the form dq/dz = S(z,q).
+	'''We have an equation in the form dq/dz = S(z,q).
 	This loads src.J_dev with S(z,q), using q = src.qw_dev
 
 	:param double z0: global coordinate of the start of the subcycle region

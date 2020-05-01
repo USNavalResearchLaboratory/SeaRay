@@ -7,14 +7,13 @@ import volume
 import input_tools
 
 # Simple USPL air plasma using UPPE module.
-# Propagate from -L/2 to L/2 where L = propagation length
 
 # Control Parameters
 
 lambda_mks = 0.8e-6
 vac_waist_radius_mks = 100e-6
 pulse_energy_mks = 1e-3
-pulse_duration_mks = 50e-15
+pulse_duration_mks = 35e-15
 propagation_range_mks = (-0.1,0.1)
 sim_box_radius_mks = 1.5e-3
 n2_air_mks = 5e-23
