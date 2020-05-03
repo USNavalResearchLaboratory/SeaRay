@@ -10,6 +10,7 @@ import input_tools
 # Effects are most easily observed using the interactive viewer
 
 mks_length = 0.8e-6 / (2*np.pi)
+um = 1e6*mks_length
 mess = 'Processing input file...\n'
 
 # Preprocessing calculations
@@ -18,10 +19,10 @@ helper = input_tools.InputHelper(mks_length)
 
 glass = dispersion.BK7(mks_length)
 # Suppress out of band frequencies
-glass.add_opacity_region(2000.0,0.1e-6,0.6e-6)
-glass.add_opacity_region(2000.0,1.2e-6,4e-6)
+glass.add_opacity_region(500/um,0.1/um,0.6/um)
+glass.add_opacity_region(500/um,1.2/um,4/um)
 w00 = 1.0
-r00 = 100e-6 / mks_length
+r00 = 100/um
 a00 = helper.Wcm2_to_a0(6e12,0.8e-6)
 chi3 = helper.mks_n2_to_chi3(1.5,2e-20)
 mess = mess + '  a0 = ' + str(a00) + '\n'
@@ -83,6 +84,7 @@ optics[-1]['object'] = volume.AnalyticBox('glass')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['wave coordinates'] = 'cylindrical'
 optics[-1]['wave grid'] = (1025,64,1,7)
+optics[-1]['radial modes'] = 64
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

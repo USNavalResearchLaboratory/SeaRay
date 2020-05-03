@@ -7,16 +7,15 @@ import volume
 import input_tools
 
 # Simple axisymmetric USPL air plasma using Paraxial module.
-# Propagate from -L/2 to L/2 where L = propagation length
 
 # Control Parameters
 
 lambda_mks = 0.8e-6
-vac_waist_radius_mks = 100e-6
-pulse_energy_mks = 0.5e-3
+vac_waist_radius_mks = 150e-6
+pulse_energy_mks = 1e-3
 pulse_duration_mks = 50e-15
-propagation_range_mks = (-0.1,0.1)
-sim_box_radius_mks = 1.5e-3
+propagation_range_mks = (-0.2,0.2)
+sim_box_radius_mks = 3e-3
 n2_air_mks = 5e-23
 tstr = str(pulse_duration_mks*1e15) + ' fs'
 
@@ -34,7 +33,7 @@ air = dispersion.HumidAir(mks_length,0.4,1e-3)
 Uion_au = 12.1 / (C.alpha**2*C.m_e*C.c**2/C.e)
 ngas_mks = 5.4e18 * 1e6
 Zeff = 0.53
-ionizer = ionization.ADK(Uion_au,Zeff,ngas_mks,mks_length,terms=6)
+ionizer = ionization.StitchedPPT(lambda_mks,Uion_au,Zeff,ngas_mks,mks_length,terms=80)
 
 # Derived Parameters
 
@@ -55,7 +54,7 @@ w00 = 1.0
 r00 = start_radius_mks / mks_length
 a00 = helper.Wcm2_to_a0(I0_mks*1e-4,lambda_mks)
 chi3 = helper.mks_n2_to_chi3(1.0,n2_air_mks)
-t00,band = helper.TransformLimitedBandwidth(w00,tstr,50)
+t00,band = helper.TransformLimitedBandwidth(w00,tstr,25)
 
 # Set up dictionaries
 
@@ -70,7 +69,7 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
 ray.append({})
-ray[-1]['number'] = (512,64,2,1)
+ray[-1]['number'] = (256,128,2,1)
 ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
@@ -92,7 +91,8 @@ optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'paraxial'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (512,128,1,15)
+optics[-1]['wave grid'] = (256,256,1,15)
+optics[-1]['radial modes'] = 128
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

@@ -23,19 +23,24 @@ helper = input_tools.InputHelper(mks_length)
 prop_range = (-10/cm,0/cm)
 L = prop_range[1]-prop_range[0]
 air = dispersion.HumidAir(mks_length,0.4,1e-3)
-air.add_opacity_region(200.0,0.05/um,0.3/um)
-air.add_opacity_region(10.0,13/um,17/um)
-ionizer = ionization.ADK(0.5,1.0,2.7e25,mks_length,terms=4)
+air.add_opacity_region(0.5/cm,0.05/um,0.3/um)
+air.add_opacity_region(10/cm,13/um,17/um)
 w00 = 1.0
 r00 = 0.5/cm
 P0_mks = 7e-3 / 80e-15
 I0_mks = 2*P0_mks/(np.pi*r00**2*mks_length**2)
 a800 = helper.Wcm2_to_a0(I0_mks*1e-4,0.8e-6)
 a400 = helper.Wcm2_to_a0(0.1*I0_mks*1e-4,0.4e-6)
-chi3 = helper.mks_n2_to_chi3(1.0,5e-23)
+chi3 = .01*helper.mks_n2_to_chi3(1.0,5e-23)
 mess = mess + '  a800 = ' + str(a800) + '\n'
 mess = mess + '  a400 = ' + str(a400) + '\n'
 mess = mess + '  chi3 = ' + str(chi3) + '\n'
+
+# Ionization model
+Uion_au = 12.1 / (C.alpha**2*C.m_e*C.c**2/C.e)
+ngas_mks = 5.4e18 * 1e6
+Zeff = 0.53
+ionizer = ionization.PPT(0.8e-6,Uion_au,Zeff,ngas_mks,mks_length,80)
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
 band = (0.0,5.5)

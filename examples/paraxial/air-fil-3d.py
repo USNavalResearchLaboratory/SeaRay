@@ -7,7 +7,8 @@ import volume
 import input_tools
 
 # 3D USPL filamentation, using Paraxial module.
-# Initial beam is put through a random amplitude screen
+# Initial beam is put through a random amplitude screen.
+# Once the filament forms resolution is lost.
 
 # Suggested visualization: use ray_viewer.ipynb to interactively view A(t,x,y)
 
@@ -36,7 +37,7 @@ air = dispersion.HumidAir(mks_length,0.4,1e-3)
 Uion_au = 12.1 / (C.alpha**2*C.m_e*C.c**2/C.e)
 ngas_mks = 5.4e18 * 1e6
 Zeff = 0.53
-ionizer = ionization.ADK(Uion_au,Zeff,ngas_mks,mks_length,terms=6)
+ionizer = ionization.StitchedPPT(lambda_mks,Uion_au,Zeff,ngas_mks,mks_length,terms=80)
 
 # Derived Parameters
 

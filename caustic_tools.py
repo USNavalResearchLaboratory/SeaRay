@@ -174,7 +174,7 @@ class FourierTool(CausticTool):
 
 class BesselBeamTool(CausticTool):
 
-	def __init__(self,pts,band,center,size,cl):
+	def __init__(self,pts,band,center,size,cl,modes=None):
 		'''center remains Cartesian.
 		size also remains Cartesian, but only Lx and Lz are used.'''
 		self.pts = pts
@@ -183,7 +183,7 @@ class BesselBeamTool(CausticTool):
 		self.size = np.array(list((dw,) + size))
 		self.mmax = np.int(self.pts[2]/2)
 		self.default_band = size[0]
-		self.T = grid_tools.HankelTransformTool(self.pts[1],0.5*self.size[1]/self.pts[1],self.mmax,cl)
+		self.T = grid_tools.HankelTransformTool(self.pts[1],0.5*self.size[1]/self.pts[1],self.mmax,cl,Nk=modes)
 
 	def GetGridInfo(self):
 		w_nodes = self.center[0] + grid_tools.cyclic_nodes(-self.size[0]/2,self.size[0]/2,self.pts[0])

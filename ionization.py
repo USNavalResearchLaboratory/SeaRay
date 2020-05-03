@@ -16,7 +16,7 @@ def wfunc(x):
 	"""Exponential integral from PPT theory"""
 	return np.real(0.5 * np.exp(-x**2) * np.sqrt(np.pi) * spsf.erf(x*1j) / 1j)
 
-def Cycle_Averaging_Factor(Uion,E):
+def CycleAveragingFactor(Uion,E):
 	"""Returns the PPT cycle averaging factor
 	Multiply static rate by this factor to get average rate
 	inputs (a.u.):
@@ -44,11 +44,14 @@ class AtomicUnits:
 		return rate*self.ts/self.ta
 	def field_sim_to_au(self,field):
 		return field*self.es/self.ea
+	def field_au_to_sim(self,field):
+		return field*self.ea/self.es
 
 class Ionization(AtomicUnits):
-	def __init__(self,Uion,Z,mks_density,mks_length,dt=1.0,terms=1):
-		'''Create an ionization object.  Base class returns zero rate.
+	def __init__(self,wavelength,Uion,Z,mks_density,mks_length,terms=1,generate_fit=True):
+		'''Create an ionization object.  Base class should be treated as abstract.
 
+		:param double wavelength: radiation wavelength in mks units
 		:param double Uion: ionization potential in atomic units
 		:param double Z: residual charge in atomic units
 		:param double mks_density: volume object's reference density in mks units
@@ -56,27 +59,24 @@ class Ionization(AtomicUnits):
 		:param numpy.array dt: time step in simulation units
 		:param int terms: terms to keep in PPT expansion'''
 		super().__init__(mks_length)
+		self.w0 = self.rate_sim_to_au(2*np.pi*mks_length/wavelength)
 		self.ref_dens = mks_density
 		self.Uion = Uion
 		self.Z = Z
-		self.dt = dt
 		self.terms = terms
 		self.cutoff_field = 1e-3
-	def ResetParameters(self,timestep=None,terms=None):
-		if timestep!=None:
-			self.dt = timestep
-		if terms!=None:
-			self.terms = terms
-	def GetPlasmaDensity(self,rate,ngas):
+		if generate_fit:
+			self.GenerateFit(256)
+	def GetPlasmaDensity(self,rate,ngas,dt):
 		'''Get plasma density from rate, accounting for gas depletion.
 
 		:param numpy.array ngas: gas density normalized to the volume's reference with shape (Nx,Ny).
 		:param numpy.array rate: ionization rate in simulation units with shape (Nt,Nx,Ny).
 		:returns: electron density in simulation units.'''
-		ne = scipy.integrate.cumtrapz(rate[::-1],dx=self.dt,axis=0,initial=0.0)[::-1]
+		ne = scipy.integrate.cumtrapz(rate[::-1],dx=dt,axis=0,initial=0.0)[::-1]
 		ne = ngas[np.newaxis,...]*(1.0 - np.exp(-ne))*self.ref_dens/self.ncrit
 		return ne
-	def GetPlasmaDensityCL(self,cl,shp,ne,ngas):
+	def GetPlasmaDensityCL(self,cl,shp,ne,ngas,dt):
 		'''Compute the plasma density due to ionization on the device.
 
 		:param tuple shp: shape in the form (Nt,Nx,Ny)
@@ -84,8 +84,8 @@ class Ionization(AtomicUnits):
 		:param cl_data ngas: the data member of the pyopencl array for ngas, which has the gas density with shape (Nx,Ny)
 		:returns: no return value, but plasma density is loaded into ne on output'''
 		cl.program('ionization').ComputePlasmaDensity(cl.q,shp[1:3],None,
-			ne,ngas,np.double(self.ref_dens/self.ncrit),np.double(self.dt),np.int32(shp[0]))
-	def ExtractEikonalForm(self,E,w00=0.0,bandwidth=1.0):
+			ne,ngas,np.double(self.ref_dens/self.ncrit),np.double(dt),np.int32(shp[0]))
+	def ExtractEikonalForm(self,E,dt,w00=0.0,bandwidth=1.0):
 		"""Extract amplitude, phase, and center frequency from a carrier resolved field E.
 		The assumed form is E = Re(amp*exp(i*phase)).
 
@@ -94,7 +94,7 @@ class Ionization(AtomicUnits):
 		:param double bandwidth: relative bandwidth to keep, if unity no filtering (default)."""
 		Nt = E.shape[0]
 		ndims = len(E.shape)
-		dw = 2*np.pi/(Nt*self.dt)
+		dw = 2*np.pi/(Nt*dt)
 		# Get the complexified spectrum and carrier frequency
 		Ew = np.fft.fft(E,axis=0)
 		Ew[np.int(Nt/2):,...] = 0.0 # eliminate negative frequencies before extracting carrier
@@ -122,13 +122,13 @@ class Ionization(AtomicUnits):
 		Et = 2*np.fft.ifft(Ew,axis=0)
 		# Get amplitude and phase
 		amp = np.abs(Et)
-		phase = (np.angle(Et).swapaxes(0,ndims-1) + w0*np.linspace(0,(Nt-1)*self.dt,Nt)).swapaxes(0,ndims-1)
+		phase = (np.angle(Et).swapaxes(0,ndims-1) + w0*np.linspace(0,(Nt-1)*dt,Nt)).swapaxes(0,ndims-1)
 		return amp,phase,w0
 	def Coeff(self,averaging):
 		'''Precompute coefficients for ionization formulas'''
 		return 0.0,1.0,-1.0
 	def Rate(self,Es,averaging):
-		'''Get the ionization rate over all space
+		'''Get the ionization rate over all space, returned value is in simulation units.
 
 		:param np.array Es: Time domain electric field in simulation units, any shape.  Some subclasses demand that time be the first axis.
 		:param bool averaging: Interpret Es a complex envelope and get cycle averaged rate.  In this case |Es| is expected to give the crest.'''
@@ -146,6 +146,37 @@ class Ionization(AtomicUnits):
 		k(cl.q,shp,None,rate,Es,
 			np.double(field_conv),np.double(rate_conv),np.double(self.cutoff_field),
 			np.double(C_pre),np.double(C_pow),np.double(C_exp))
+	def GenerateFit(self,pts):
+		'''Use a log-log power series to fit the rate; not compatible with YI.
+
+		:param tuple E_bounds: electric field range in simulation units
+		:param int pts: points to use in generating the fit'''
+		model = lambda x,c0,c1,c2,c3,c4,c5 : c0 + c1*x + c2*x**2 + c3*x**3 + c4*x**4 + c5*x**5
+		E_table = self.field_au_to_sim(np.logspace(np.log10(self.cutoff_field*2),np.log10(1),pts))
+		rate_table = self.Rate(E_table,True)
+		self.Cav,var=scipy.optimize.curve_fit(model,np.log(E_table),np.log(rate_table))
+		rate_table = self.Rate(E_table,False)
+		self.Cex,var=scipy.optimize.curve_fit(model,np.log(E_table),np.log(rate_table))
+	def FittedRate(self,Es,averaging):
+		ans = np.zeros(Es.shape)
+		logE = np.log(self.field_au_to_sim(self.field_sim_to_au(np.abs(Es)) + self.cutoff_field))
+		if averaging:
+			cn = self.Cav
+		else:
+			cn = self.Cex
+		for i in range(6):
+			ans += cn[i]*logE**i
+		return np.exp(ans)
+	def FittedRateCL(self,cl,shp,rate,Es,averaging):
+		field_conv = self.field_sim_to_au(1.0)
+		rate_conv = self.rate_au_to_sim(1.0)
+		if averaging:
+			k = cl.program('ionization').EnvelopeRateSeries
+			cn = np.array(self.Cav).astype(np.double)
+		else:
+			k = cl.program('ionization').ExplicitRateSeries
+			cn = np.array(self.Cex).astype(np.double)
+		k(cl.q,shp,None,rate,Es,np.double(field_conv),np.double(self.cutoff_field),cn[0],cn[1],cn[2],cn[3],cn[4],cn[5])
 
 class ADK(Ionization):
 	def Coeff(self,averaging):
@@ -163,7 +194,7 @@ class ADK(Ionization):
 			C_pow += 0.5
 		return C_pre,C_pow,C_exp
 
-class PPT(ADK):
+class PPT_Tunneling(ADK):
 	def Coeff(self,averaging):
 		'''Derive from ADK so that in the tunneling limit,
 		we can simply use Popov's note to undo application of the Stirling formula'''
@@ -173,44 +204,62 @@ class PPT(ADK):
 		C1,C2,C3 = super().Coeff(averaging)
 		C1 *= NPPT/NADK
 		return C1,C2,C3
-	def Rate(self,Es,w0,averaging):
+
+class PPT(PPT_Tunneling):
+	'''Full PPT theory accounting for multiphoton and tunneling limits.
+	If instantaneous rate is requested, the cycle averaging factor is divided out.'''
+	def Rate(self,Es,averaging):
+		F0 = np.sqrt(2*self.Uion)**3
+		nstar = self.Z/np.sqrt(2*self.Uion)
+		lstar = nstar - 1
+		C2 = 2**(2*nstar) / (nstar*spsf.gamma(nstar+lstar+1)*spsf.gamma(nstar-lstar))
+		E = self.field_sim_to_au(np.abs(Es)) + self.cutoff_field
+		w = self.w0
+		gam = np.sqrt(2.0*self.Uion)*w/E
+		alpha = 2 * (np.arcsinh(gam)-gam/np.sqrt(1+gam**2))
+		beta = 2*gam/np.sqrt(1+gam**2)
+		g = (3/(2*gam))*((1+1/(2*gam**2))*np.arcsinh(gam)-np.sqrt(1+gam**2)/(2*gam))
+		nu = (self.Uion/w) * (1 + 1/(2*gam**2))
+		A0 = np.zeros(Es.shape)
+		dnu = np.ceil(nu) - nu
+		for n in range(self.terms):
+			A0 += np.exp(-alpha*(n+dnu))*wfunc(np.sqrt(beta*(n+dnu)))
+		A0 *= (4/np.sqrt(3*np.pi)) * (gam**2/(1+gam**2))
+		ans = A0*(E*np.sqrt(1+gam**2)/(2*F0))**1.5
+		ans *= (2*F0/E)**(2*nstar) # coulomb correction
+		ans *= self.Uion*C2*np.sqrt(6/np.pi) * np.exp(-2.0*F0*g/(3*E))
 		if averaging:
-			F0 = np.sqrt(2*self.Uion)**3
-			nstar = self.Z/np.sqrt(2*self.Uion)
-			lstar = nstar - 1
-			C2 = 2**(2*nstar) / (nstar*spsf.gamma(nstar+lstar+1)*spsf.gamma(nstar-lstar))
-			E = self.field_sim_to_au(np.abs(Es)) + self.cutoff_field
-			w = self.rate_sim_to_au(w0)
-			gam = np.sqrt(2.0*self.Uion)*w/E
-			alpha = 2 * (np.arcsinh(gam)-gam/np.sqrt(1+gam**2))
-			beta = 2*gam/np.sqrt(1+gam**2)
-			g = (3/(2*gam))*((1+1/(2*gam**2))*np.arcsinh(gam)-np.sqrt(1+gam**2)/(2*gam))
-			nu = (self.Uion/w) * (1 + 1/(2*gam**2))
-			A0 = np.zeros(Es.shape)
-			dnu = np.ceil(nu) - nu
-			for n in range(self.terms):
-				A0 += np.exp(-alpha*(n+dnu))*wfunc(np.sqrt(beta*(n+dnu)))
-			A0 *= (4/np.sqrt(3*np.pi)) * (gam**2/(1+gam**2))
-			ans = A0*(E*np.sqrt(1+gam**2)/(2*F0))**1.5
-			ans *= (2*F0/E)**(2*nstar) # coulomb correction
-			ans *= self.Uion*C2*np.sqrt(6/np.pi) * np.exp(-2.0*F0*g/(3*E))
 			return self.rate_au_to_sim(ans)
 		else:
-			# If not averaging, caller wants an instantaneous rate, and we must pass to tunneling limit
-			return super().Rate(Es,averaging)
+			# If explicit, simply unwind cycle averaging.
+			# This not account for changes in sub-cycle structure with adiabaticity, but gives right average behavior.
+			return self.rate_au_to_sim(ans/CycleAveragingFactor(self.Uion,E))
 	def RateCL(self,cl,shp,rate,Es,averaging):
-		if averaging:
-			raise ValueError("PPT cycle average on GPU is not implemented yet.")
-		else:
-			return super().RateCL(cl,shp,rate,Es,averaging)
+		raise ValueError("PPT.RateCL not implemented, use PPT.FittedRateCL.")
+
+class StitchedPPT(PPT):
+	'''Switch to tunneling limit for keldysh parameter < 1.
+	This is used to deal with slow convergence of PPT expansion.'''
+	def Rate(self,Es,averaging):
+		gam_cutoff = 0.5
+		E = self.field_sim_to_au(np.abs(Es)) + self.cutoff_field
+		gam = np.sqrt(2.0*self.Uion)*self.w0/E
+		tunneling_selection = np.where(gam<gam_cutoff)
+		mpi_selection = np.where(gam>=gam_cutoff)
+		rate = np.zeros(E.shape)
+		# The following counts on PPT *not* implementing Coeff while PPT_Tunneling does.
+		# The fact that we have to do this may indicate a sub-optimal design.
+		rate[tunneling_selection] = Ionization.Rate(self,Es[tunneling_selection],averaging)
+		rate[mpi_selection] = super().Rate(Es[mpi_selection],averaging)
+		return rate
 
 class YI(Ionization):
 	"""Yudin-Ivanov phase dependent ionization rate.
 	Class cannot be used for single point evaluation.
 	The phase is automatically extraced from the carrier resolved field."""
-	def Rate(self,Es,averaging):
+	def Rate(self,Es,averaging,dt):
 		""":param numpy.array Es: Carrier resolved electric field in simulation units, any shape, axis 0 is time."""
-		amp,phase,w = self.ExtractEikonalForm(Es)
+		amp,phase,w = self.ExtractEikonalForm(Es,dt)
 		amp = self.field_sim_to_au(amp) + self.cutoff_field
 		w = self.rate_sim_to_au(w)
 		theta = (phase - 0.5*np.pi)%np.pi - 0.5*np.pi
@@ -236,19 +285,3 @@ class YI(Ionization):
 		pre = Anl * np.sqrt(3*kappa/gam**3)*(1+gam**2)**0.75 * A0 * self.Uion
 		pre *= (2*(2*self.Uion)**1.5 / amp)**(2*nstar-1)
 		return self.rate_au_to_sim(pre * np.exp(-amp**2 * Phi / w**3))
-
-class AdHocTwoColor(PPT):
-	'''For gam>1 take the sum of PPT for the two colors.
-	For gam<1 use ADK.  Assume the two colors are w=1 and w=2.'''
-	def Rate(self,Es,averaging):
-		w1 = 1.0
-		w2 = 2.0
-		gam1 = np.sqrt(2.0*self.Uion)*self.rate_sim_to_au(w1)/self.field_sim_to_au(np.max(Es))
-		if gam1<1.0:
-			return super().InstantaneousRate(Es)
-		else:
-			amp,phase,w = self.ExtractEikonalForm(Es,w00=w1,bandwidth=0.5)
-			ans = super().AverageRate(amp,w)
-			amp,phase,w = self.ExtractEikonalForm(Es,w00=w2,bandwidth=0.5)
-			ans += super().AverageRate(amp,w)
-			return ans

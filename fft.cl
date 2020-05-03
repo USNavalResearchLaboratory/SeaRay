@@ -436,38 +436,38 @@ __kernel void IFFT_axis2(__global tw_Float *data,tw_Int N2)
 	ComplexFFT(&data[offset],&data[offset+1],N2,s,-1.0,-1.0);
 }
 
-__kernel void RadialTransform(__global tw_Float *T,__global tw_Complex *vin,__global tw_Complex *vout)
+__kernel void RadialTransform(__global tw_Float *T,__global tw_Complex *vin,__global tw_Complex *vout,tw_Int Nr)
 {
 	// Each work item is computing one element of vout
-	// Equivalent of vout = numpy.einsum('ijm,fjm->fim',T,vin)
-	// Assumes ij is a square matrix
+	// T is a (Ni x Nr) matrix where Nr=radial pts and Ni=radial modes
+	// We are forming vout=T*vin
 	const int f = get_global_id(0);
 	const int i = get_global_id(1);
 	const int m = get_global_id(2);
 	const int Nf = get_global_size(0);
-	const int Ni = get_global_size(1);
+	const int Ni = get_global_size(1); // number of radial modes
 	const int Nm = get_global_size(2);
 	tw_Complex ans = (tw_Complex)(0.0,0.0);
 
-	for (int j=0;j<Ni;j++)
-		ans += T[i*Ni*Nm + j*Nm + m]*vin[f*Ni*Nm + j*Nm + m];
-	vout[f*Ni*Nm + i*Nm + m] = ans;
+	for (int j=0;j<Nr;j++)
+		ans += T[i*Nr*Nm + j*Nm + m]*vin[f*Nr*Nm + j*Nm + m];
+	vout[f*Nr*Nm + i*Nm + m] = ans;
 }
 
-__kernel void InverseRadialTransform(__global tw_Float *T,__global tw_Complex *vin,__global tw_Complex *vout)
+__kernel void InverseRadialTransform(__global tw_Float *T,__global tw_Complex *vin,__global tw_Complex *vout,tw_Int Nk)
 {
 	// Each work item is computing one element of vout
-	// Equivalent of vout = numpy.einsum('jim,fjm->fim',T,vin)
-	// Assumes ij is a square matrix
+	// T is a (Nk x Ni) matrix where Ni=radial pts and Nk=radial modes
+	// We are forming vout=transpose(T)*vin
 	const int f = get_global_id(0);
 	const int i = get_global_id(1);
 	const int m = get_global_id(2);
 	const int Nf = get_global_size(0);
-	const int Ni = get_global_size(1);
+	const int Ni = get_global_size(1); // number of radial points
 	const int Nm = get_global_size(2);
 	tw_Complex ans = (tw_Complex)(0.0,0.0);
 
-	for (int j=0;j<Ni;j++)
+	for (int j=0;j<Nk;j++)
 		ans += T[j*Ni*Nm + i*Nm + m]*vin[f*Ni*Nm + j*Nm + m];
 	vout[f*Ni*Nm + i*Nm + m] = ans;
 }

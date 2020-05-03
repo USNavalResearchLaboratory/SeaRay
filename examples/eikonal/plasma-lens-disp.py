@@ -9,7 +9,7 @@ import input_tools
 # Example input file for dispersive quartic plasma lens.
 # For the quartic lens, most of the caustic is after the paraxial focus.
 # Therefore the wave zone calculation is done in the forward direction.
-# If running on a powerful computer, increase w and z resolution of detector.
+# If running on a powerful computer, increase z resolution of detector.
 # IMPORTANT: frequency and azimuthal nodes in source and detector must match
 
 # Suggested plotter arguments for still image: det=3,4/0,0
@@ -65,7 +65,7 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (32,128,4,1)
+ray[-1]['number'] = (64,128,4,1)
 ray[-1]['bundle radius'] = (rb,rb,rb,rb)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
@@ -103,7 +103,7 @@ optics.append({})
 optics[-1]['object'] = surface.CylindricalProfiler('det')
 optics[-1]['frequency band'] = band
 optics[-1]['size'] = (.6/mm,.6/mm,2/mm)
-optics[-1]['wave grid'] = (32,1024,4,8)
+optics[-1]['wave grid'] = (64,1024,4,8)
 optics[-1]['distance to caustic'] = eik_to_caustic
 optics[-1]['origin'] = (0.,0.,f - eik_to_caustic)
 

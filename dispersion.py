@@ -121,15 +121,15 @@ class attenuator(Vacuum):
 		self.alpha = []
 		self.wstop1 = []
 		self.wstop2 = []
-	def add_opacity_region(self,alpha,wavelength1,wavelength2):
+	def add_opacity_region(self,attenuationLength,wavelength1,wavelength2):
 		'''Add a phenomenological opacity region.
 
-		:param double alpha: attenuation in nepers/meter
-		:param double wavelength1: lower wavelength in meters
-		:param double wavelength2: upper wavelength in meters'''
-		w1 = 2*np.pi*self.mks_length/wavelength2
-		w2 = 2*np.pi*self.mks_length/wavelength1
-		self.alpha.append(alpha*self.mks_length)
+		:param double attenuationLength: e-folding distance in simulation units
+		:param double wavelength1: lower wavelength in simulation units
+		:param double wavelength2: upper wavelength in simulation units'''
+		w1 = 2*np.pi/wavelength2
+		w2 = 2*np.pi/wavelength1
+		self.alpha.append(1/attenuationLength)
 		self.wstop1.append(w1)
 		self.wstop2.append(w2)
 	def chi(self,w):

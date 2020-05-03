@@ -23,6 +23,7 @@ class Material:
 		:param double chi3: the nonlinear susceptibility
 		:param double vg: the window velocity'''
 		w,x1,x2,ext = ctool.GetGridInfo()
+		self.q = queue
 		self.T = ctool.GetTransverseTool()
 		self.N = N
 		self.obj = obj
@@ -61,9 +62,9 @@ class Material:
 		kz[np.where(np.real(kz)==0.0)] = 1.0
 		# The Galilean pulse frame transformation; phase advance = kGalileo*dz
 		kGalileo = -self.w[...,np.newaxis,np.newaxis]/self.vg
-		self.ng_dev.set(dens)
-		self.kz_dev.set(kz)
-		self.kg_dev.set(kGalileo)
+		self.ng_dev.set(dens,queue=self.q)
+		self.kz_dev.set(kz,queue=self.q)
+		self.kg_dev.set(kGalileo,queue=self.q)
 
 class Source:
 	'''This class gathers references to host and device storage
@@ -114,7 +115,6 @@ def condition_field(cl,src):
 
 def update_current(cl,src,mat,ionizer):
 	'''Get current density from A[w,x,y]'''
-	ionizer.ResetParameters(timestep=src.dt)
 
 	# Setup some shorthand
 	s2 = src.transverse_shape
@@ -131,18 +131,21 @@ def update_current(cl,src,mat,ionizer):
 
 	# Form time domain fields
 	# N.b. time index runs backwards due to FFT conventions
-	src.Jw_dev[...] = src.Aw_dev # use Jw as temporary so Aw is not destroyed
+	src.Jw_dev[...] = src.Aw_dev.copy(queue=cl.q) # use Jw as temporary so Aw is not destroyed
 	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Atdev,np.int32(src.freqs))
 	cl.program('fft').DtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(-1.0))
 	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Etdev,np.int32(src.freqs))
 
 	# Accumulate the source terms
 	# First handle plasma formation
-	ionizer.RateCL(cl,st,nedev,Etdev,False)
-	ionizer.GetPlasmaDensityCL(cl,st,nedev,ngdev)
+	if ionizer==None:
+		src.ne_dev.fill(0.0,queue=cl.q)
+	else:
+		ionizer.FittedRateCL(cl,st,nedev,Etdev,False)
+		ionizer.GetPlasmaDensityCL(cl,st,nedev,ngdev,src.dt)
 
 	# Kerr effect
-	src.Jt_dev = src.Et_dev**2 # use Jt and Jw as temporaries in computing <E.E>
+	src.Jt_dev[...] = (src.Et_dev**2).copy(queue=cl.q) # use Jt and Jw as temporaries in computing <E.E>
 	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
 	cl.program('fft').Filter(cl.q,sw,None,Jwdev,src.NLFilt_dev.data)
 	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Jtdev,np.int32(src.freqs))
@@ -177,19 +180,19 @@ def load_source(z0,z,cl,T,src,mat,ionizer,return_dz=False,dzmin=1.0):
 	qwdev = src.qw_dev.data
 	Jwdev = src.Jw_dev.data
 	dzdev = src.dz_dev.data
-	src.Aw_dev[...] = src.qw_dev
+	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
 	cl.program('uppe').PropagateLinear(cl.q,sw,None,Awdev,kzdev,kgdev,np.double(z0-src.zi+z))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer)
 	T.kspacex(src.Jw_dev)
 	cl.program('uppe').CurrentToODERHS(cl.q,sw,None,Jwdev,kzdev,kgdev,np.double(z0-src.zi+z))
 	if return_dz:
-		if np.isnan(pyopencl.array.sum(src.qw_dev).get()):
-			print('!',end='',flush=True)
 		cl.program('paraxial').LoadModulus(cl.q,sw,None,qwdev,dzdev)
-		amin = src.rel_amin * pyopencl.array.max(src.dz_dev).get()
+		if np.isnan(pyopencl.array.sum(src.dz_dev,queue=cl.q).get(queue=cl.q)):
+			print('!',end='',flush=True)
+		amin = src.rel_amin * pyopencl.array.max(src.dz_dev,queue=cl.q).get(queue=cl.q)
 		cl.program('paraxial').LoadStepSize(cl.q,sw,None,qwdev,Jwdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
-		dz = pyopencl.array.min(src.dz_dev).get()
+		dz = pyopencl.array.min(src.dz_dev,queue=cl.q).get(queue=cl.q)
 		if dz<dzmin:
 			dz = dzmin
 		if z+dz>src.L:
@@ -214,11 +217,11 @@ def finish(cl,T,src,mat,ionizer,zf):
 	Awdev = src.Aw_dev.data
 	kzdev = mat.kz_dev.data
 	kgdev = mat.kg_dev.data
-	src.Aw_dev[...] = src.qw_dev
+	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
 	cl.program('uppe').PropagateLinear(cl.q,sw,None,Awdev,kzdev,kgdev,np.double(zf-src.zi))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer)
-	return src.Aw_dev.get(),src.Jw_dev.get(),np.fft.rfft(src.ne_dev.get(),axis=0)
+	return src.Aw_dev.get(queue=cl.q),src.Jw_dev.get(queue=cl.q),np.fft.rfft(src.ne_dev.get(queue=cl.q),axis=0)
 
 def propagator(cl,ctool,vg,a,mat,ionizer,NL_band,subcycles,zi,zf,dzmin):
 	'''Advance a[w,x,y] to a new z plane using UPPE method.
@@ -264,8 +267,8 @@ def propagator(cl,ctool,vg,a,mat,ionizer,NL_band,subcycles,zi,zf,dzmin):
 		z = 0.0 # local coordinate within this subcycle
 		mat.UpdateMaterial(z0+0.5*L)
 		while z<L and (z-L)**2 > (L/1e6)**2:
-			src.qi_dev[...] = src.qw_dev
-			src.qf_dev[...] = src.qw_dev
+			src.qi_dev[...] = src.qw_dev.copy(queue=cl.q)
+			src.qf_dev[...] = src.qw_dev.copy(queue=cl.q)
 
 			dz = load_source(z0,z,cl,T,src,mat,ionizer,return_dz=True,dzmin=dzmin) # load k1
 			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
@@ -330,7 +333,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	if vol_dict['wave coordinates']=='cartesian':
 		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],cl)
 	else:
-		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl)
+		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl,vol_dict['radial modes'])
 
 	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
@@ -343,7 +346,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	try:
 		ionizer = vol_dict['ionizer']
 	except KeyError:
-		ionizer = ionization.Ionization(1.0,1.0,1.0,1.0)
+		ionizer = None
 	mat = Material(cl.q,field_tool,N,vol_dict['wave coordinates'],vol_dict['object'],chi,chi3,window_speed)
 
 	# Setup the wave propagation domain

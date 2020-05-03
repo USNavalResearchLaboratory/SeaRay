@@ -110,7 +110,7 @@ optics.append({})
 optics[-1]['object'] = surface.CylindricalProfiler('det')
 optics[-1]['integrator'] = 'transform'
 optics[-1]['size'] = (2/mm,2/mm,30e-3/mm)
-optics[-1]['wave grid'] = (4096,4,1)
+optics[-1]['wave grid'] = (1024,4,1)
 optics[-1]['distance to caustic'] = eik_to_caustic
 optics[-1]['origin'] = (0.,0.,f - eik_to_caustic)
 

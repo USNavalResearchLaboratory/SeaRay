@@ -25,6 +25,7 @@ class Material:
 		:param double ng: the reference group index used in describing the envelope
 		:param double n0: the reference phase index used in describing the envelope'''
 		w,x1,x2,ext = ctool.GetGridInfo()
+		self.q = queue
 		self.T = ctool.GetTransverseTool()
 		self.N = N
 		self.obj = obj
@@ -69,9 +70,9 @@ class Material:
 		kappa2 = fw[...,np.newaxis,np.newaxis] - kperp2[np.newaxis,...]
 		k0 = (w0*dn+w*ng)[...,np.newaxis,np.newaxis]
 		kz = 0.5*kappa2/k0
-		self.ng_dev.set(dens)
-		self.kz_dev.set(kz)
-		self.k0_dev.set(k0)
+		self.ng_dev.set(dens,queue=self.q)
+		self.kz_dev.set(kz,queue=self.q)
+		self.k0_dev.set(k0,queue=self.q)
 
 class Source:
 	'''This class gathers references to host and device storage
@@ -92,7 +93,7 @@ class Source:
 		self.transverse_shape = (a.shape[1],a.shape[2])
 		self.freq_domain_shape = (self.freqs,) + self.transverse_shape
 		self.time_domain_shape = (self.steps,) + self.transverse_shape
-		self.dphi = 1.0
+		self.dphi = 0.4
 		self.rel_amin = 1e-2
 		# Device arrays
 		self.qw_dev = pyopencl.array.to_device(queue,a)
@@ -107,7 +108,6 @@ class Source:
 
 def update_current(cl,src,mat,ionizer):
 	'''Get current density from A[w,x,y]'''
-	ionizer.ResetParameters(timestep=src.dt)
 
 	# Setup some shorthand
 	shp2 = src.transverse_shape
@@ -122,16 +122,19 @@ def update_current(cl,src,mat,ionizer):
 
 	# Form time domain potential and field
 	# N.b. time index runs backwards due to FFT conventions
-	src.Et_dev[...] = src.Aw_dev
-	src.At_dev[...] = src.Aw_dev
+	src.Et_dev[...] = src.Aw_dev.copy(queue=cl.q)
+	src.At_dev[...] = src.Aw_dev.copy(queue=cl.q)
 	cl.program('fft').DtSpectral(cl.q,shp3,None,Etdev,wdev,np.double(-1.0))
 	cl.program('fft').IFFT(cl.q,shp2,None,Etdev,np.int32(src.freqs))
 	cl.program('fft').IFFT(cl.q,shp2,None,Atdev,np.int32(src.freqs))
 
 	# Accumulate the source terms
 	# First handle plasma formation
-	ionizer.RateCL(cl,shp3,nedev,Etdev,True)
-	ionizer.GetPlasmaDensityCL(cl,shp3,nedev,ngdev)
+	if ionizer==None:
+		src.ne_dev.fill(0.0,queue=cl.q)
+	else:
+		ionizer.FittedRateCL(cl,shp3,nedev,Etdev,True)
+		ionizer.GetPlasmaDensityCL(cl,shp3,nedev,ngdev,src.dt)
 
 	# Current due to nonuniform and Kerr susceptibility
 	cl.program('paraxial').SetKerrPolarization(cl.q,shp3,None,Jdev,Etdev,np.double(mat.chi3))
@@ -164,19 +167,19 @@ def load_source(z0,z,cl,T,src,mat,ionizer,return_dz=False):
 	kzdev = mat.kz_dev.data
 	k0dev = mat.k0_dev.data
 	dzdev = src.ne_dev.data # re-use ne for the step size estimate
-	src.Aw_dev[...] = src.qw_dev
+	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
 	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(z0-src.zi+z))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer)
 	T.kspacex(src.J_dev)
 	cl.program('paraxial').CurrentToODERHS(cl.q,shp3,None,Jdev,kzdev,k0dev,np.double(z0-src.zi+z))
 	if return_dz:
-		if np.isnan(pyopencl.array.sum(src.qw_dev).get()):
-			print('!',end='',flush=True)
 		cl.program('paraxial').LoadModulus(cl.q,shp3,None,qwdev,dzdev)
-		amin = src.rel_amin * pyopencl.array.max(src.ne_dev).get()
+		if np.isnan(pyopencl.array.sum(src.ne_dev,queue=cl.q).get(queue=cl.q)):
+			print('!',end='',flush=True)
+		amin = src.rel_amin * pyopencl.array.max(src.ne_dev,queue=cl.q).get(queue=cl.q)
 		cl.program('paraxial').LoadStepSize(cl.q,shp3,None,qwdev,Jdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
-		dz = pyopencl.array.min(src.ne_dev).get()
+		dz = pyopencl.array.min(src.ne_dev,queue=cl.q).get(queue=cl.q)
 		if z+dz>src.L:
 			dz = src.L-z
 		else:
@@ -197,11 +200,11 @@ def finish(cl,T,src,mat,ionizer,zf):
 	shp3 = src.Aw_dev.shape
 	Awdev = src.Aw_dev.data
 	kzdev = mat.kz_dev.data
-	src.Aw_dev[...] = src.qw_dev
+	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
 	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(zf-src.zi))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer)
-	return src.Aw_dev.get(),src.J_dev.get(),np.fft.fft(src.ne_dev.get(),axis=0)
+	return src.Aw_dev.get(queue=cl.q),src.J_dev.get(queue=cl.q),np.fft.fft(src.ne_dev.get(queue=cl.q),axis=0)
 
 def propagator(cl,ctool,a,mat,ionizer,subcycles,zi,zf):
 	'''Advance a[w,x,y] to a new z plane using paraxial wave equation.
@@ -243,8 +246,8 @@ def propagator(cl,ctool,a,mat,ionizer,subcycles,zi,zf):
 		z = 0.0 # local coordinate within this subcycle
 		mat.UpdateMaterial(z0+0.5*L)
 		while z<L and (z-L)**2 > (L/1e6)**2:
-			src.qi_dev[...] = src.qw_dev
-			src.qf_dev[...] = src.qw_dev
+			src.qi_dev[...] = src.qw_dev.copy(queue=cl.q)
+			src.qf_dev[...] = src.qw_dev.copy(queue=cl.q)
 
 			dz = load_source(z0,z,cl,T,src,mat,ionizer,return_dz=True) # load k1
 			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
@@ -310,7 +313,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	if vol_dict['wave coordinates']=='cartesian':
 		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],cl)
 	else:
-		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl)
+		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl,vol_dict['radial modes'])
 
 	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
@@ -326,7 +329,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	try:
 		ionizer = vol_dict['ionizer']
 	except KeyError:
-		ionizer = ionization.Ionization(1.0,1.0,1.0,1.0)
+		ionizer = None
 	mat = Material(cl.q,field_tool,N,vol_dict['wave coordinates'],vol_dict['object'],chi,chi3,w0,ng,n0)
 
 	# Setup the wave propagation domain

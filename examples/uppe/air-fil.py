@@ -7,34 +7,33 @@ import volume
 import input_tools
 
 # Simple USPL air plasma using UPPE module.
+# Generally requires thousands of steps, a powerful GPU helps.
 
 # Control Parameters
 
 lambda_mks = 0.8e-6
-vac_waist_radius_mks = 100e-6
+vac_waist_radius_mks = 150e-6
 pulse_energy_mks = 1e-3
-pulse_duration_mks = 35e-15
-propagation_range_mks = (-0.1,0.1)
-sim_box_radius_mks = 1.5e-3
+pulse_duration_mks = 50e-15
+propagation_range_mks = (-0.15,0.15)
+sim_box_radius_mks = 3e-3
 n2_air_mks = 5e-23
 
 # Control Objects
 
 mks_length = lambda_mks  / (2*np.pi)
+cm = 100*mks_length
+um = 1e6*mks_length
 
-# Select one dispersion model for air:
-air = dispersion.Vacuum()
-# air = dispersion.SimpleAir(mks_length)
-# air = dispersion.DryAir(mks_length)
-# air = dispersion.HumidAir(mks_length,0.4,1e-3)
+# air = dispersion.Vacuum()
+air = dispersion.SimpleAir(mks_length)
+air.add_opacity_region(0.1/cm,0.01/um,0.3/um)
 
-# Ionization model (at present only ADK or PPT tunneling works on GPU):
+# Ionization model
 Uion_au = 12.1 / (C.alpha**2*C.m_e*C.c**2/C.e)
 ngas_mks = 5.4e18 * 1e6
 Zeff = 0.53
-ionizer = ionization.PPT(Uion_au,Zeff,ngas_mks,mks_length)
-# ionizer = ionization.PPT(Uion_atomic,Zeff,ngas_mks,mks_length,terms=4)
-# ionizer = ionization.YI(Uion_atomic,Zeff,ngas_mks,mks_length,terms=4)
+ionizer = ionization.StitchedPPT(lambda_mks,Uion_au,Zeff,ngas_mks,mks_length,80)
 
 # Derived Parameters
 
@@ -73,7 +72,7 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
 ray.append({})
-ray[-1]['number'] = (1025,128,2,1)
+ray[-1]['number'] = (2049,128,2,1)
 ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
@@ -95,7 +94,8 @@ optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (1025,256,1,7)
+optics[-1]['wave grid'] = (2049,256,1,15)
+optics[-1]['radial modes'] = 128
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

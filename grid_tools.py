@@ -243,7 +243,11 @@ class FourierTransformTool(TransverseModeTool):
 
 class HankelTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to Bessel beam basis.'''
-	def __init__(self,Nr,dr,mmax,cl):
+	def __init__(self,Nr,dr,mmax,cl,Nk):
+		'''Nr is the number of radial cells, Nk<=Nr is the number of radial modes to keep'''
+		if Nk==None:
+			Nk = Nr
+		self.Nk = Nk
 		r_list = cell_centers(0.0,Nr*dr,Nr)
 		A1 = 2*np.pi*(r_list-0.5*dr)
 		A2 = 2*np.pi*(r_list+0.5*dr)
@@ -253,11 +257,11 @@ class HankelTransformTool(TransverseModeTool):
 		# We could save storage by only keeping eigenvectors for positive modes (negative modes are the same).
 		# We trade wasting storage for simpler kernel functions.
 		if mmax==0:
-			self.vals = np.zeros((Nr,1))
-			Hi = np.zeros((Nr,Nr,1))
+			self.vals = np.zeros((Nr,1)) # pad out to full resolution
+			Hi = np.zeros((Nr,Nk,1))
 		else:
-			self.vals = np.zeros((Nr,2*mmax))
-			Hi = np.zeros((Nr,Nr,2*mmax))
+			self.vals = np.zeros((Nr,2*mmax)) # pad out to full resolution
+			Hi = np.zeros((Nr,Nk,2*mmax))
 		for m in range(0,mmax+1):
 			T1 = A1/(dr*V)
 			T2 = -(A1 + A2)/(dr*V) - (m/r_list)**2
@@ -273,11 +277,11 @@ class HankelTransformTool(TransverseModeTool):
 			a_band_upper = np.zeros((2,Nr))
 			a_band_upper[0,:] = T1 # T3->T1 thanks to scipy packing and symmetry
 			a_band_upper[1,:] = T2
-			self.vals[:,m],Hi[:,:,m] = scipy.linalg.eig_banded(a_band_upper)
+			self.vals[:Nk,m],Hi[:,:,m] = scipy.linalg.eig_banded(a_band_upper,select='i',select_range=(Nr-Nk,Nr-1))
 		# Set eigenvalues of negative modes (they are the same as corresponding positive modes)
 		# Modes are packed in usual FFT fashion, so negative indices work as expected.
 		for m in range(1,mmax):
-			self.vals[:,-m] = self.vals[:,m]
+			self.vals[:Nk,-m] = self.vals[:Nk,m]
 			Hi[:,:,-m] = Hi[:,:,m]
 		self.H = np.ascontiguousarray(Hi.swapaxes(0,1))
 		self.cl = cl
@@ -296,14 +300,16 @@ class HankelTransformTool(TransverseModeTool):
 	def kspacex(self,a):
 		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
-		self.scratch_dev[...] = a
-		self.cl.program('fft').RadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
+		self.scratch_dev[...] = a.copy(queue=self.cl.q)
+		a.fill(0.0,queue=self.cl.q)
+		shp = ( a.shape[0] , self.Nk , a.shape[2] )
+		self.cl.program('fft').RadialTransform(self.cl.q,shp,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(a.shape[1]))
 		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.q.finish()
 	def rspacex(self,a):
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
-		self.scratch_dev[...] = a
-		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data)
+		self.scratch_dev[...] = a.copy(queue=self.cl.q)
+		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(self.Nk))
 		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.q.finish()
