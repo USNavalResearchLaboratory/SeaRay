@@ -114,5 +114,5 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (4,8,2,1)
+diagnostics['orbit rays'] = (32,8,2,1)
 diagnostics['base filename'] = 'out/test'

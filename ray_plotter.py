@@ -441,11 +441,15 @@ class Orbits:
 						plt.xlabel(lab_str[i],size=18)
 						plt.ylabel(lab_str[j],size=18)
 						plt.tight_layout()
+		wmin = np.min(self.orbits[...,4])
+		wmax = np.max(self.orbits[...,4])
+		a2 = self.orbits[...,9]**2 + self.orbits[...,10]**2 + self.orbits[...,11]**2
+		a2max = np.max(a2[0,:])
+		if wmin!=wmax:
+			get_color = lambda i : np.concatenate((mpl.colors.hsv_to_rgb([0.8*(self.orbits[0,i,4]-wmin)/(wmax-wmin),1.0,1.0]),[0.1*(a2[0,i]/a2max)**0.0001]))
+		else:
+			get_color = lambda i : [0.0,0.0,0.0,0.1*(a2[0,i]/a2max)**0.0001]			
 		if 'o3d' in sys.argv:
-			a2 = self.orbits[...,9]**2 + self.orbits[...,10]**2 + self.orbits[...,11]**2
-			a2max = np.max(a2[0,:])
-			wmin = np.min(self.orbits[...,4])
-			wmax = np.max(self.orbits[...,4])
 			characteristic_size = normalization[1]*(np.max(self.orbits[...,1:4]) - np.min(self.orbits[...,1:4]))
 			if maya_loaded:
 				maya_plot_count += 1
@@ -481,9 +485,7 @@ class Orbits:
 					x = normalization[1]*self.orbits[:,j,1]
 					y = normalization[2]*self.orbits[:,j,2]
 					z = normalization[3]*self.orbits[:,j,3]
-					line_color = mpl.colors.hsv_to_rgb([0.8*(self.orbits[0,j,4]-wmin)/(wmax-wmin),1.0,1.0])
-					line_color = np.concatenate((line_color,[a2[0,j]/a2max]))
-					ax.plot(x,y,z,color=line_color)
+					ax.plot(x,y,z,color=get_color(j))
 				surf = []
 				cmap = mpl.cm.ScalarMappable(cmap=plotter_defaults['level colors'])
 				needsBar = False
@@ -525,7 +527,7 @@ class Orbits:
 						plt.xlim(lims[0]-center[0],lims[1]-center[0])
 						plt.ylim(lims[2]-center[1],lims[3]-center[1])
 					for k in range(self.orbits.shape[1]):
-						plt.plot(normalization[i]*self.orbits[:,k,i]-center[0],normalization[j]*self.orbits[:,k,j]-center[1],'k')
+						plt.plot(normalization[i]*self.orbits[:,k,i]-center[0],normalization[j]*self.orbits[:,k,j]-center[1],color=get_color(k))
 					plt.xlabel(lab_str[i],size=18)
 					plt.ylabel(lab_str[j],size=18)
 					plt.tight_layout()
