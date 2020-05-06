@@ -69,7 +69,7 @@ ray[-1]['bundle radius'] = (rb,rb,rb,rb)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used

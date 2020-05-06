@@ -246,7 +246,7 @@ class BesselBeamTool(CausticTool):
 		# Rays keep their original frequency and transverse positions.
 		# Frequency shifts are still accounted for because amplitude may change.
 		rho,phi = self.GetCylCoords(xp)
-		impact = np.where(rho[:,0]<xn[-1])[0]
+		impact = np.where(np.logical_and(rho[:,0]<xn[-1],xp[:,0,4]<wn[-1]))[0]
 		w = xp[impact,:,4]
 		x = rho[impact,:]
 		y = phi[impact,:]

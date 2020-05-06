@@ -20,11 +20,12 @@ import input_tools
 # Preprocessing calculations
 
 mks_length = 0.8e-6 / (2*np.pi)
+cm = 100*mks_length
 mess = 'Processing input file...\n'
 helper = input_tools.InputHelper(mks_length)
 
 w00 = 1.0
-f = .1/mks_length
+f = 10/cm
 f_num = 50.0
 r00 = f/(2*f_num) # spot size of radiation
 t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',8)
@@ -49,7 +50,7 @@ ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0)

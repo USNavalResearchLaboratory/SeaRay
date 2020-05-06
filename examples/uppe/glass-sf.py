@@ -12,10 +12,10 @@ import input_tools
 mks_length = 0.8e-6 / (2*np.pi)
 um = 1e6*mks_length
 mess = 'Processing input file...\n'
+helper = input_tools.InputHelper(mks_length)
+dnum = helper.dnum
 
 # Preprocessing calculations
-
-helper = input_tools.InputHelper(mks_length)
 
 glass = dispersion.BK7(mks_length)
 # Suppress out of band frequencies
@@ -23,14 +23,14 @@ glass.add_opacity_region(500/um,0.1/um,0.6/um)
 glass.add_opacity_region(500/um,1.2/um,4/um)
 w00 = 1.0
 r00 = 100/um
-a00 = helper.Wcm2_to_a0(6e12,0.8e-6)
-chi3 = helper.mks_n2_to_chi3(1.5,2e-20)
-mess = mess + '  a0 = ' + str(a00) + '\n'
-mess = mess + '  chi3 = ' + str(chi3) + '\n'
+t00 = dnum('15 fs')
+U00 = dnum('0.015 mJ')
+a00 = helper.a0(U00,t00,r00,w00)
+chi3 = helper.chi3(1.5,'2e-20 m2/W')
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
 band = (0.0,3.0)
-t00,pulse_band = helper.TransformLimitedBandwidth(w00,'15 fs',1.0)
+t00,pulse_band = helper.TransformLimitedBandwidth(w00,t00,1.0)
 
 # Work out the dispersion length
 vg1 = glass.GroupVelocityMagnitude(pulse_band[0])
@@ -60,7 +60,7 @@ ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,4*r00,0.0,2*np.pi,-2*t00,2*t00)
+ray[-1]['box'] = band + (0.0,4*r00) + (0.0,2*np.pi) + (0.0,0.0)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -90,7 +90,7 @@ optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
 optics[-1]['nonlinear band'] = (0.0,0.5)
 optics[-1]['subcycles'] = 4
-optics[-1]['minimum step'] = .3e-6/mks_length
+optics[-1]['minimum step'] = .3/um
 optics[-1]['dispersion inside'] = glass
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = chi3

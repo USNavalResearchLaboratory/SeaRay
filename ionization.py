@@ -48,20 +48,20 @@ class AtomicUnits:
 		return field*self.ea/self.es
 
 class Ionization(AtomicUnits):
-	def __init__(self,wavelength,Uion,Z,mks_density,mks_length,terms=1,generate_fit=True):
+	def __init__(self,mks_length,w0,Uion,Z,density,terms=1,generate_fit=True):
 		'''Create an ionization object.  Base class should be treated as abstract.
 
-		:param double wavelength: radiation wavelength in mks units
-		:param double Uion: ionization potential in atomic units
-		:param double Z: residual charge in atomic units
-		:param double mks_density: volume object's reference density in mks units
 		:param double mks_length: normalizing length in mks units
-		:param numpy.array dt: time step in simulation units
+		:param double w0: radiation angular frequency
+		:param double Uion: ionization potential
+		:param double Z: residual charge in atomic units
+		:param double density: volume object's reference density
+		:param numpy.array dt: time step
 		:param int terms: terms to keep in PPT expansion'''
 		super().__init__(mks_length)
-		self.w0 = self.rate_sim_to_au(2*np.pi*mks_length/wavelength)
-		self.ref_dens = mks_density
-		self.Uion = Uion
+		self.w0 = self.rate_sim_to_au(w0)
+		self.ref_dens = density # proper dimensional conversion would make this relative to self.ncrit
+		self.Uion = Uion/C.alpha**2
 		self.Z = Z
 		self.terms = terms
 		self.cutoff_field = 1e-3
@@ -74,7 +74,7 @@ class Ionization(AtomicUnits):
 		:param numpy.array rate: ionization rate in simulation units with shape (Nt,Nx,Ny).
 		:returns: electron density in simulation units.'''
 		ne = scipy.integrate.cumtrapz(rate[::-1],dx=dt,axis=0,initial=0.0)[::-1]
-		ne = ngas[np.newaxis,...]*(1.0 - np.exp(-ne))*self.ref_dens/self.ncrit
+		ne = ngas[np.newaxis,...]*(1.0 - np.exp(-ne))*self.ref_dens
 		return ne
 	def GetPlasmaDensityCL(self,cl,shp,ne,ngas,dt):
 		'''Compute the plasma density due to ionization on the device.
@@ -84,7 +84,7 @@ class Ionization(AtomicUnits):
 		:param cl_data ngas: the data member of the pyopencl array for ngas, which has the gas density with shape (Nx,Ny)
 		:returns: no return value, but plasma density is loaded into ne on output'''
 		cl.program('ionization').ComputePlasmaDensity(cl.q,shp[1:3],None,
-			ne,ngas,np.double(self.ref_dens/self.ncrit),np.double(dt),np.int32(shp[0]))
+			ne,ngas,np.double(self.ref_dens),np.double(dt),np.int32(shp[0]))
 	def ExtractEikonalForm(self,E,dt,w00=0.0,bandwidth=1.0):
 		"""Extract amplitude, phase, and center frequency from a carrier resolved field E.
 		The assumed form is E = Re(amp*exp(i*phase)).
@@ -106,7 +106,6 @@ class Ionization(AtomicUnits):
 				indices = np.einsum('i,jk',np.arange(0,Nt),np.ones(Ew.shape[1:]))
 			carrier_idx = np.int(np.average(indices,weights=np.abs(Ew)**2))
 			w0 = carrier_idx*dw
-			print(w0)
 		else:
 			# Carrier frequency is set by caller
 			w0 = w00

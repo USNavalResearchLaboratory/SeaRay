@@ -9,9 +9,11 @@ class InputHelper:
 		self.E1 = C.m_e*C.c*self.w1/C.e
 		self.n1 = C.epsilon_0*C.m_e*self.w1**2/C.e**2
 		self.P1 = self.n1*C.e*mks_length
+		self.u1 = C.m_e*C.c**2
+		self.N1 = self.n1*self.x1**3
 		self.curr_pos = [0.0,0.0,0.0]
 
-	def ProcessArg(self,arg):
+	def dnum(self,arg):
 		if type(arg)==str:
 			val = np.double(arg.split(' ')[0])
 			units = arg.split(' ')[1]
@@ -36,8 +38,16 @@ class InputHelper:
 				mult = 1e-2/self.x1
 			if units=='m':
 				mult = 1/self.x1
+			if units=='m2/W':
+				mult = self.N1*self.u1/self.x1**2/self.t1
 			if units=='m2/V2':
 				mult = C.epsilon_0 * self.E1**3 / self.P1
+			if units=='mJ':
+				mult = 1e-3/self.u1
+			if units=='eV':
+				mult = C.e/self.u1
+			if units=='cm-3':
+				mult = 1e6/self.n1
 			if mult==0.0:
 				raise ValueError('Unrecognized units in input.')
 			val *= mult
@@ -47,7 +57,7 @@ class InputHelper:
 
 	def ParaxialFocusMessage(self,w00,focused_a0,f_lens,f_num):
 		'''return paraxial theory focusing parameters in message string'''
-		f_lens = self.ProcessArg(f_lens)
+		f_lens = self.dnum(f_lens)
 		paraxial_e_size = 4.0*f_num/w00
 		paraxial_zR = 0.5*w00*paraxial_e_size**2
 		a00 = 8*f_num**2*focused_a0 / (w00*f_lens)
@@ -60,7 +70,7 @@ class InputHelper:
 
 	def ParaxialParameters(self,w00,focused_a0,f_lens,f_num):
 		'''Get paraxial focusing parameters'''
-		f_lens = self.ProcessArg(f_lens)
+		f_lens = self.dnum(f_lens)
 		paraxial_e_size = 4.0*f_num/w00
 		paraxial_zR = 0.5*w00*paraxial_e_size**2
 		a00 = 8*f_num**2*focused_a0 / (w00*f_lens)
@@ -68,30 +78,41 @@ class InputHelper:
 
 	def InitialVectorPotential(self,w00,focused_a0,f_lens,f_num):
 		'''return initial vector potential given focused vector potential'''
-		f_lens = self.ProcessArg(f_lens)
+		f_lens = self.dnum(f_lens)
 		return 8*f_num**2*focused_a0 / (w00*f_lens)
 
 	def TransformLimitedBandwidth(self,w00,t00,sigmas):
-		t00 = self.ProcessArg(t00)
+		t00 = self.dnum(t00)
 		sigma_w = 2/t00
 		band = (w00 - sigmas*sigma_w , w00 + sigmas*sigma_w)
 		if band[0]<0.0:
 			raise ValueError('Bandwidth calculation led to negative frequency.')
 		return t00,band
 
+	def a0(self,energy,t0,r0,w0):
+		energy = self.dnum(energy)
+		t0 = self.dnum(t0)
+		r0 = self.dnum(r0)
+		w0 = self.dnum(w0)
+		P0 = energy/t0
+		I0 = 2*P0/(np.pi*r0**2)/(self.n1*self.x1**3)
+		return np.sqrt(2*I0)/w0
+
 	def Wcm2_to_a0(self,intensity,lambda_mks):
+		print('WARNING: Wcm2_to_a0 is deprecated.')
 		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
 		Epeak = np.sqrt(intensity*1e4*2*eta0)
 		Enormalized = Epeak/self.E1
 		return Enormalized * lambda_mks/(2*np.pi*self.x1)
 
-	def chi3(self,chi3):
-		return self.ProcessArg(chi3)
+	def chi3(self,n0,n2):
+		return (2.0/3.0)*n0*self.dnum(n2)
 
 	def mks_n2_to_chi3(self,n0,n2_mks):
+		print('WARNING: mks_n2_to_chi3 is deprecated.')
 		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
 		chi3_mks = (2.0/3.0)*n0*n2_mks/eta0
-		return self.ProcessArg(str(chi3_mks)+' m2/V2')
+		return self.dnum(str(chi3_mks)+' m2/V2')
 
 	def rot_zx(self,rad):
 		'''Returns Euler angles producing a counter-clockwise rotation in zx plane'''

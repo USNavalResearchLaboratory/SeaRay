@@ -131,6 +131,7 @@ def ConfigureRayOrientation(xp,eikonal,vg,wave_dict_list):
 	F4 = np.array(wave_dict_list[0]['focus'])
 	orientation = v3.basis()
 	orientation.Create(A4[1:],K4[1:])
+	xp[...,3] -= F4[0]
 	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
 	xp[:,:,1:4] += F4[1:4]
 
@@ -140,35 +141,30 @@ def SphericalWave(xp,eikonal,vg,wave):
 	R4 = np.array(wave['r0'])
 	F4 = np.array(wave['focus'])
 	SG = np.array(wave['supergaussian exponent'])
-	# tf = time to reach focus, positive is incoming ray
-	# Transformation of ray box:
-	# Interpret z-tf as the new radial position
-	# Carry over angles from the plane directly
-	# This orients satellites in the new system
-	# N.b. this does alter the spot size by cos(theta0)
-	tf = F4[0]
-	xp[...,3] -= tf # put focus at origin
-	ro = np.sqrt(xp[...,1]**2 + xp[...,2]**2 + xp[...,3]**2)
-	r = xp[...,3]
+	# Take ray surface to be referenced to the origin, and +z propagation direction.
+	# The center of the sphere is at z = F4[0] = time to reach focus (can be negative)
+	# We do not want to change the positions on the ray surface, only amplitude and wavevector.
+	xperp = np.sqrt(xp[...,1]**2 + xp[...,2]**2)
+	R = np.sqrt(F4[0]**2 + xperp**2)
 	phi = np.arctan2(xp[...,2],xp[...,1])
-	sgn = np.abs(r)/r # positive is outgoing ray
-	theta0 = np.pi/2 - sgn*np.pi/2
-	theta = np.arccos(r/ro)
-	dtheta = np.arcsin(R4[1]/tf)
-	xp[...,1] = np.abs(r) * np.sin(theta) * np.cos(phi)
-	xp[...,2] = np.abs(r) * np.sin(theta) * np.sin(phi)
-	xp[...,3] = np.abs(r) * np.cos(theta)
+	theta = np.arccos(-F4[0]/R) # 0<theta<pi, theta=0 is a point at the +z tip of the sphere
+	dtheta = np.arcsin(R4[1]/F4[0]) # constant
 
-	xp[:,:,5] = sgn * xp[:,:,4] * np.sin(theta) * np.cos(phi)
-	xp[:,:,6] = sgn * xp[:,:,4] * np.sin(theta) * np.sin(phi)
-	xp[:,:,7] = sgn * xp[:,:,4] * np.cos(theta)
+	# Start by assuming outward propagating wave for either sign of F4[0]
+	xp[:,:,5] = xp[:,:,4] * np.sin(theta) * np.cos(phi)
+	xp[:,:,6] = xp[:,:,4] * np.sin(theta) * np.sin(phi)
+	xp[:,:,7] = xp[:,:,4] * np.cos(theta)
+	# If F4[0] is positive we want to have an incoming wave
+	xp[...,5:8] *= -np.sign(F4[0])
 	vg[...] = xp[...,4:8]/xp[...,4:5]
-	eikonal[:,0] = xp[:,0,4] * xp[:,0,0]
-
+	eikonal[:,0] = -np.sign(F4[0])*(R[:,0]-F4[0])*xp[:,0,4]
+	theta0 = np.pi*(1 + np.sign(F4[0]))/2
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
-	amag = amag * (-tf/r) * np.exp(-(theta-theta0)**SG/dtheta**SG)
-	az = sgn * amag * np.sin(theta) * np.cos(phi)
-	return np.sqrt(amag[:,0]**2 - az[:,0]**2),az[:,0]
+	amag *= (F4[0]/R[:,0]) * np.exp(-(theta[:,0]-theta0)**SG/dtheta**SG)
+	# Get vector from eikonal gauge condition dot(k,a) = 0
+	ax = amag / np.sqrt(1+xp[:,0,5]**2/xp[:,0,7]**2)
+	az = -ax*xp[:,0,5]/xp[:,0,7]
+	return ax,az
 
 def ParaxialWave(xp,eikonal,vg,wave):
 	A4 = np.array(wave['a0'])
@@ -183,8 +179,8 @@ def ParaxialWave(xp,eikonal,vg,wave):
 	# Set up in wave basis where propagation is +z and polarization is +x
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
 	xp[:,:,7] = xp[:,:,4]
-	eikonal[:,0] = xp[:,0,7]*xp[:,0,3]
 	vg[...] = xp[...,4:8]/xp[...,4:5]
+	eikonal[:,0] = np.einsum('...i,...i',xp[:,0,1:4],xp[:,0,5:8])
 	ax = amag*np.ones(eikonal.shape[:-1])
 	if SG!=2:
 		r2 = xp[:,0,1]**2 + xp[:,0,2]**2
@@ -195,6 +191,8 @@ def ParaxialWave(xp,eikonal,vg,wave):
 
 def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 	'''Load the rays in the z=0 plane in a regular pattern.'''
+	if N[3]>1 or box[7]-box[6]!=0.0:
+		raise ValueError('Ray box is expected to collapse to z=0 in this implementation.')
 	num_bundles = N[0]*N[1]*N[2]*N[3]
 	o0 = np.ones(N[0])
 	o1 = np.ones(N[1])
@@ -207,7 +205,7 @@ def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 		grid2 = grid_tools.cell_centers(box[4],box[5],N[2])
 	else:
 		grid2 = grid_tools.cyclic_nodes(box[4],box[5],N[2])
-	grid3 = grid_tools.cell_centers(box[6],box[7],N[3])
+	grid3 = np.array([0.0])
 
 	if box[0]==0.0:
 		grid0 = grid0[1:]
