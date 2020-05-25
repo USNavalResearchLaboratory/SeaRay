@@ -90,10 +90,12 @@ __kernel void CurrentToODERHS(__global tw_Complex * J,__global tw_Complex * kz,_
 	J[idx] = cmul(i2,cmul(cexp(-iKz),j))/Kr;
 }
 
-__kernel void AddPlasmaCurrent(__global tw_Float * J,__global tw_Float * A,__global tw_Float * ne)
+
+__kernel void VectorPotentialToElectricField(__global tw_Complex *A,__global tw_Complex *kz)
 {
-	// TEMPORAL POINT PROTOCOL
-	// J,A,ne = [t][x][y]
+	// SPECTRAL-WK POINT PROTOCOL, cylindrical
+	// A = [w][kr][m]
+	// For a special set of conditions E = i*w*A - grad(phi) = (i*w-0.5*i*kperp2/w)A ~ i*kz*A
 	const int i0 = get_global_id(0);
 	const int j0 = get_global_id(1);
 	const int k0 = get_global_id(2);
@@ -101,7 +103,8 @@ __kernel void AddPlasmaCurrent(__global tw_Float * J,__global tw_Float * A,__glo
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
-	J[idx] -= ne[idx]*A[idx];
+	const tw_Complex iKz = cmul((tw_Complex)(0.0,1.0),kz[idx]);
+	A[idx] = cmul(iKz,A[idx]);
 }
 
 __kernel void SetKerrPolarization(__global tw_Float * P, __global tw_Float * E,const tw_Float chi3)

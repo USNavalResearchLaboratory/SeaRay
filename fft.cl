@@ -17,6 +17,12 @@ tw_Complex cmul(tw_Complex a,tw_Complex b)
 	return (tw_Complex)(a.s0*b.s0-a.s1*b.s1,a.s0*b.s1+a.s1*b.s0);
 }
 
+tw_Complex cdiv(tw_Complex a,tw_Complex b)
+{
+	tw_Complex bstar = (tw_Complex)(b.s0,-b.s1);
+	return cmul(a,bstar) / (b.s0*b.s0 + b.s1*b.s1);
+}
+
 void Swap(__global tw_Float* a,__global tw_Float* b)
 {
 	tw_Float temp = *a;
@@ -273,7 +279,7 @@ __kernel void IRFFT(__global tw_Float *in,__global tw_Float *out,tw_Int modes)
 	RealFFT(&out[offset],steps,s,true);
 }
 
-__kernel void DtSpectral(__global tw_Complex * A,__global double * w,const double sgn)
+__kernel void DtSpectral(__global tw_Complex * A,__global tw_Float * w,const tw_Float sgn)
 {
 	// SPECTRAL POINT PROTOCOL
 	// A = [w][x][y]
@@ -285,14 +291,14 @@ __kernel void DtSpectral(__global tw_Complex * A,__global double * w,const doubl
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
-	const double Ar = A[idx].s0;
-	const double Ai = A[idx].s1;
-	const double w0 = w[i0];
+	const tw_Float Ar = A[idx].s0;
+	const tw_Float Ai = A[idx].s1;
+	const tw_Float w0 = w[i0];
 	A[idx].s0 = sgn*w0*Ai;
 	A[idx].s1 = -sgn*w0*Ar;
 }
 
-__kernel void iDtSpectral(__global tw_Complex * A,__global double * w,const double sgn)
+__kernel void iDtSpectral(__global tw_Complex * A,__global tw_Float * w,const tw_Float damping,const tw_Float sgn)
 {
 	// SPECTRAL POINT PROTOCOL
 	// A = [w][x][y]
@@ -304,11 +310,9 @@ __kernel void iDtSpectral(__global tw_Complex * A,__global double * w,const doub
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
-	const double Ar = A[idx].s0;
-	const double Ai = A[idx].s1;
-	const double w0 = w[i0];
-	A[idx].s0 = -sgn*Ai/w0;
-	A[idx].s1 = sgn*Ar/w0;
+	const tw_Complex A00 = A[idx];
+	const tw_Complex wc = (tw_Complex)(damping,-sgn*w[i0]);
+	A[idx] = cdiv(A00,wc);
 }
 
 __kernel void Filter(__global tw_Complex *A,__global tw_Float *filter)

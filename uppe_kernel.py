@@ -86,10 +86,10 @@ class Source:
 		self.qw_dev = pyopencl.array.to_device(queue,a)
 		self.qi_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
 		self.qf_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
-		self.Aw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
-		self.At_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
+		self.Ew_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
 		self.Et_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
 		self.w_dev = pyopencl.array.to_device(queue,w)
+		self.scratchw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
 		self.ne_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
 		self.Jt_dev = pyopencl.array.empty(queue,self.time_domain_shape,np.double)
 		self.Jw_dev = pyopencl.array.empty(queue,self.freq_domain_shape,np.complex)
@@ -121,8 +121,8 @@ def update_current(cl,src,mat,ionizer):
 	st = src.time_domain_shape
 	sw = src.freq_domain_shape
 	wdev = src.w_dev.data
-	Awdev = src.Aw_dev.data
-	Atdev = src.At_dev.data
+	scratch = src.scratchw_dev.data
+	Ewdev = src.Ew_dev.data
 	Etdev = src.Et_dev.data
 	nedev = src.ne_dev.data
 	ngdev = mat.ng_dev.data
@@ -131,34 +131,30 @@ def update_current(cl,src,mat,ionizer):
 
 	# Form time domain fields
 	# N.b. time index runs backwards due to FFT conventions
-	src.Jw_dev[...] = src.Aw_dev.copy(queue=cl.q) # use Jw as temporary so Aw is not destroyed
-	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Atdev,np.int32(src.freqs))
-	cl.program('fft').DtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(-1.0))
-	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Etdev,np.int32(src.freqs))
+	cl.program('fft').IRFFT(cl.q,s2,None,Ewdev,Etdev,np.int32(src.freqs))
 
 	# Accumulate the source terms
 	# First handle plasma formation
 	if ionizer==None:
 		src.ne_dev.fill(0.0,queue=cl.q)
+		src.Jw_dev.fill(0.0,queue=cl.q)
 	else:
 		ionizer.FittedRateCL(cl,st,nedev,Etdev,False)
 		ionizer.GetPlasmaDensityCL(cl,st,nedev,ngdev,src.dt)
+		cl.program('fft').SoftTimeWindow(cl.q,st,None,nedev,np.int32(4),np.int32(64))
+		src.Jt_dev[...] = (src.ne_dev*src.Et_dev).copy(queue=cl.q)
+		cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
+		cl.program('fft').iDtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(0.1),np.double(1.0))
 
 	# Kerr effect
-	src.Jt_dev[...] = (src.Et_dev**2).copy(queue=cl.q) # use Jt and Jw as temporaries in computing <E.E>
-	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
-	cl.program('fft').Filter(cl.q,sw,None,Jwdev,src.NLFilt_dev.data)
-	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Jtdev,np.int32(src.freqs))
+	src.Jt_dev[...] = (src.Et_dev**2).copy(queue=cl.q) # use Jt as temporary in computing <E.E>
+	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,scratch,np.int32(src.steps))
+	cl.program('fft').Filter(cl.q,sw,None,scratch,src.NLFilt_dev.data)
+	cl.program('fft').IRFFT(cl.q,s2,None,scratch,Jtdev,np.int32(src.freqs))
 	cl.program('uppe').SetKerrPolarization(cl.q,st,None,Jtdev,Etdev,np.double(mat.chi3))
-	# Switch to current density
-	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
-	cl.program('fft').DtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(1.0))
-	cl.program('fft').IRFFT(cl.q,s2,None,Jwdev,Jtdev,np.int32(src.freqs))
-
-	# Plasma current
-	cl.program('fft').SoftTimeWindow(cl.q,st,None,nedev,np.int32(4),np.int32(64))
-	cl.program('uppe').AddPlasmaCurrent(cl.q,st,None,Jtdev,Atdev,nedev)
-	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
+	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,scratch,np.int32(src.steps))
+	cl.program('fft').DtSpectral(cl.q,sw,None,scratch,wdev,np.double(1.0))
+	src.Jw_dev[...] = (src.Jw_dev+src.scratchw_dev).copy(queue=cl.q)
 
 def load_source(z0,z,cl,T,src,mat,ionizer,return_dz=False,dzmin=1.0):
 	'''We have an equation in the form dq/dz = S(z,q).
@@ -174,15 +170,17 @@ def load_source(z0,z,cl,T,src,mat,ionizer,return_dz=False,dzmin=1.0):
 	:param bool return_dz: return step size estimate if true'''
 	# Setup some shorthand
 	sw = src.freq_domain_shape
+	wdev = src.w_dev.data
 	kzdev = mat.kz_dev.data
 	kgdev = mat.kg_dev.data
-	Awdev = src.Aw_dev.data
+	Ewdev = src.Ew_dev.data
 	qwdev = src.qw_dev.data
 	Jwdev = src.Jw_dev.data
 	dzdev = src.dz_dev.data
-	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('uppe').PropagateLinear(cl.q,sw,None,Awdev,kzdev,kgdev,np.double(z0-src.zi+z))
-	T.rspacex(src.Aw_dev)
+	src.Ew_dev[...] = src.qw_dev.copy(queue=cl.q)
+	cl.program('uppe').PropagateLinear(cl.q,sw,None,Ewdev,kzdev,kgdev,np.double(z0-src.zi+z))
+	cl.program('uppe').VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
+	T.rspacex(src.Ew_dev)
 	update_current(cl,src,mat,ionizer)
 	T.kspacex(src.Jw_dev)
 	cl.program('uppe').CurrentToODERHS(cl.q,sw,None,Jwdev,kzdev,kgdev,np.double(z0-src.zi+z))
@@ -213,18 +211,20 @@ def finish(cl,T,src,mat,ionizer,zf):
 	:param Ionization ionizer: class for encapsulating ionization models
 	:param double zf: global coordinate of the final position'''
 	# Setup some shorthand
-	sw = src.Aw_dev.shape
-	Awdev = src.Aw_dev.data
+	sw = src.Ew_dev.shape
+	qwdev = src.qw_dev.data
+	Ewdev = src.Ew_dev.data
 	kzdev = mat.kz_dev.data
 	kgdev = mat.kg_dev.data
-	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('uppe').PropagateLinear(cl.q,sw,None,Awdev,kzdev,kgdev,np.double(zf-src.zi))
-	T.rspacex(src.Aw_dev)
+	cl.program('uppe').PropagateLinear(cl.q,sw,None,qwdev,kzdev,kgdev,np.double(zf-src.zi))
+	T.rspacex(src.qw_dev)
+	src.Ew_dev[...] = src.qw_dev.copy(queue=cl.q)
+	cl.program('uppe').VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
 	update_current(cl,src,mat,ionizer)
-	return src.Aw_dev.get(queue=cl.q),src.Jw_dev.get(queue=cl.q),np.fft.rfft(src.ne_dev.get(queue=cl.q),axis=0)
+	return src.qw_dev.get(queue=cl.q),src.Jw_dev.get(queue=cl.q),np.fft.rfft(src.ne_dev.get(queue=cl.q),axis=0)
 
 def propagator(cl,ctool,vg,a,mat,ionizer,NL_band,subcycles,zi,zf,dzmin):
-	'''Advance a[w,x,y] to a new z plane using UPPE method.
+	'''Advance a[mu,w,x,y] to a new z plane using UPPE method; mu = 4-vector index.
 	Works in either Cartesian or cylindrical geometry.
 	If cylindrical, intepret x as radial and y as azimuthal.
 	The RK4 stepper is advancing q(z;w,kx,ky) = exp(-i*(kz+kg)*z)*a(z;w,kx,ky).
@@ -233,7 +233,7 @@ def propagator(cl,ctool,vg,a,mat,ionizer,NL_band,subcycles,zi,zf,dzmin):
 	:param cl_refs cl: OpenCL reference bundle
 	:param CausticTool ctool: contains grid info and transverse mode tool
 	:param double vg: the window velocity
-	:param numpy.array a: the vector potential in representation (w,x,y) as type complex
+	:param numpy.array a: the vector potential in representation (mu,w,x,y) as type complex
 	:param Material mat: stores references to OpenCL buffers used in Linear propagation
 	:param Ionization ionizer: class for encapsulating ionization models
 	:param tuple NL_band: filter applied to nonlinear source terms
@@ -339,7 +339,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	A = np.zeros(N).astype(np.complex)
 	J = np.zeros(N).astype(np.complex)
 	ne = np.zeros(N).astype(np.complex)
-	A0,dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
+	A[...,0],dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
 
 	# Setup the wave propagation medium
 	chi = vol_dict['dispersion inside'].chi(w_nodes).astype(np.complex)
@@ -358,9 +358,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	dom4d = np.concatenate((dom3d,[field_walls[0],field_walls[-1]]))
 
 	# Step through the domain
-	A[...,0] = A0
-	J[...,0] = 0.0
-	ne[...,0] = 0.0
+	A0 = np.copy(A[...,0])
 	for k in range(diagnostic_steps):
 		zi = diagnostic_walls[k]
 		zf = diagnostic_walls[k+1]

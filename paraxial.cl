@@ -39,6 +39,8 @@ __kernel void LoadModulus(__global tw_Complex * q,__global tw_Float * modulus)
 
 __kernel void LoadStepSize(__global tw_Complex * q,__global tw_Complex * s,__global tw_Float *dz,const tw_Float dz0,const tw_Float dphi,const tw_Float amin)
 {
+	// alpha = amplitude rate = Re(s*conj(q))/|q|**2
+	// keff = phase rate = Im(s*conj(q))/|q|**2
 	const int i0 = get_global_id(0);
 	const int j0 = get_global_id(1);
 	const int k0 = get_global_id(2);
@@ -46,10 +48,13 @@ __kernel void LoadStepSize(__global tw_Complex * q,__global tw_Complex * s,__glo
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
+	const tw_Float minRate = 0.5*dphi/dz0;
 	const tw_Complex Q = q[idx];
 	const tw_Complex S = s[idx];
-	const tw_Float minRate = 0.5*dphi*amin/dz0;
-	dz[idx] = dphi*(amin + cmag(Q))/(minRate + cmag(S));
+	const tw_Float alpha = (Q.s0*S.s0 + Q.s1*S.s1) / (Q.s0*Q.s0 + Q.s1*Q.s1 + amin*amin);
+	const tw_Float keff = (Q.s0*S.s1 - Q.s1*S.s0) / (Q.s0*Q.s0 + Q.s1*Q.s1 + amin*amin);
+	const tw_Float K = minRate + fabs(keff) - alpha*(tw_Float)(alpha<0.0); // ignore creation terms
+	dz[idx] = dphi/K;
 }
 
 __kernel void PropagateLinear(__global tw_Complex * q,__global tw_Complex * kz,const tw_Float z)

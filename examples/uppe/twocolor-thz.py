@@ -20,10 +20,10 @@ mess = 'Processing input file...\n'
 
 # Control parameters
 
-prop_range = (-20/cm,-19/cm)
+prop_range = (-15/cm,15/cm)
 w00 = 1.0
 r00 = dnum('5 mm')
-U00 = dnum('7 mJ')
+U00 = dnum('8.0 mJ')
 t00 = dnum('80 fs')
 a800 = helper.a0(U00,t00,r00,w00)
 a400 = helper.a0(0.1*U00,t00,r00,2*w00)
@@ -34,10 +34,8 @@ Uion = dnum('12.1 eV')
 ngas = dnum('5.4e18 cm-3')
 Zeff = 0.53
 ionizer = ionization.StitchedPPT(mks_length,w00,Uion,Zeff,ngas,80)
-air = dispersion.Vacuum()
-# air = dispersion.HumidAir(mks_length,0.4,1e-3)
-# air.add_opacity_region(1/cm,0.01/um,0.3/um)
-# air.add_opacity_region(10/cm,13/um,17/um)
+air = dispersion.HumidAir(mks_length,0.4,1e-4)
+air.add_opacity_region(1/cm,0.01/um,0.3/um)
 
 # Set up dictionaries
 
@@ -90,7 +88,7 @@ optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (2049,256,1,2)
+optics[-1]['wave grid'] = (2049,512,1,15)
 optics[-1]['radial modes'] = 64
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
@@ -101,7 +99,7 @@ optics[-1]['minimum step'] = 1.0
 optics[-1]['dispersion inside'] = air
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = chi3
-optics[-1]['size'] = (6/mm,6/mm,prop_range[1]-prop_range[0])
+optics[-1]['size'] = (12/mm,12/mm,prop_range[1]-prop_range[0])
 optics[-1]['origin'] = (0.,0.,(prop_range[0]+prop_range[1])/2)
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)

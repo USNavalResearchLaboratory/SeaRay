@@ -90,11 +90,15 @@ class InputHelper:
 		return t00,band
 
 	def a0(self,energy,t0,r0,w0):
+		'''Get normalized vector potential given pulse parameters
+
+		:param double t0: Gaussian pulse duration, from peak to 1/e of amplitude
+		:param double r0: Gaussian spot size, from peak to 1/e of amplitude''' 
 		energy = self.dnum(energy)
 		t0 = self.dnum(t0)
 		r0 = self.dnum(r0)
 		w0 = self.dnum(w0)
-		P0 = energy/t0
+		P0 = np.sqrt(2/np.pi)*energy/t0
 		I0 = 2*P0/(np.pi*r0**2)/(self.n1*self.x1**3)
 		return np.sqrt(2*I0)/w0
 

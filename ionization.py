@@ -231,7 +231,7 @@ class PPT(PPT_Tunneling):
 			return self.rate_au_to_sim(ans)
 		else:
 			# If explicit, simply unwind cycle averaging.
-			# This not account for changes in sub-cycle structure with adiabaticity, but gives right average behavior.
+			# This does not account for changes in sub-cycle structure with adiabaticity, but gives right average behavior.
 			return self.rate_au_to_sim(ans/CycleAveragingFactor(self.Uion,E))
 	def RateCL(self,cl,shp,rate,Es,averaging):
 		raise ValueError("PPT.RateCL not implemented, use PPT.FittedRateCL.")
@@ -255,7 +255,7 @@ class StitchedPPT(PPT):
 class YI(Ionization):
 	"""Yudin-Ivanov phase dependent ionization rate.
 	Class cannot be used for single point evaluation.
-	The phase is automatically extraced from the carrier resolved field."""
+	The phase is automatically extracted from the carrier resolved field."""
 	def Rate(self,Es,averaging,dt):
 		""":param numpy.array Es: Carrier resolved electric field in simulation units, any shape, axis 0 is time."""
 		amp,phase,w = self.ExtractEikonalForm(Es,dt)
