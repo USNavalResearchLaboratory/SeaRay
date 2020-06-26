@@ -70,8 +70,7 @@ class Source:
 	'''This class gathers references to host and device storage
 	that are used during the ODE integrator right-hand-side evaluation.'''
 	def __init__(self,queue,a,w,zi,L,NL_band):
-		bandwidth = w[-1] - w[0] + w[1] - w[0]
-		self.dt = 2*np.pi/bandwidth
+		self.dt = np.pi/np.max(w)
 		self.dw = w[1] - w[0]
 		self.zi = zi
 		self.L = L

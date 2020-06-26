@@ -7,6 +7,8 @@ import volume
 import input_tools
 
 # Simple axisymmetric USPL air plasma using Paraxial module.
+# The n2 value is high for the give pulse duration.
+# This allows the self guided mode to form more readily.
 
 mks_length = 0.8e-6 / (2*np.pi)
 cm = 100*mks_length
@@ -77,12 +79,12 @@ optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'paraxial'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (256,256,1,15)
+optics[-1]['wave grid'] = (256,256,1,20)
 optics[-1]['radial modes'] = 128
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
-optics[-1]['subcycles'] = 4
+optics[-1]['subcycles'] = 1
 optics[-1]['dispersion inside'] = air
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = chi3

@@ -446,10 +446,13 @@ class Orbits:
 		a2 = self.orbits[...,9]**2 + self.orbits[...,10]**2 + self.orbits[...,11]**2
 		a2max = np.max(a2[0,:])
 		render_alpha = np.tanh(100/self.orbits.shape[1])
-		if wmin!=wmax:
-			get_color = lambda i : np.concatenate((mpl.colors.hsv_to_rgb([0.8*(self.orbits[0,i,4]-wmin)/(wmax-wmin),1.0,1.0]),[render_alpha*(a2[0,i]/a2max)**0.0001]))
+		if a2max<1e-40:
+			get_color = lambda i : [0.0,0.0,0.0,1.0]
 		else:
-			get_color = lambda i : [0.0,0.0,0.0,render_alpha*(a2[0,i]/a2max)**0.0001]
+			if wmin!=wmax:
+				get_color = lambda i : np.concatenate((mpl.colors.hsv_to_rgb([0.8*(self.orbits[0,i,4]-wmin)/(wmax-wmin),1.0,1.0]),[render_alpha*(a2[0,i]/a2max)**0.0001]))
+			else:
+				get_color = lambda i : [0.0,0.0,0.0,render_alpha*(a2[0,i]/a2max)**0.0001]
 		if 'o3d' in sys.argv:
 			characteristic_size = normalization[1]*(np.max(self.orbits[...,1:4]) - np.min(self.orbits[...,1:4]))
 			if maya_loaded:

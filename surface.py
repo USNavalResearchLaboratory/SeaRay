@@ -77,7 +77,7 @@ class base_surface:
 		except KeyError:
 			print('INFO: defaulting to transmissive')
 		try:
-			self.bandpass = input_dict['bandpass']
+			self.bandpass = input_dict['frequency band']
 		except KeyError:
 			self.bandpass = None
 	def InitializeCL(self,cl,input_dict):
@@ -149,6 +149,12 @@ class base_surface:
 			return dens
 	def SafetyNudge(self,xp,vg):
 		xp[...,:4] += vg
+	def SelectBand(self,xp):
+		'''Get an array of bundle indices in the passband'''
+		if self.bandpass!=None:
+			return np.where(np.logical_or(xp[:,0,4]>self.bandpass[0],xp[:,0,4]<self.bandpass[1]))[0]
+		else:
+			return np.arange(xp.shape[0]).astype(int)
 	def Deflect(self,xp,eikonal,vg,vol_obj):
 		'''The main SeaRay function handling reflection and refraction.
 		Called from within Propagate().
@@ -721,11 +727,6 @@ class Paraboloid(quadratic):
 class NoiseMask(rectangle):
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
-		try:
-			self.band = input_dict['frequency band']
-		except KeyError:
-			self.band = (0.0,100.0)
-			print('INFO: defaulting to detection bandwidth',self.band)
 		km = 2*np.pi/input_dict['inner scale']
 		k0 = 2*np.pi/input_dict['outer scale']
 		Ns = input_dict['grid']
@@ -749,32 +750,104 @@ class NoiseMask(rectangle):
 		self.screen = 1 + input_dict['amplitude']*screen/np.max(np.abs(screen))
 		self.xn = np.linspace(-self.Lx/2,self.Lx/2,Ns[0])
 		self.yn = np.linspace(-self.Ly/2,self.Ly/2,Ns[1])
-	def Propagate(self,xp,eikonal,vg,orb={'idx':0}):
-		self.RaysGlobalToLocal(xp,eikonal,vg)
-		dt,impact = self.Detect(xp,vg)
-		xps,eiks,vgs = ray_kernel.ExtractRays(impact,xp,eikonal,vg)
-		ray_kernel.FullStep(dt[impact,...],xps,eiks,vgs)
-		ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
+	def Deflect(self,xp,eikonal,vg,vol_obj):
 		# Frequency filtering
-		sel = np.where(np.logical_and(xp[:,0,4]>self.band[0],xp[:,0,4]<self.band[1]))[0]
-		sel = np.intersect1d(sel,impact)
+		sel = self.SelectBand(xp)
 		# Set up interpolation
 		obj = scipy.interpolate.RegularGridInterpolator((self.xn,self.yn),self.screen)
 		pts = np.stack((xp[sel,0,1],xp[sel,0,2]),axis=-1)
 		attenuations = obj(pts)
 		eikonal[sel,1:4] *= attenuations[:,np.newaxis]
-		self.RaysLocalToGlobal(xp,eikonal,vg)
-		self.UpdateOrbits(xp,eikonal,orb)
-		return impact.shape[0]
+
+class IdealCompressor(rectangle):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.gdd = input_dict['group delay dispersion']
+		self.w0 = input_dict['center frequency']
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		# Frequency filtering
+		sel = self.SelectBand(xp)
+		# Shift the ray time
+		xp[sel,:,0] += self.gdd*(xp[sel,:,4]-self.w0)
+		# Phase shift; gdd>0 has red leading blue
+		eikonal[sel,0] += self.gdd*(xp[sel,0,4]-self.w0)**2
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
+
+class IdealLens(disc):
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.f = input_dict['focal length']
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		# Save the starting ray direction for use in polarization update
+		u0 = np.copy(xp[...,0,5:8])
+		u0 /= np.sqrt(np.einsum('...i,...i',u0,u0))[...,np.newaxis]
+		# Point momentum toward a single point.
+		R = np.array([0.0,0.0,self.f]) - xp[:,:,1:4]
+		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
+		k2 = np.einsum('...i,...i',xp[:,:,5:8],xp[:,:,5:8])[...,np.newaxis]
+		xp[:,:,5:8] = np.sqrt(k2)*R/np.sqrt(R2)
+		# Advance ray time and phase by |R|-f to get spherical phase fronts
+		tadv = np.sqrt(R2)-self.f
+		eikonal[:,0] -= tadv[:,0,0]*xp[:,0,4]
+		xp[:,:,0] -= tadv[...,0]
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
+		# Remaining code updates the polarization
+		u1 = np.copy(xp[...,0,5:8])
+		u1 /= np.sqrt(np.einsum('...i,...i',u1,u1))[...,np.newaxis]
+		w = np.cross(u0,u1)
+		q = np.sqrt(np.einsum('...i,...i',w,w))
+		cosq = np.cos(q)
+		sinq = np.sin(q)
+		M = np.zeros((eikonal.shape[0],3,3))
+		M[...,0,0] = w[...,0]**2 + cosq*(w[...,1]**2 + w[...,2]**2)
+		M[...,1,1] = w[...,1]**2 + cosq*(w[...,0]**2 + w[...,2]**2)
+		M[...,2,2] = w[...,2]**2 + cosq*(w[...,0]**2 + w[...,1]**2)
+		M[...,0,1] = w[...,0]*w[...,1]*(1-cosq) - w[...,2]*q*sinq
+		M[...,0,2] = w[...,0]*w[...,2]*(1-cosq) + w[...,1]*q*sinq
+		M[...,1,2] = w[...,1]*w[...,2]*(1-cosq) - w[...,0]*q*sinq
+		M[...,1,0] = w[...,0]*w[...,1]*(1-cosq) + w[...,2]*q*sinq
+		M[...,2,0] = w[...,0]*w[...,2]*(1-cosq) - w[...,1]*q*sinq
+		M[...,2,1] = w[...,1]*w[...,2]*(1-cosq) + w[...,0]*q*sinq
+		filter = np.where(q**2>1e-20)[0]
+		eikonal[filter,1:4] = np.einsum('...ij,...j',M[filter,:]/q[filter,np.newaxis,np.newaxis]**2,eikonal[filter,1:4])
+
+class IdealHarmonicGenerator(disc):
+	'''Move energy from w to 2w.  Amplitude is exchanged between existing ray frequencies.
+	We are following a protocol of never altering any ray frequency.
+	The band refers to the band defining the pulse centered at the fundamental.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.delay = input_dict['harmonic delay']
+		self.n = input_dict['harmonic number']
+		self.eff = input_dict['efficiency']
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		# Define the two coupled bands
+		sel1 = np.where(np.logical_and(xp[:,0,4]>=self.bandpass[0],xp[:,0,4]<=self.bandpass[1]))[0]
+		sel2 = np.where(np.logical_and(xp[:,0,4]>self.n*self.bandpass[0],xp[:,0,4]<self.n*self.bandpass[1]))[0]
+		# Generate reference harmonics that will be interpolated
+		xph = np.copy(xp[sel1,...])
+		eikh = np.copy(eikonal[sel1,...])
+		xph[...,4:8] *= self.n
+		eikh[...,0] *= self.n
+		eikh[...,0] += self.delay*xph[:,0,4]
+		eikh[...,1:4] *= np.sqrt(self.eff)/self.n**1.5
+		eikonal[sel1,1:4] *= np.sqrt(1-self.eff)
+		# Interpolate to modify existing rays
+		momentum_fill = [0.0,0.0,-1.0]
+		for i in range(7):
+			for j in range(5,8):
+				xp[sel2,i,j] = scipy.interpolate.griddata((xph[:,i,1],xph[:,i,4]),xph[:,i,j],(xp[sel2,i,1],xp[sel2,i,4]),fill_value=momentum_fill[j-5])
+		for j in range(0,4):
+			eikonal[sel2,j] = scipy.interpolate.griddata((xph[:,0,1],xph[:,0,4]),eikh[:,j],(xp[sel2,0,1],xp[sel2,0,4]),fill_value=1e-20)
+		xp[sel2,:,0] += self.delay
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 
 class BeamProfiler(rectangle):
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
-		try:
-			self.band = input_dict['frequency band']
-		except KeyError:
-			self.band = (0.0,100.0)
-			print('INFO: defaulting to detection bandwidth',self.band)
 	def Report(self,basename,mks_length):
 		base_surface.Report(self,basename,mks_length)
 		l1 = 1000*mks_length
@@ -802,8 +875,7 @@ class BeamProfiler(rectangle):
 		ray_kernel.FullStep(dt[impact,...],xps,eiks,vgs)
 		ray_kernel.UpdateRays(impact,xp,eikonal,vg,xps,eiks,vgs)
 		# Frequency filtering
-		sel = np.where(np.logical_and(xp[:,0,4]>self.band[0],xp[:,0,4]<self.band[1]))[0]
-		sel = np.intersect1d(sel,impact)
+		sel = np.intersect1d(self.SelectBand(xp),impact)
 		self.xps = np.copy(xp[sel,0,:])
 		self.eiks = np.copy(eikonal[sel,...])
 		self.micro_action = ray_kernel.GetMicroAction(xp,eikonal,vg)
@@ -833,7 +905,7 @@ class FullWaveProfiler(BeamProfiler):
 		if self.N[0]==1:
 			return (wc - 1.0 , wc + 1.0)
 		else:
-			return self.band
+			return self.bandpass
 	def Report(self,basename,mks_length):
 		wc,xc,yc,zc,wrms,xrms,yrms,zrms = BeamProfiler.Report(self,basename,mks_length)
 		field_tool = caustic_tools.FourierTool(self.N,self.wave_band(wc),(xc,yc,zc),(self.Lx,self.Ly,self.Lz),self.cl)

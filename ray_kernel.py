@@ -158,6 +158,7 @@ def SphericalWave(xp,eikonal,vg,wave):
 	xp[...,5:8] *= -np.sign(F4[0])
 	vg[...] = xp[...,4:8]/xp[...,4:5]
 	eikonal[:,0] = -np.sign(F4[0])*(R[:,0]-F4[0])*xp[:,0,4]
+	xp[...,0] -= np.sign(F4[0])*(R[:,0]-F4[0])[:,np.newaxis]
 	theta0 = np.pi*(1 + np.sign(F4[0]))/2
 	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
 	amag *= (F4[0]/R[:,0]) * np.exp(-(theta[:,0]-theta0)**SG/dtheta**SG)

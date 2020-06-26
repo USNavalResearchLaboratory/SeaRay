@@ -250,15 +250,22 @@ class BesselBeamTool(CausticTool):
 		w = xp[impact,:,4]
 		x = rho[impact,:]
 		y = phi[impact,:]
-		kr = grid_tools.DataFromGrid(w,x,y,wn,xn,yn,kx)
+		try:
+			kr = grid_tools.DataFromGrid(w,x,y,wn,xn,yn,kx)
+		except:
+			kr = np.zeros(y.shape)
 		kr[np.where(kr**2>=w**2)] = 0.0
 		xp[impact,:,0] += L
 		xp[impact,:,3] += L
 		xp[impact,:,5] = kr*np.cos(y)
 		xp[impact,:,6] = kr*np.sin(y)
 		xp[impact,:,7] = np.sqrt(w**2 - xp[impact,:,5]**2 - xp[impact,:,6]**2)
-		eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
-		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		try:
+			eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
+			eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		except:
+			eikonal[impact,0] *= 1.0
+			eikonal[impact,1] *= 1.0
 		eikonal[impact,2] = 0.0
 		eikonal[impact,3] = 0.0
 		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]

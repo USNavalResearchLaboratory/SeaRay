@@ -12,7 +12,7 @@ import ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 0.8.1')
+	print('Version: 0.8.2')
 	print('Usage: rays.py cmd [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
