@@ -1,118 +1,119 @@
 from scipy import constants as C
 import numpy as np
+from scipy.optimize import brentq
 import dispersion
-import ionization
 import surface
 import volume
 import input_tools
 
-# 3D USPL filamentation, using Paraxial module.
-# Initial beam is put through a random amplitude screen.
-# Once the filament forms resolution is lost.
+# Example input file for ray-in-cell propagation through ideal form plasma lens.
+# The alternate test case creates a quartic lens on a grid (will have caustics).
+# The ideal form lens data must be in ./extras.  Generate with synth-lens.py.
 
-# Suggested visualization: use ray_viewer.ipynb to interactively view A(t,x,y)
+# Suggested plotter command:
+# python ray_plotter.py out/test o31
+# note near perfect focus (zoom in to see caustic)
 
 mks_length = 0.8e-6 / (2*np.pi)
-helper = input_tools.InputHelper(mks_length)
-dnum = helper.dnum
-cm = 100*mks_length
+bundle_scale = 1e-4
 mm = 1000*mks_length
-um = 1e6*mks_length
+fs = 1e15*mks_length/C.c
+deg = 180/np.pi
+helper = input_tools.InputHelper(mks_length)
+mess = 'Processing input file...\n'
 
-# Control Parameters
+# Preprocessing calculations
+# Use thick lens theory to set up channel parameters for given focal length
 
-wavelength = 0.8/um
-waist = 100/um
-w00 = 2*np.pi/wavelength
-U00 = dnum('5 mJ')
-t00 = dnum('50 fs')
-chi3 = helper.chi3(1.0,'5e-23 m2/W')
-propagation_range = (-20/cm,-15/cm)
-rbox = 2/mm
+ideal_form = True
+theta = 0.0
+w00 = 1.0
+f = 10/mm
+f_num = 1.0
+Rlens = 0.75*f
+if ideal_form:
+	Lch = 1.5*f
+	lens_object = volume.AxisymmetricGrid('plasma')
+else:
+	Lch = 0.2*f
+	lens_object = volume.AxisymmetricTestGrid('plasma')
+r00 = 0.5*f/f_num # spot size of radiation
+c0 = 0.01
+h0 = np.sqrt(1-c0)
+t = Lch/np.sqrt(1-c0)
+Omega = brentq(lambda q : q*np.tan(q) - t/(f-Lch/2), 0.0, 0.999*np.pi/2) / t
+c2 = Omega**2
+c4 = -Omega**4/4
+x0 = 100*r00
+c4 *= 1 + Lch**2*(0.33/x0**2 + 0.5*Omega**2/h0**2 + Omega**2)
+c6 = 0.0
+eik_to_caustic = 1/mm
 
-Uion = dnum('12.1 eV')
-ngas = dnum('5.4e18 cm-3')
-Zeff = 0.53
-ionizer = ionization.StitchedPPT(mks_length,w00,Uion,Zeff,ngas,terms=80)
-air = dispersion.HumidAir(mks_length,0.4,1e-3)
-
-# Derived Parameters
-
-L = propagation_range[1] - propagation_range[0]
-time_to_focus = abs(2*propagation_range[0])
-diffraction_angle = wavelength / (np.pi*waist)
-r00 = time_to_focus * diffraction_angle
-a00 = helper.a0(U00,t00,r00,w00)
-rgn_center = (0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
-t00,band = helper.TransformLimitedBandwidth(w00,t00,16)
+rb = bundle_scale*r00
+t00,band = helper.TransformLimitedBandwidth(w00,'100 fs',4)
+a00 = helper.InitialVectorPotential(w00,1.0,f,f_num)
+mess = mess + helper.ParaxialFocusMessage(w00,1.0,f,f_num)
 
 # Set up dictionaries
 
 sim = {}
-ray = []
 wave = []
+ray = []
 optics = []
 diagnostics = {}
 
 sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
-sim['message'] = 'Processing input file...'
+sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (128,32,32,1)
-ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
-ray[-1]['loading coordinates'] = 'cartesian'
+ray[-1]['number'] = (128,16,1)
+ray[-1]['bundle radius'] = (rb,rb,rb,rb)
+ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (-3*r00,3*r00) + (-3*r00,3*r00) + (0.0,0.0)
+ray[-1]['box'] = (0.0,1.4*r00) + (0.0,2*np.pi) + (0.0,0.0)
 
 wave.append({})
-wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
+wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
 wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
+wave[-1]['k0'] = (w00,w00*np.sin(theta),0.0,w00*np.cos(theta)) # 4-wavenumber: omega,kx,ky,kz
 # 0-component of focus is time at which pulse reaches focal point.
 # If time=0 use paraxial wave, otherwise use spherical wave.
 # Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = (time_to_focus,0.0,0.0,0.0)
-wave[-1]['supergaussian exponent'] = 2
+wave[-1]['focus'] = (0.0,0.0,0.0,-f)
+wave[-1]['supergaussian exponent'] = 8
 
 optics.append({})
-optics[-1]['object'] = surface.NoiseMask('screen')
-optics[-1]['grid'] = (128,128)
-optics[-1]['amplitude'] = 0.7
-optics[-1]['inner scale'] = 1/um
-optics[-1]['outer scale'] = 300/um
-optics[-1]['frequency band'] = band
-optics[-1]['size'] = (2*rbox,2*rbox)
-optics[-1]['origin'] = (0.0,0.0,rgn_center[2]-L/2-1.0)
-optics[-1]['euler angles'] = (0.,0.,0.)
-
-optics.append({})
-optics[-1]['object'] = volume.AnalyticBox('air')
-optics[-1]['propagator'] = 'paraxial'
-optics[-1]['ionizer'] = ionizer
-optics[-1]['wave coordinates'] = 'cartesian'
-optics[-1]['wave grid'] = (128,128,128,5)
-optics[-1]['density function'] = '1.0'
-optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
-optics[-1]['frequency band'] = band
-optics[-1]['subcycles'] = 4
-optics[-1]['dispersion inside'] = air
+optics[-1]['object'] = lens_object
+optics[-1]['radial coefficients'] = (c0,c2,c4,c6)
+optics[-1]['mesh points'] = (400,400)
+optics[-1]['file'] = 'extras/ideal-form.npy'
+optics[-1]['density multiplier'] = 1.0
+optics[-1]['dispersion inside'] = dispersion.ColdPlasma()
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
-optics[-1]['chi3'] = chi3
-optics[-1]['size'] = (2*rbox,2*rbox,L)
-optics[-1]['origin'] = rgn_center
+optics[-1]['radius'] = Rlens
+optics[-1]['length'] = Lch
+optics[-1]['origin'] = (0.,0.,0.)
 optics[-1]['euler angles'] = (0.,0.,0.)
-optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)
+optics[-1]['dt'] = Lch/1000
+optics[-1]['steps'] = 1500
+optics[-1]['subcycles'] = 10
+
+# optics.append({})
+# optics[-1]['object'] = surface.CylindricalProfiler('det')
+# optics[-1]['size'] = (1/mm,1/mm,0.1/mm)
+# optics[-1]['wave grid'] = (4096,2,32)
+# optics[-1]['distance to caustic'] = eik_to_caustic
+# optics[-1]['origin'] = (0.,0.,f - eik_to_caustic)
 
 optics.append({})
-optics[-1]['object'] = surface.EikonalProfiler('stop')
-optics[-1]['frequency band'] = (0,3)
-optics[-1]['size'] = (10*rbox,10*rbox)
-optics[-1]['origin'] = (0.,0.,L*2)
-optics[-1]['euler angles'] = (0.,0.,0.)
+optics[-1]['object'] = surface.EikonalProfiler('terminus')
+optics[-1]['size'] = (10/mm,10/mm)
+optics[-1]['euler angles'] = (0.0,0.0,0.0)
+optics[-1]['origin'] = (0.,0.,15/mm)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (4,4,4,1)
+diagnostics['orbit rays'] = (8,4,1)
 diagnostics['base filename'] = 'out/test'

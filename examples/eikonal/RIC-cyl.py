@@ -102,7 +102,6 @@ optics[-1]['subcycles'] = 10
 
 # optics.append({})
 # optics[-1]['object'] = surface.CylindricalProfiler('det')
-# optics[-1]['integrator'] = 'transform'
 # optics[-1]['size'] = (1/mm,1/mm,0.1/mm)
 # optics[-1]['wave grid'] = (4096,2,32)
 # optics[-1]['distance to caustic'] = eik_to_caustic

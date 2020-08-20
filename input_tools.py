@@ -38,6 +38,10 @@ class InputHelper:
 				mult = 1e-2/self.x1
 			if units=='m':
 				mult = 1/self.x1
+			if units=='W/m2':
+				mult = self.t1*self.x1**2/self.N1/self.u1
+			if units=='W/cm2':
+				mult = 1e4*self.t1*self.x1**2/self.N1/self.u1
 			if units=='m2/W':
 				mult = self.N1*self.u1/self.x1**2/self.t1
 			if units=='m2/V2':
@@ -93,7 +97,7 @@ class InputHelper:
 		'''Get normalized vector potential given pulse parameters
 
 		:param double t0: Gaussian pulse duration, from peak to 1/e of amplitude
-		:param double r0: Gaussian spot size, from peak to 1/e of amplitude''' 
+		:param double r0: Gaussian spot size, from peak to 1/e of amplitude'''
 		energy = self.dnum(energy)
 		t0 = self.dnum(t0)
 		r0 = self.dnum(r0)

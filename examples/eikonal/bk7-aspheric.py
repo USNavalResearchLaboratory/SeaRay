@@ -99,7 +99,6 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
 optics[-1]['object'] = surface.CylindricalProfiler('det')
-optics[-1]['integrator'] = 'transform'
 optics[-1]['frequency band'] = band
 optics[-1]['size'] = (150e-6/mks_length,150e-6/mks_length,900e-6/mks_length)
 optics[-1]['wave grid'] = (64,256,4,1)

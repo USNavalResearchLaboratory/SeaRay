@@ -770,7 +770,7 @@ class IdealCompressor(rectangle):
 		# Shift the ray time
 		xp[sel,:,0] += self.gdd*(xp[sel,:,4]-self.w0)
 		# Phase shift; gdd>0 has red leading blue
-		eikonal[sel,0] += self.gdd*(xp[sel,0,4]-self.w0)**2
+		eikonal[sel,0] += 0.5*self.gdd*(xp[sel,0,4]-self.w0)**2
 		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 

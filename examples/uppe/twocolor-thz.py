@@ -21,19 +21,19 @@ mess = 'Processing input file...\n'
 
 # Control parameters
 
-prop_range = (-20/cm,-19.99/cm)
+prop_range = (-20/cm,20/cm)
 w00 = 1.0
 r00 = dnum('3 mm')
 U00 = dnum('6.3 mJ')
 t00 = dnum('55 fs')
 a00 = helper.a0(U00,t00,r00,w00)
-chi3 = helper.chi3(1.0,'8e-24 m2/W')
+chi3 = helper.chi3(1.0,'32e-24 m2/W')
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
 band = (0.0,5.5)
 Uion = dnum('12.1 eV')
 ngas = dnum('5.4e18 cm-3')
 Zeff = 0.53
-ionizer = ionization.StitchedPPT(mks_length,w00,Uion,Zeff,ngas,80)
+ionizer = ionization.PPT_Tunneling(mks_length,w00,Uion,Zeff,ngas)
 air = dispersion.HumidAir(mks_length,0.4,1e-4)
 air.add_opacity_region(1/cm,0.01/um,0.3/um)
 
@@ -67,7 +67,7 @@ wave[-1]['supergaussian exponent'] = 2
 
 optics.append({})
 optics[-1]['object'] = surface.IdealCompressor('compressor')
-optics[-1]['group delay dispersion'] = 0/fs**2
+optics[-1]['group delay dispersion'] = 4000/fs**2
 optics[-1]['center frequency'] = 1.0
 optics[-1]['frequency band'] = (0.9,1.1)
 optics[-1]['size'] = (1/inch,1/inch)
@@ -103,7 +103,7 @@ optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (2049,256,1,3)
+optics[-1]['wave grid'] = (2049,256,1,11)
 optics[-1]['radial modes'] = 128
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)

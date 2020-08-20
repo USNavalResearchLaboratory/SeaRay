@@ -12,7 +12,7 @@ import ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 0.8.2')
+	print('Version: 0.8.3')
 	print('Usage: rays.py cmd [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
@@ -101,7 +101,7 @@ for irun in range(len(inputs.sim)):
 	print('\nStart diagnostic reports...\n')
 
 	if len(inputs.sim)>1:
-		basename = inputs.diagnostics[irun]['base filename'] + '_' + str(i)
+		basename = inputs.diagnostics[irun]['base filename'] + '_' + str(irun)
 	else:
 		basename = inputs.diagnostics[irun]['base filename']
 
