@@ -7,7 +7,7 @@ import volume
 import input_tools
 
 # Simple USPL air plasma using UPPE module.
-# The n2 value is high for the give pulse duration.
+# The n2 value is high for the given pulse duration.
 # This allows the self guided mode to form more readily.
 # Generally requires thousands of steps, a powerful GPU helps.
 

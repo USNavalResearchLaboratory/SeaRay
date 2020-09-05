@@ -7,7 +7,7 @@ import volume
 import input_tools
 
 # Simple axisymmetric USPL air plasma using Paraxial module.
-# The n2 value is high for the give pulse duration.
+# The n2 value is high for the given pulse duration.
 # This allows the self guided mode to form more readily.
 
 mks_length = 0.8e-6 / (2*np.pi)

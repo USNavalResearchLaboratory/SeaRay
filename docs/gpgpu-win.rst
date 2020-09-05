@@ -44,7 +44,7 @@ Interactive Notebooks
 ----------------------
 
 	#. Activate your ``conda`` environment.
-	#. :samp:`conda install jupyter`
+	#. :samp:`conda install jupyter ipympl`
 	#. :samp:`jupyter notebook --generate-config`
 	#. Create a directory :samp:`~/.jupyter/custom/` and copy :samp:`{raysroot}/extras/custom.css` to the new directory.
 	#. If there are problems with Jupyter notebooks any or all of the following may be tried:

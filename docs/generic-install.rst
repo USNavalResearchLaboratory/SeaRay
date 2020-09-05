@@ -1,7 +1,7 @@
 Generic SeaRay Installation
 ===========================
 
-We will use Anaconda to create an environment suitable for SeaRay.  Ideally this insulates the installation from platform dependencies, although SeaRay uses technologies that stress the dependency chain, and the effect of this can vary by platform.  The ``pyopencl`` package (for hardware acceleration) is generally the most troublesome element.
+We will use Anaconda to create an environment suitable for SeaRay.  Ideally this insulates the installation from platform dependencies, although SeaRay uses technologies that stress the dependency chain, and the effect of this can vary by platform.  The ``pyopencl`` package (for hardware acceleration) is generally the most troublesome element.  If this seems to be causing problems it may help to read :doc:`troubleshooting-ocl`.
 
 Environment and Basic Packages
 ------------------------------

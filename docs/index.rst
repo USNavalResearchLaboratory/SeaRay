@@ -21,8 +21,6 @@ SeaRay Installation
 
 	generic-install
 	adv-install
-	pip-install
-	troubleshooting-ocl
 
 Running SeaRay
 --------------
