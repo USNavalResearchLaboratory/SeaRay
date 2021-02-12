@@ -72,6 +72,7 @@ __kernel void ExplicitRateSeries(
 	__global tw_Float * rate,
 	__global tw_Float * E,
 	const tw_Float E_conv,
+	const tw_Float rate_conv,
 	const tw_Float E_cutoff,
 	const tw_Float c0,
 	const tw_Float c1,
@@ -91,14 +92,15 @@ __kernel void ExplicitRateSeries(
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
 	const tw_Float Eau = E_conv*fabs(E[idx]);
-	const tw_Float logE = log((Eau + E_cutoff)/E_conv); // log(E) with E in simulation units
-	rate[idx] = exp(c0 + c1*logE + c2*logE*logE + c3*pow(logE,3) + c4*pow(logE,4) + c5*pow(logE,5));
+	const tw_Float logE = log(Eau + E_cutoff);
+	rate[idx] = rate_conv*exp(c0 + c1*logE + c2*logE*logE + c3*pow(logE,3) + c4*pow(logE,4) + c5*pow(logE,5));
 }
 
 __kernel void EnvelopeRateSeries(
 	__global tw_Float * rate,
 	__global tw_Complex * E,
 	const tw_Float E_conv,
+	const tw_Float rate_conv,
 	const tw_Float E_cutoff,
 	const tw_Float c0,
 	const tw_Float c1,
@@ -118,14 +120,13 @@ __kernel void EnvelopeRateSeries(
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
 	const tw_Float Eau = E_conv*sqrt(E[idx].s0*E[idx].s0 + E[idx].s1*E[idx].s1);
-	const tw_Float logE = log((Eau + E_cutoff)/E_conv); // log(E) with E in simulation units
-	rate[idx] = exp(c0 + c1*logE + c2*logE*logE + c3*pow(logE,3) + c4*pow(logE,4) + c5*pow(logE,5));
+	const tw_Float logE = log(Eau + E_cutoff);
+	rate[idx] = rate_conv*exp(c0 + c1*logE + c2*logE*logE + c3*pow(logE,3) + c4*pow(logE,4) + c5*pow(logE,5));
 }
 
 __kernel void ComputePlasmaDensity(
 	__global tw_Float * ne,
 	__global tw_Float * ng,
-	const tw_Float refOnCrit,
 	const tw_Float dt,
 	const int steps)
 {
@@ -148,7 +149,7 @@ __kernel void ComputePlasmaDensity(
 	{
 		curr_rate = ne[offset+k*s];
 		ne_raw += 0.5*(curr_rate+prev_rate)*dt;
-		ne[offset+k*s] = refOnCrit*ng[offset]*(1.0-exp(-ne_raw));
+		ne[offset+k*s] = ng[offset]*(1.0-exp(-ne_raw));
 		prev_rate = curr_rate;
 	}
 }

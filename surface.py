@@ -845,6 +845,36 @@ class IdealHarmonicGenerator(disc):
 		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 
+class Filter(disc):
+	'''Apply a spectral transfer function.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.H = input_dict['transfer function']
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		H_i = self.H(xp[:,0,4])
+		G = np.abs(H_i)
+		eikonal[:,0] += np.angle(H_i)
+		eikonal[:,1] *= G
+		eikonal[:,2] *= G
+		eikonal[:,3] *= G
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
+
+class AnalyticalMask(disc):
+	'''Apply a spatial transfer function.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.H = input_dict['transfer function']
+	def Deflect(self,xp,eikonal,vg,vol_obj):
+		H_i = self.H(xp[:,0,1],xp[:,0,2])
+		G = np.abs(H_i)
+		eikonal[:,0] += np.angle(H_i)
+		eikonal[:,1] *= G
+		eikonal[:,2] *= G
+		eikonal[:,3] *= G
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
+
 class BeamProfiler(rectangle):
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)

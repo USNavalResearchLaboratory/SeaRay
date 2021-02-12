@@ -67,6 +67,7 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('vacuum')
+optics[-1]['density reference'] = 1.0
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(x.shape)
 optics[-1]['frequency band'] = band

@@ -87,7 +87,7 @@ def AddGhostCells(a,nodes,ax):
 def DataFromGrid(w,x,y,wn,xn,yn,the_data):
 	'''Form irregular data from a regular grid. OK if yn.shape[0]=1.
 	w,x,y are the coordinates of the irregular data points.
-	All the irregular points must lie inside the regular grid.
+	Irregular points can be slightly outside the grid (extrapolation is used).
 	wn,xn,yn are arrays of nodes which must be regularly spaced.
 	the_data contains values on the regular grid with shape (w,x,y).
 	Any coordinate transformations must happen externally.'''
@@ -101,7 +101,7 @@ def DataFromGrid(w,x,y,wn,xn,yn,the_data):
 	else:
 		yng = yn
 		ex_data = the_data
-	obj = scipy.interpolate.RegularGridInterpolator((wn,xn,yng),ex_data)
+	obj = scipy.interpolate.RegularGridInterpolator((wn,xn,yng),ex_data,bounds_error=False,fill_value=None)
 	pts = np.zeros(w.shape+(3,))
 	pts[...,0] = w
 	pts[...,1] = x

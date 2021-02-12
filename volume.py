@@ -33,6 +33,7 @@ class base_volume:
 		self.name = name
 		self.orientation = v3.basis()
 		self.P_ref = np.array([0,0,0]).astype(np.double)
+		self.n_ref = 1.0
 		self.disp_in = dispersion.Vacuum()
 		self.disp_out = dispersion.Vacuum()
 		self.surfaces = []
@@ -54,6 +55,10 @@ class base_volume:
 			self.propagator = input_dict['propagator']
 		except KeyError:
 			self.propagator = 'eikonal'
+		try:
+			self.n_ref = input_dict['density reference']
+		except KeyError:
+			self.n_ref = 1.0
 		if self.propagator not in ['eikonal','paraxial','uppe']:
 			raise ValueError('Unrecognized propagator type.')
 	def InitializeCL(self,cl,input_dict):

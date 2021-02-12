@@ -96,6 +96,7 @@ for irun in range(len(inputs.sim)):
 	print('Initial micro-action = {:.3g}\n'.format(micro_action_0))
 
 	for opt_dict in inputs.optics[irun]:
+		print('\nEncountering',opt_dict['object'].name)
 		opt_dict['object'].Propagate(xp,eikonal,vg,orb=orbit_dict)
 
 	print('\nStart diagnostic reports...\n')

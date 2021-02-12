@@ -34,7 +34,7 @@ rbox = 2/mm
 Uion = dnum('12.1 eV')
 ngas = dnum('5.4e18 cm-3')
 Zeff = 0.53
-ionizer = ionization.StitchedPPT(mks_length,w00,Uion,Zeff,ngas,terms=80)
+ionizer = ionization.StitchedPPT(mks_length,True,Uion,Zeff,lstar=0,l=0,m=0,w0=w00,terms=80)
 air = dispersion.HumidAir(mks_length,0.4,1e-3)
 
 # Derived Parameters
@@ -94,6 +94,7 @@ optics[-1]['propagator'] = 'paraxial'
 optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cartesian'
 optics[-1]['wave grid'] = (128,128,128,5)
+optics[-1]['density reference'] = ngas
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

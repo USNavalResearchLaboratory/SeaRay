@@ -13,7 +13,7 @@ import ionization
 class Material:
 	'''This class manages host and device storage describing the material's density and susceptibility.
 	It also computes the generator of linear axial translations, kz.'''
-	def __init__(self,queue,ctool,N,coords,obj,chi,chi3,vg):
+	def __init__(self,queue,ctool,N,coords,obj,chi,chi3,nref,vg):
 		''':param class queue: OpenCL command queue
 		:param CausticTool ctool: contains grid info and transverse mode tool
 		:param tuple N: dimensions of the field grid
@@ -21,6 +21,7 @@ class Material:
 		:param class obj: the volume object
 		:param numpy.array chi: the susceptibility at reference density with shape (Nw,) as type complex
 		:param double chi3: the nonlinear susceptibility
+		:param double nref: the reference density in simulation units
 		:param double vg: the window velocity'''
 		w,x1,x2,ext = ctool.GetGridInfo()
 		self.q = queue
@@ -30,6 +31,7 @@ class Material:
 		self.chi = chi
 		self.w = w
 		self.chi3 = chi3
+		self.n_ref = nref
 		self.vg = vg
 		self.xp_eff = np.zeros((N[1],N[2],8))
 		# Strategy to get density plane is to re-use ray gather system
@@ -45,6 +47,7 @@ class Material:
 		self.kg_dev = pyopencl.array.empty(queue,(N[0],1,1),np.double)
 	def UpdateMaterial(self,z):
 		self.xp_eff[...,3] = z
+		# Get the density relative to the reference density for scaling of chi
 		dens = self.obj.GetDensity(self.xp_eff)
 		# Form uniform contribution to susceptibility, chi0(w), which can be different for each w
 		chi0 = np.copy(self.chi)
@@ -62,7 +65,8 @@ class Material:
 		kz[np.where(np.real(kz)==0.0)] = 1.0
 		# The Galilean pulse frame transformation; phase advance = kGalileo*dz
 		kGalileo = -self.w[...,np.newaxis,np.newaxis]/self.vg
-		self.ng_dev.set(dens,queue=self.q)
+		# Put gas density in simulation units for ionization calculations
+		self.ng_dev.set(self.n_ref*dens,queue=self.q)
 		self.kz_dev.set(kz,queue=self.q)
 		self.kg_dev.set(kGalileo,queue=self.q)
 
@@ -138,7 +142,7 @@ def update_current(cl,src,mat,ionizer):
 		src.ne_dev.fill(0.0,queue=cl.q)
 		src.Jw_dev.fill(0.0,queue=cl.q)
 	else:
-		ionizer.FittedRateCL(cl,st,nedev,Etdev,False)
+		ionizer.RateCL(cl,st,nedev,Etdev,False)
 		ionizer.GetPlasmaDensityCL(cl,st,nedev,ngdev,src.dt)
 		cl.program('fft').SoftTimeWindow(cl.q,st,None,nedev,np.int32(4),np.int32(64))
 		src.Jt_dev[...] = (src.ne_dev*src.Et_dev).copy(queue=cl.q)
@@ -343,10 +347,10 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	# Setup the wave propagation medium
 	chi = vol_dict['dispersion inside'].chi(w_nodes).astype(np.complex)
 	try:
-		ionizer = vol_dict['ionizer']
+		ionizer = ionization.Ionizer(vol_dict['ionizer'])
 	except KeyError:
 		ionizer = None
-	mat = Material(cl.q,field_tool,N,vol_dict['wave coordinates'],vol_dict['object'],chi,chi3,window_speed)
+	mat = Material(cl.q,field_tool,N,vol_dict['wave coordinates'],vol_dict['object'],chi,chi3,vol_dict['density reference'],window_speed)
 
 	# Setup the wave propagation domain
 	dens_nodes = grid_tools.cell_centers(-size[3]/2,size[3]/2,steps)
@@ -369,5 +373,5 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		ne[...,k+1] = ne0
 
 	# Finish by relaunching rays and returning UPPE data
-	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3])
+	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3],vol_dict['dispersion inside'])
 	return A,J,ne,dom4d

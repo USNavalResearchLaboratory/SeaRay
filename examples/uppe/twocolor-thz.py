@@ -33,7 +33,7 @@ band = (0.0,5.5)
 Uion = dnum('12.1 eV')
 ngas = dnum('5.4e18 cm-3')
 Zeff = 0.53
-ionizer = ionization.PPT_Tunneling(mks_length,w00,Uion,Zeff,ngas)
+ionizer = ionization.PPT_Tunneling(mks_length,False,Uion,Zeff)
 air = dispersion.HumidAir(mks_length,0.4,1e-4)
 air.add_opacity_region(1/cm,0.01/um,0.3/um)
 
@@ -105,6 +105,7 @@ optics[-1]['ionizer'] = ionizer
 optics[-1]['wave coordinates'] = 'cylindrical'
 optics[-1]['wave grid'] = (2049,256,1,11)
 optics[-1]['radial modes'] = 128
+optics[-1]['density reference'] = ngas
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

@@ -85,6 +85,7 @@ optics[-1]['propagator'] = 'uppe'
 optics[-1]['wave coordinates'] = 'cylindrical'
 optics[-1]['wave grid'] = (1025,64,1,7)
 optics[-1]['radial modes'] = 64
+optics[-1]['density reference'] = 1.0
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band

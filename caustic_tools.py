@@ -114,7 +114,7 @@ class FourierTool(CausticTool):
 		psi,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
 		return A*np.exp(1j*psi) , plot_ext
 
-	def RelaunchRays(self,xp,eikonal,vg,a,L):
+	def RelaunchRays1(self,xp,eikonal,vg,a,L):
 		'''Use wave data to create a new ray distribution.
 
 		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
@@ -161,16 +161,45 @@ class FourierTool(CausticTool):
 		sel = np.where(k1**2 + k2**2 >= w**2)
 		k1[sel] = 0.0
 		k2[sel] = 0.0
-		xp[impact,:,0] += L
-		xp[impact,:,3] += L
 		xp[impact,:,5] = k1
 		xp[impact,:,6] = k2
 		xp[impact,:,7] = np.sqrt(w**2 - k1**2 - k2**2)
+		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
+		speed = np.sqrt(vg[impact,:,1]**2 + vg[impact,:,2]**2 + vg[impact,:,3]**2)
+		xp[impact,:,0] += L/speed
+		xp[impact,:,3] += L
 		eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
 		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
 		eikonal[impact,2] = 0.0
 		eikonal[impact,3] = 0.0
+
+	def RelaunchRays(self,xp,eikonal,vg,a,L,material):
+		'''Use wave data to create a new ray distribution.
+
+		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
+		:param float L: length of the wave zone
+		:param class material: dispersion object rays are emerging from'''
+		# Assume vacuum for now
+		wn,xn,yn,ext = self.GetGridInfo()
+		# Rays keep their original frequency and transverse positions.
+		# Frequency shifts are still accounted for because amplitude may change.
+		impact = self.ClipRaysToGrid(xp)
+		w = xp[impact,:,4]
+		x = xp[impact,:,1]
+		y = xp[impact,:,2]
+		xp[impact,:,5] = 0.0
+		xp[impact,:,6] = 0.0
+		xp[impact,:,7] = w
 		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
+		xp[impact,:,0] += L/material.GroupVelocityMagnitude(w)
+		xp[impact,:,3] += L
+		eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.angle(a))
+		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		eikonal[impact,2] = 0.0
+		eikonal[impact,3] = 0.0
 
 class BesselBeamTool(CausticTool):
 
@@ -219,7 +248,7 @@ class BesselBeamTool(CausticTool):
 		psi,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
 		return A*np.exp(1j*psi),plot_ext
 
-	def RelaunchRays(self,xp,eikonal,vg,a,L):
+	def RelaunchRays1(self,xp,eikonal,vg,a,L):
 		'''Use wave data to create a new ray distribution.
 		At present azimuthal phase variation is ignored.
 
@@ -255,11 +284,13 @@ class BesselBeamTool(CausticTool):
 		except:
 			kr = np.zeros(y.shape)
 		kr[np.where(kr**2>=w**2)] = 0.0
-		xp[impact,:,0] += L
-		xp[impact,:,3] += L
 		xp[impact,:,5] = kr*np.cos(y)
 		xp[impact,:,6] = kr*np.sin(y)
 		xp[impact,:,7] = np.sqrt(w**2 - xp[impact,:,5]**2 - xp[impact,:,6]**2)
+		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
+		speed = np.sqrt(vg[impact,:,1]**2 + vg[impact,:,2]**2 + vg[impact,:,3]**2)
+		xp[impact,:,0] += L/speed
+		xp[impact,:,3] += L
 		try:
 			eikonal[impact,0] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,phase)
 			eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
@@ -268,7 +299,36 @@ class BesselBeamTool(CausticTool):
 			eikonal[impact,1] *= 1.0
 		eikonal[impact,2] = 0.0
 		eikonal[impact,3] = 0.0
+
+	def RelaunchRays(self,xp,eikonal,vg,a,L,material):
+		'''Use wave data to create a new ray distribution.
+
+		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
+		:param float L: length of the wave zone
+		:param class material: dispersion object rays are emerging from'''
+		# Assume vacuum for now
+		wn,xn,yn,ext = self.GetGridInfo()
+		# Rays keep their original frequency and transverse positions.
+		# Frequency shifts are still accounted for because amplitude may change.
+		rho,phi = self.GetCylCoords(xp)
+		wtest = np.logical_and(xp[:,0,4]>=wn[0],xp[:,0,4]<=wn[-1])
+		impact = np.where(np.logical_and(rho[:,0]<=xn[-1],wtest))[0]
+		w = xp[impact,:,4]
+		x = rho[impact,:]
+		y = phi[impact,:]
+		xp[impact,:,5] = 0.0
+		xp[impact,:,6] = 0.0
+		xp[impact,:,7] = w
 		vg[impact,...] = xp[impact,...,4:8]/xp[impact,...,4:5]
+		xp[impact,:,0] += L/material.GroupVelocityMagnitude(w)
+		xp[impact,:,3] += L
+		eikonal[impact,0] = w[:,0]*xp[impact,0,0] + grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.angle(a))
+		eikonal[impact,1] = grid_tools.DataFromGrid(w[:,0],x[:,0],y[:,0],wn,xn,yn,np.abs(a))
+		eikonal[impact,2] = 0.0
+		eikonal[impact,3] = 0.0
 
 def get_waist(rho_list,intensity,which_axis):
 	rms_size = np.sqrt(np.sum(intensity*rho_list**2,axis=which_axis)/np.sum(intensity,axis=which_axis))
