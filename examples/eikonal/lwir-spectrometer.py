@@ -1,11 +1,11 @@
-from scipy import constants as C
+from scipy import constants as Cmks
 import numpy as np
 import dispersion
 import surface
 import volume
 import input_tools
 
-material_selection = ['NaCl','ZnSe'][1]
+material_selection = ['KCl','NaCl','ZnSe'][0]
 
 # Units and scales
 
@@ -13,7 +13,7 @@ mks_length = 10.6e-6 / (2*np.pi)
 bundle_scale = 1e-4
 cm = 100*mks_length
 inch = 100*mks_length/2.54
-fs = 1e15*mks_length/C.c
+fs = 1e15*mks_length/Cmks.c
 deg = 180/np.pi
 helper = input_tools.InputHelper(mks_length)
 mess = 'Processing input file...\n'
@@ -23,10 +23,10 @@ mess = 'Processing input file...\n'
 theta = 90/deg # initial propagation direction
 a00 = 1.0
 w00 = 1.0
-r00 = 0.1/cm # spot size of radiation
+r00 = 0.03/cm # spot size of radiation
 rb = r00*bundle_scale
 t00 = 20/fs
-band = (0.5,5.0)
+band = (0.5,2.0)
 
 # Setup prism
 
@@ -34,13 +34,24 @@ if material_selection=='ZnSe':
 	material = dispersion.ZnSe(mks_length)
 	prism_box = (2/inch,1/inch,1.5/inch)
 	refraction_angle = 22.5/deg
-else:
+elif material_selection=='NaCl':
 	material = dispersion.NaCl(mks_length)
+	prism_box = (2/inch,1/inch,1.5/inch)
+	refraction_angle = 30/deg
+else:
+	material = dispersion.KCl(mks_length)
 	prism_box = (2/inch,1/inch,1.5/inch)
 	refraction_angle = 30/deg
 
 nrefr = np.sqrt(1+material.chi(w00)[0])
 incidence_angle = np.arcsin(nrefr*np.sin(refraction_angle))
+# Figure displacement to put input beam at edge of side A
+temp_prism = volume.PellinBroca('temp')
+A,B,C,D = temp_prism.SideLengths(prism_box[0],prism_box[2],refraction_angle)
+DA,AB,BC,CD = temp_prism.MidplaneVertices(A,B,C,D,refraction_angle)
+prism_disp_x = -(DA[0]*np.cos(incidence_angle)-DA[2]*np.sin(incidence_angle))
+prism_disp_x -= 0.45/inch
+
 mess += 'TIR angle = ' + str(np.arcsin(1/nrefr)*deg) + ' deg\n'
 
 # General layout
@@ -60,7 +71,7 @@ optics = []
 diagnostics = {}
 
 sim['mks_length'] = mks_length
-sim['mks_time'] = mks_length/C.c
+sim['mks_time'] = mks_length/Cmks.c
 sim['message'] = mess
 
 ray.append({})
@@ -81,15 +92,15 @@ wave[-1]['k0'] = (w00,w00*np.sin(theta),0.0,w00*np.cos(theta)) # 4-wavenumber: o
 wave[-1]['focus'] = focus
 wave[-1]['supergaussian exponent'] = 2
 
-wave.append({})
-wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00/5,r00,r00,t00/5) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (5*w00,5*w00*np.sin(theta),0.0,5*w00*np.cos(theta)) # 4-wavenumber: omega,kx,ky,kz
-# 0-component of focus is time at which pulse reaches focal point.
-# If time=0 use paraxial wave, otherwise use spherical wave.
-# Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = focus
-wave[-1]['supergaussian exponent'] = 2
+# wave.append({})
+# wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
+# wave[-1]['r0'] = (t00/5,r00,r00,t00/5) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
+# wave[-1]['k0'] = (5*w00,5*w00*np.sin(theta),0.0,5*w00*np.cos(theta)) # 4-wavenumber: omega,kx,ky,kz
+# # 0-component of focus is time at which pulse reaches focal point.
+# # If time=0 use paraxial wave, otherwise use spherical wave.
+# # Thus in the paraxial case the pulse always starts at the waist.
+# wave[-1]['focus'] = focus
+# wave[-1]['supergaussian exponent'] = 2
 
 optics.append({})
 optics[-1]['object'] = surface.disc('M1')
@@ -119,7 +130,7 @@ optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['dispersion inside'] = material
 optics[-1]['size'] = prism_box
 optics[-1]['angle'] = refraction_angle
-optics[-1]['origin'] = helper.move(-0.7*np.sin(incidence_angle)*prism_box[2],0.0,6/cm)
+optics[-1]['origin'] = helper.move(prism_disp_x,0.0,6/cm)
 optics[-1]['euler angles'] = helper.rot_zx(incidence_angle)
 
 optics.append({})
@@ -127,7 +138,7 @@ optics[-1]['object'] = surface.SphericalCap('M4')
 optics[-1]['reflective'] = True
 optics[-1]['radius of sphere'] = 2*f
 optics[-1]['radius of edge'] = RM
-optics[-1]['origin'] = helper.move(7/cm,0.0,prism_box[1])
+optics[-1]['origin'] = helper.move(7/cm,0.0,0.86*prism_box[1])
 optics[-1]['euler angles'] = helper.rot_zx_deg(90-Mdeg2)
 
 optics.append({})
@@ -138,5 +149,5 @@ optics[-1]['euler angles'] = helper.rot_zx_deg(90-2*Mdeg2)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (32,2,8,1)
+diagnostics['orbit rays'] = (8,2,8,1)
 diagnostics['base filename'] = 'out/test'

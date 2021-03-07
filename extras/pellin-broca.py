@@ -4,20 +4,22 @@ import sympy as sy
 
 # Generalized prism is a 4-sided prism with fixed inner angles, and a particular pivot point.
 # We have sides A,B,C,D, and angles a,b,c,d.
-#                 C
-#               ---------------
-#      ----------            c |
-#      |  d                    | B
-#   D |                        |
-#    |  a                    b |
-#    ---------------------------
-#                   A
+#        B
+#   ------------
+#   |b        c|         x
+#   |         |          ^
+# A |         *  C       |
+#   |        |           |
+#   |      d|            -------> z
+#   |a  ----
+#   ----
+#        D
 # A is the side of the prism where the input beam is incident, B is the exit plane, C is the reflection plane.
 # we have a characteristic angle qr (typically 30 deg)
 # The angles (a,b,c,d) are fixed as (90-qr,90,45+qr,135).
 # We want an expression for C and D in terms of A and B.
 # Strategy is to demand that a walk around the perimeter leads back to the starting point.
-# The walk starts at vertex AD and proceeds counter-clockwise (see diagram above).
+# The walk starts at vertex AD and proceeds clockwise (see diagram above).
 
 A,B,C,D,a,b,c,d,qr = sy.symbols('A B C D a b c d qr')
 def num(obj,A0,B0,qr0):
@@ -29,6 +31,7 @@ b = 90*sy.pi/180
 c = (45+qr)*sy.pi/180
 d = 135*sy.pi/180
 # The following are angular directions of the walker along a given side
+# 0 is +x direction, pi/2 is +z, etc.
 qA = sy.sympify(0)
 qB = qA + sy.pi - b
 qC = qB + sy.pi - c
@@ -48,7 +51,7 @@ D = D1
 print('Given sides A and B, we have:')
 print('C =',C)
 print('D =',D)
-# Determine the coordinates of the vertices
+# Determine the coordinates of the vertices in form (x,z)
 DA = (sy.sympify(0),sy.sympify(0))
 AB = (A,sy.sympify(0))
 BC = (A,B)
@@ -60,6 +63,7 @@ print('BC =',BC)
 print('CD =',CD)
 
 # Find the pivot point, defined as the intersection of the bisector of AB with C.
+# Equation of bisector is z(x) = A-x, set rhs equal to equation for C and solve for x.
 x = sy.symbols('x')
 x = sy.solveset(A-x - (B-(A-x)*sy.tan(sy.pi/2-c)),x).args[0] # note slope = 1 for first line
 pivot = (x,A-x)

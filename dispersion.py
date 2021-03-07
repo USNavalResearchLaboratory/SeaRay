@@ -10,7 +10,10 @@ Dispersion objects are used to specify a dispersion relation inside a ``volume``
 	air3 = dispersion.HumidAir(mks_length,0.4)
 	water = dispersion.LiquidWater(mks_length)
 	glass = dispersion.BK7(mks_length)
-	salt = dispersion.NaCl(mks_length)
+	sodium_chloride = dispersion.NaCl(mks_length)
+	potassium_chloride = dispersion.KCl(mks_length)
+	zinc_selenide = dispersion.ZnSe(mks_length)
+	germanium = dispersion.Ge(mks_length)
 
 It is simple to add a new medium to SeaRay if the dispersion relation can be put in Sellmeier form.  To do so derive the new object from ``sellmeier_medium`` and provide the arrays of coefficients.  See, e.g., the BK7 object for an example.  You can also create a Sellmeier medium on the fly.
 
@@ -445,6 +448,12 @@ class NaCl(sellmeier_medium):
 		super().__init__(mks_length,
 			A=np.array([0.00055,0.198,0.48398,0.38696,0.25998,0.08796,3.17064,0.30038]),
 			L=np.array([0.0,0.05,0.1,0.128,0.158,40.5,60.98,120.34])**2)
+
+class KCl(sellmeier_medium):
+	def __init__(self,mks_length):
+		super().__init__(mks_length,
+			A=np.array([0.26486,0.30523,0.41620,0.18870,2.6200]),
+			L=np.array([0.0,0.1,0.131,0.162,70.42])**2)
 
 class ZnSe(sellmeier_medium):
 	# Sellmeier formula from https://refractiveindex.info/?shelf=main&book=ZnSe&page=Connolly

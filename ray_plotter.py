@@ -111,7 +111,7 @@ except:
 	my_color_map = plotter_defaults['image colors']
 
 try:
-	dynamic_range = np.float(arg_dict['drange'])
+	dynamic_range = float(arg_dict['drange'])
 except:
 	dynamic_range = 0.0
 
@@ -207,16 +207,16 @@ def FractionalPowerScale(array,order):
 	return array
 
 def CartesianReduce(A,dom,frac):
-	hc = np.int(A.shape[1]/2)
-	vc = np.int(A.shape[2]/2)
-	dh = np.int(A.shape[1]*frac/2)
-	dv = np.int(A.shape[2]*frac/2)
+	hc = int(A.shape[1]/2)
+	vc = int(A.shape[2]/2)
+	dh = int(A.shape[1]*frac/2)
+	dv = int(A.shape[2]*frac/2)
 	dom = np.copy(dom)
 	dom[2:6] *= frac
 	return A[:,hc-dh:hc+dh,vc-dv:vc+dv,:],dom
 
 def RadialReduce(A,dom,frac):
-	dh = np.int(A.shape[1]*frac)
+	dh = int(A.shape[1]*frac)
 	dom = np.copy(dom)
 	dom[2:4] *= frac
 	return A[:,:dh,...],dom
@@ -527,7 +527,7 @@ class Orbits:
 					plt.figure(mpl_plot_count,figsize=(4,4))
 					center = (origin[i],origin[j])
 					if arg!='default':
-						lims = (np.float(arg.split(',')[0]),np.float(arg.split(',')[1]),np.float(arg.split(',')[2]),np.float(arg.split(',')[3]))
+						lims = (float(arg.split(',')[0]),float(arg.split(',')[1]),float(arg.split(',')[2]),float(arg.split(',')[3]))
 						plt.xlim(lims[0]-center[0],lims[1]-center[0])
 						plt.ylim(lims[2]-center[1],lims[3]-center[1])
 					for k in range(self.orbits.shape[1]):
@@ -549,7 +549,7 @@ class EikonalWaveProfiler:
 			self.xp.append(prefix+'xps.npy')
 			self.eik.append(prefix+'eiks.npy')
 		try:
-			self.res = (np.int(arg_dict['res'].split(',')[0]) , np.int(arg_dict['res'].split(',')[1]))
+			self.res = (int(arg_dict['res'].split(',')[0]) , int(arg_dict['res'].split(',')[1]))
 		except:
 			self.res = (200,200)
 		print('eikonal detectors =',self.name)
