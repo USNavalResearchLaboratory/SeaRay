@@ -7,11 +7,6 @@ Before starting, follow the steps in :doc:`generic-install`.
 
 	Installing video drivers on Linux can sometimes cause you to lose your display.  Recovery is often difficult.  If you cannot afford for this to happen you should take steps to backup your system.
 
-Support for CPU via pocl
--------------------------
-
-As of this writing there seems to be no suitable repository containing an RPM for pocl.  The best way to gain pocl functionality seems to be with the ``conda`` tool.
-
 Support for NVIDIA Graphics
 ----------------------------
 
@@ -35,27 +30,13 @@ Support for NVIDIA Graphics
 Support for AMD Graphics
 -------------------------
 
-We will use AMD ROCm.  As of this writing, pyopencl seems to be unable to support both ROCm and pocl at the same time.  Therefore if you choose to proceed with ROCm, do not install pocl.  If already installed, you can remove it by activating your environment and executing ``conda remove pocl``.
+	#. Download the driver for your GPU from the AMD website.
+	#. Follow the instructions from AMD to install the driver **with OpenCL**.
 
-#. Install AMD ROCm
+		* As of this writing, the link is `here <https://amdgpu-install.readthedocs.io>`_.  You must specify a command line option ``--opencl=pal`` or ``--opencl=legacy`` depending on your GPU.  You must also use the ``amdgpu-pro-install`` variant of the install script.
 
-	* Perform internet search to find the installation instructions for CentOS 8.
-	* Be sure to test the installation before proceeding to the next step
-	* This may involve multiple restarts.
-
-#. Export ROCm paths
-
-	* Add the following to ``~/.bashrc``, replacing :samp:`{vers}` with the version number.
-
-		- :samp:`export CPATH=/opt/rocm-{vers}/opencl/include:$CPATH`
-		- :samp:`export LIBRARY_PATH=/opt/rocm-{vers}/opencl/lib:$LIBRARY_PATH`
-		- :samp:`export LD_LIBRARY_PATH=/opt/rocm-{vers}/opencl/lib:$LD_LIBRARY_PATH`
-
-#. Close all terminal windows and open a new one
-
-#. Activate the conda environment
-
-#. :samp:`conda install -c conda-forge ocl-icd-system`
+	#. Activate the conda environment (if not already active)
+	#. :samp:`conda install -c conda-forge ocl-icd-system`
 
 
 TeX for premium plot labels

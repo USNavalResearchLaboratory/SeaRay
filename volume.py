@@ -298,19 +298,19 @@ class PellinBroca(base_volume):
     The ``size`` tuple is given as (A,h,B) where h is the height,
     A is the input side length, and B is the output side length.  Sides C and D are inferred
     from the ``angle`` parameter (refraction angle through A, also angle AD), and the requirement that input
-    and output beams make a 90 degree angle.  Side C is the reflector.
+    and output beams make a 90 degree angle.  Side C is the reflector::
 
-            B
-       ------------
-       |          |         x
-       |         |          ^
-     A |         *  C       |
-       |        |           |
-       |       |            -------> z
-       |   ----
-       ----
-            D
-    '''
+                B
+           ------------
+           |          |         x
+           |         |          ^
+         A |         *  C       |
+           |        |           |
+           |       |            -------> z
+           |   ----
+           ----
+                D
+        '''
     # The following formulas come from sympy, see extras
     def SideLengths(self,A,B,qr):
         a = np.pi/4 + 2*qr
@@ -422,16 +422,16 @@ class PellinBroca2(base_volume):
     The ``size`` tuple is given as (A,h,B) where h is the height,
     A is the input side length, and B is the output side length.  Sides C and D are inferred
     from the ``angle`` parameter (refraction angle through A, also angle AD-pi/4), and the
-    requirement that input and output beams make a 90 degree angle.  Side D is the reflector.
+    requirement that input and output beams make a 90 degree angle.  Side D is the reflector::
 
-              B
-      ---------------
-      |             |          x
-      |             | C        ^
-    A |        ------          |
-      |   ---*-                |
-      ----    D                ------> z
-    '''
+                  B
+          ---------------
+          |             |          x
+          |             | C        ^
+        A |        ------          |
+          |   ---*-                |
+          ----    D                ------> z
+        '''
 
     def SideLengths(self,A,B,qr):
         a = np.pi/4+qr

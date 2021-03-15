@@ -1,4 +1,4 @@
-Ubuntu 18.04 Advanced Install
+Ubuntu 20.04 Advanced Install
 ================================
 
 Before starting, follow the steps in :doc:`generic-install`.
@@ -12,16 +12,16 @@ It is a good idea to install both GCC and LLVM compilers first.
 	#. :samp:`sudo apt install gcc`
 	#. :samp:`sudo apt install llvm clang`
 
-Support for CPU via pocl
--------------------------
+System-wide pocl (optional)
+---------------------------
 
-Even if you get your GPU working using drivers from NVIDIA or AMD, it may still be useful to install :samp:`pocl` so you can run calculations on the CPU.  One advantage of this is that the CPU usually has access to more memory.
+You can install ``pocl`` using ``apt`` for all users.  If you wish to do this proceed as follows.
 
 	#. Install ``pocl`` system wide
 
 		* :samp:`sudo apt install pocl-opencl-icd libpocl2 ocl-icd-opencl-dev`
 
-	#. Remove the bad environment and recreate it without ``pocl``.
+	#. If you created a generic environment already, recreate it without ``pocl`` as follows
 
 		* :samp:`conda remove -n {NAME} --all`
 		* :samp:`conda create -n {NAME} -c conda-forge pyopencl scipy matplotlib`
@@ -40,9 +40,11 @@ Support for NVIDIA Graphics
 Support for AMD Graphics
 -------------------------
 
-	#. :samp:`sudo apt update`
-	#. :samp:`sudo apt install mesa-opencl-icd ocl-icd-opencl-dev`
-	#. :samp:`sudo apt update`
+	#. Download the driver for your GPU from the AMD website.
+	#. Follow the instructions from AMD to install the driver **with OpenCL**.
+
+		* As of this writing, the link is `here <https://amdgpu-install.readthedocs.io>`_.  You must specify a command line option ``--opencl=pal`` or ``--opencl=legacy`` depending on your GPU.  You must also use the ``amdgpu-pro-install`` variant of the install script.
+
 	#. Activate the conda environment (if not already active)
 	#. :samp:`conda install -c conda-forge ocl-icd-system`
 

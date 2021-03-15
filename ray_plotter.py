@@ -107,12 +107,12 @@ for arg in sys.argv:
 
 try:
 	my_color_map = arg_dict['color']
-except:
+except KeyError:
 	my_color_map = plotter_defaults['image colors']
 
 try:
 	dynamic_range = float(arg_dict['drange'])
-except:
+except KeyError:
 	dynamic_range = 0.0
 
 def cleanup(wildcarded_path):
@@ -520,7 +520,7 @@ class Orbits:
 				plot_key = 'o'+format(i,'01X').lower()+format(j,'01X').lower()
 				try:
 					arg = arg_dict[plot_key]
-				except:
+				except KeyError:
 					arg = 'stop'
 				if arg!='stop':
 					mpl_plot_count += 1
@@ -795,13 +795,13 @@ maya_plot_count = 0
 
 try:
 	label_type = arg_dict['labels']
-except:
+except KeyError:
 	label_type = 'indexed'
 
 try:
 	origin = arg_dict['origin'].split(',')
 	origin = np.array([0.0,np.double(origin[0]),np.double(origin[1]),np.double(origin[2]),0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
-except:
+except KeyError:
 	origin = np.zeros(12)
 
 meshPlots = MeshViewer(Units(label_type))

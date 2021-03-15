@@ -9,6 +9,7 @@ import pyopencl
 import caustic_tools
 import grid_tools
 import ionization
+import warnings
 
 class Material:
 	'''This class manages host and device storage describing the material's density and susceptibility.
@@ -306,12 +307,16 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		raise ValueError('Paraxial propagator requires 2**n y-nodes')
 	try:
 		window_speed = vol_dict['window speed']
-	except:
+	except KeyError:
 		window_speed = 1.0
 	try:
 		chi3 = vol_dict['chi3']
-	except:
+	except KeyError:
 		chi3 = 0.0
+	try:
+		full_relaunch = vol_dict['full relaunch']
+	except KeyError:
+		full_relaunch = False
 
 	# Capture the rays
 	if vol_dict['wave coordinates']=='cartesian':
@@ -319,6 +324,7 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	else:
 		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl,vol_dict['radial modes'])
 
+	warnings.warn('Polarization information is lost upon entering paraxial region.')
 	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
 	A = np.zeros(N).astype(np.complex)
 	J = np.zeros(N).astype(np.complex)
@@ -360,5 +366,8 @@ def track(cl,xp,eikonal,vg,vol_dict):
 		ne[...,k+1] = ne0
 
 	# Finish by relaunching rays and returning wave data
-	field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3],vol_dict['dispersion inside'])
+	if full_relaunch:
+		field_tool.RelaunchRays1(xp,eikonal,vg,A[...,-1],size[3],vol_dict['dispersion inside'])
+	else:
+		field_tool.RelaunchRays(xp,eikonal,vg,A[...,-1],size[3],vol_dict['dispersion inside'])
 	return A,J,ne,dom4d

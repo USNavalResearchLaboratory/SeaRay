@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import scipy.interpolate
 import scipy.integrate
@@ -114,14 +115,15 @@ class FourierTool(CausticTool):
 		psi,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
 		return A*np.exp(1j*psi) , plot_ext
 
-	def RelaunchRays1(self,xp,eikonal,vg,a,L):
+	def RelaunchRays1(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
 
 		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
 		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
-		:param float L: length of the wave zone'''
+		:param float L: length of the wave zone
+		:param class material: dispersion object rays are emerging from'''
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		# Work out the eikonal wavevectors indirectly
@@ -182,6 +184,7 @@ class FourierTool(CausticTool):
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
+		warnings.warn('Using simplified ray relaunch; only valid for close couplings.')
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		# Rays keep their original frequency and transverse positions.
@@ -248,7 +251,7 @@ class BesselBeamTool(CausticTool):
 		psi,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
 		return A*np.exp(1j*psi),plot_ext
 
-	def RelaunchRays1(self,xp,eikonal,vg,a,L):
+	def RelaunchRays1(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
 		At present azimuthal phase variation is ignored.
 
@@ -256,7 +259,8 @@ class BesselBeamTool(CausticTool):
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
 		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
-		:param float L: length of the wave zone'''
+		:param float L: length of the wave zone
+		:param class material: dispersion object rays are emerging from'''
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		a,xn = grid_tools.AddGhostCells(a,xn,1)
@@ -309,6 +313,7 @@ class BesselBeamTool(CausticTool):
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
+		warnings.warn('Using simplified ray relaunch; only valid for close couplings.')
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		# Rays keep their original frequency and transverse positions.

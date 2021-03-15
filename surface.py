@@ -782,15 +782,21 @@ class IdealLens(disc):
 		# Save the starting ray direction for use in polarization update
 		u0 = np.copy(xp[...,0,5:8])
 		u0 /= np.sqrt(np.einsum('...i,...i',u0,u0))[...,np.newaxis]
-		# Point momentum toward a single point.
-		R = np.array([0.0,0.0,self.f]) - xp[:,:,1:4]
-		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
+		# Use image plane to deduce new momentum
+		t = 2*self.f/vg[...,3] # correct for either + or - lens
+		img_pts = xp[...,:4]-vg*t[...,np.newaxis] # start with object pts
+		img_pts[...,1:3] *= -1.0 # inversion
+		img_pts[...,3] += 4*self.f # translate to image plane
 		k2 = np.einsum('...i,...i',xp[:,:,5:8],xp[:,:,5:8])[...,np.newaxis]
+		R = np.sign(self.f)*(img_pts[...,1:4] - xp[...,1:4])
+		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
 		xp[:,:,5:8] = np.sqrt(k2)*R/np.sqrt(R2)
-		# Advance ray time and phase by |R|-f to get spherical phase fronts
-		tadv = np.sqrt(R2)-self.f
+		# Advance ray time and phase
+		R = np.array([0.0,0.0,self.f]) - xp[...,1:4]
+		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
+		tadv = np.sign(self.f)*(np.sqrt(R2)-np.abs(self.f))
 		eikonal[:,0] -= tadv[:,0,0]*xp[:,0,4]
-		xp[:,:,0] -= tadv[...,0]
+		xp[...,0] -= tadv[...,0]
 		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 		# Remaining code updates the polarization
