@@ -123,7 +123,7 @@ __kernel void SetKerrPolarization(__global tw_Complex * P, __global tw_Complex *
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
 	const tw_Float e2 = E[idx].s0*E[idx].s0 + E[idx].s1*E[idx].s1;
-	P[idx] = 0.5*chi3*e2*E[idx];
+	P[idx] = 0.75*chi3*e2*E[idx];
 }
 
 __kernel void AddNonuniformChi(__global tw_Complex * P, __global tw_Complex * E,__global tw_Complex * dchi)

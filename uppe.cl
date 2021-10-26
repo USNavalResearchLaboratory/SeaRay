@@ -119,5 +119,5 @@ __kernel void SetKerrPolarization(__global tw_Float * P, __global tw_Float * E,c
 	const int Nj = get_global_size(1);
 	const int Nk = get_global_size(2);
 	const int idx = i0*Nj*Nk + j0*Nk + k0;
-	P[idx] *= chi3*E[idx];
+	P[idx] *= 1.5*chi3*E[idx];
 }

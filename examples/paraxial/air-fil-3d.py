@@ -9,7 +9,6 @@ import input_tools
 # 3D USPL filamentation, using Paraxial module.
 # Initial beam is put through a random amplitude screen.
 # Once the filament forms resolution is lost.
-# The nonlinear index is artificially high for the given pulse duration.
 
 # Suggested visualization: use ray_viewer.ipynb to interactively view A(t,x,y)
 
@@ -27,7 +26,7 @@ waist = 100/um
 w00 = 2*np.pi/wavelength
 U00 = dnum('5 mJ')
 t00 = dnum('50 fs')
-chi3 = helper.chi3(1.0,'5e-23 m2/W')
+chi3 = helper.chi3(1.0,'1e-23 m2/W')
 propagation_range = (-20/cm,-15/cm)
 rbox = 2/mm
 

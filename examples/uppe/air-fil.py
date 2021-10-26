@@ -7,8 +7,6 @@ import volume
 import input_tools
 
 # Simple USPL air plasma using UPPE module.
-# The n2 value is high for the given pulse duration.
-# This allows the self guided mode to form more readily.
 # Generally requires thousands of steps, a powerful GPU helps.
 
 mks_length = 0.8e-6 / (2*np.pi)
@@ -27,7 +25,7 @@ U00 = dnum('1 mJ')
 t00 = dnum('50 fs')
 propagation_range = (-20/cm,20/cm)
 rbox = 3/mm
-chi3 = helper.chi3(1.0,'5e-23 m2/W')
+chi3 = helper.chi3(1.0,'1e-23 m2/W')
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
 band = (0.0,8.0)
 Uion = dnum('12.1 eV')

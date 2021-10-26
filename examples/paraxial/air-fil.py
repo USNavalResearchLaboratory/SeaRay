@@ -7,8 +7,6 @@ import volume
 import input_tools
 
 # Simple axisymmetric USPL air plasma using Paraxial module.
-# The n2 value is high for the given pulse duration.
-# This allows the self guided mode to form more readily.
 
 mks_length = 0.8e-6 / (2*np.pi)
 cm = 100*mks_length
@@ -26,7 +24,7 @@ U00 = dnum('1 mJ')
 t00 = dnum('50 fs')
 propagation_range = (-20/cm,20/cm)
 rbox = 3/mm
-chi3 = helper.chi3(1.0,'5e-23 m2/W')
+chi3 = helper.chi3(1.0,'1e-23 m2/W')
 
 Uion = dnum('12.1 eV')
 ngas = dnum('5.4e18 cm-3')

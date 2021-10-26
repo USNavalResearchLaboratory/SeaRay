@@ -114,12 +114,12 @@ class InputHelper:
 		return Enormalized * lambda_mks/(2*np.pi*self.x1)
 
 	def chi3(self,n0,n2):
-		return (2.0/3.0)*n0*self.dnum(n2)
+		return (4.0/3.0)*n0*2*self.dnum(n2)
 
 	def mks_n2_to_chi3(self,n0,n2_mks):
 		print('WARNING: mks_n2_to_chi3 is deprecated.')
 		eta0 = np.sqrt(C.mu_0/C.epsilon_0)
-		chi3_mks = (2.0/3.0)*n0*n2_mks/eta0
+		chi3_mks = (4.0/3.0)*n0*2*n2_mks/eta0
 		return self.dnum(str(chi3_mks)+' m2/V2')
 
 	def rot_zx(self,rad):
