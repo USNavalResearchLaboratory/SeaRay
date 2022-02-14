@@ -4,10 +4,8 @@ import glob
 import sys
 import shutil
 import numpy as np
-import pyopencl
 
 import init
-import dispersion
 import ray_kernel
 
 if len(sys.argv)==1:

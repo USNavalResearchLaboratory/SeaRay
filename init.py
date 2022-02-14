@@ -43,9 +43,7 @@ def setup_opencl(argv):
 	"""Process command line arguments and setup OpenCL
 	argv = command line argument list
 	Returns:
-	device = OpenCL device object
-	ctx = OpenCL context
-	queue = OpenCL queue to use for all device commands
+	cl_refs = class containing device, context, and queue
 	args = command line arguments stripped of OpenCL items"""
 
 	if argv[1]=='list':
