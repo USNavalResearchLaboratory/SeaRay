@@ -15,26 +15,26 @@ The input file can be simple or complicated.  In its simplest form, it is a set 
 
 In the simplest case, where you only need to describe a single simulation, we have the following five objects:
 
-	.. glossary::
+.. glossary::
 
-		``sim``
-			Dictionary of general parameters of the simulations, such as units.
+	``sim``
+		Dictionary of general parameters of the simulations, such as units.
 
-		``wave``
-			List of dictionaries, with each dictionary describing an initial electromagnetic wave.  The total initial field configuration is the superposition of all the waves.
+	``wave``
+		List of dictionaries, with each dictionary describing an initial electromagnetic wave.  The total initial field configuration is the superposition of all the waves.
 
-		``ray``
-			List of dictionaries describing how initial rays should be loaded.  At present only the first dictionary is used.
+	``ray``
+		List of dictionaries describing how initial rays should be loaded.  At present only the first dictionary is used.
 
-		``optics``
-			List of dictionaries, with each dictionary describing an optical element, detection surface, or wave propagation region.
+	``optics``
+		List of dictionaries, with each dictionary describing an optical element, detection surface, or wave propagation region.
 
-		``diagnostics``
-			Dictionary of general parameters pertaining to how diagnostics are written.
+	``diagnostics``
+		Dictionary of general parameters pertaining to how diagnostics are written.
 
-	.. tip::
+.. tip::
 
-		A useful perspective is that SeaRay ignores the whole input file except for the five lists named above.  It makes no difference how the lists are created within.  Best practice in post-processing is also to look only at the five lists.
+	A useful perspective is that SeaRay ignores the whole input file except for the five lists named above.  It makes no difference how the lists are created within.  Best practice in post-processing is also to look only at the five lists.
 
 You can also describe multiple simulations in one input file.  Simply enclose each of the objects above in another list.  Now we have a list of simulations.  It is possible to set up sophisticated batch jobs using this system.
 
