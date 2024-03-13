@@ -1,10 +1,10 @@
 from scipy import constants as C
 import numpy as np
 from scipy.optimize import brentq
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example input file for dispersive quartic plasma lens.
 # For the quartic lens, most of the caustic is after the paraxial focus.

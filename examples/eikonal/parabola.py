@@ -1,12 +1,11 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import surface
-import input_tools
+import modules.surface as surface
+import modules.input_tools as input_tools 
 
 # Example showing 90 degree off-axis parabolic mirror
 # Suggested plotter command:
-# python ray_plotter out/test det=1,2/0,0/0.1
+# python plotter out/test det=1,2/0,0/0.1
 # Verify spot size and intensity against preprocessing calculation
 
 # Units and scales

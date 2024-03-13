@@ -1,16 +1,16 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import ionization
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.ionization as ionization
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # 3D USPL filamentation, using Paraxial module.
 # Initial beam is put through a random amplitude screen.
 # Once the filament forms resolution is lost.
 
-# Suggested visualization: use ray_viewer.ipynb to interactively view A(t,x,y)
+# Suggested visualization: use viewer.ipynb to interactively view A(t,x,y)
 
 mks_length = 0.8e-6 / (2*np.pi)
 helper = input_tools.InputHelper(mks_length)

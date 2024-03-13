@@ -1,10 +1,10 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import ionization
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.ionization as ionization
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools
 
 # Simple USPL air plasma using UPPE module.
 # Generally requires thousands of steps, a powerful GPU helps.
@@ -85,7 +85,7 @@ optics[-1]['density reference'] = ngas
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
-optics[-1]['nonlinear band'] = (0.0,0.5)
+optics[-1]['nonlinear band'] = (0.0,4.0)
 optics[-1]['subcycles'] = 1
 optics[-1]['minimum step'] = 1.0
 optics[-1]['dispersion inside'] = air

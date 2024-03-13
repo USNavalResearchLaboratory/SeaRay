@@ -1,9 +1,9 @@
 from scipy import constants as Cmks
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Unfolded confocal unstable resonator using ideal lenses.
 

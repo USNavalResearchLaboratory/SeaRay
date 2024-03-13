@@ -3,3 +3,4 @@ docs/_build
 *checkpoint.ipynb
 *.pyc
 *.npy
+*.log

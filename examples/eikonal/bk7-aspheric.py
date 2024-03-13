@@ -1,16 +1,16 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example of aspheric lens focusing and dispersive effects
 # The aspheric surface is modeled using a surface mesh
 # IMPORTANT: frequency and azimuthal nodes in source and detector must match
 
 # Suggested plotter command
-# python ray_plotter.py out/test det=0,4/0,0,0
+# python plotter.py out/test det=0,4/0,0,0
 # Illustrates induced chirp via Wigner transform
 
 # Units and scales

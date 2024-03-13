@@ -1,12 +1,12 @@
 from scipy import constants as C
 import numpy as np
-import surface
-import input_tools
+import modules.surface as surface
+import modules.input_tools as input_tools 
 
 # Example of diffraction grating
 
 # Suggested plotter command
-# python ray_plotter.py out/test o3d det=4,5
+# python plotter.py out/test o3d det=4,5
 
 # Units and scales
 

@@ -63,8 +63,8 @@ plt.xlabel(r'$x/\rho_0$',size=18)
 plt.ylabel(r'$y/\rho_0$',size=18)
 
 plt.subplot(122)
-plt.plot(x[:,0],amplitude[np.int(npts/2),:])
-plt.plot(y[0,:],amplitude[:,np.int(npts/2)])
+plt.plot(x[:,0],amplitude[int(npts/2),:])
+plt.plot(y[0,:],amplitude[:,int(npts/2)])
 plt.xlabel(r'$x/\rho_0$',size=18)
 plt.ylabel(r'Amplitude',size=18)	
 

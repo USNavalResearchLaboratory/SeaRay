@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-import grid_tools
+import modules.grid_tools as grid_tools
 
 class TestGrids:
 

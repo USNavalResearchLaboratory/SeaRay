@@ -1,9 +1,9 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example of focusing with an extra-thick bi-convex spherical lens
 # Illustrates difficulty of full wave reconstruction for highly aberrated beams
@@ -12,7 +12,7 @@ import input_tools
 # but this input file does not do that.
 
 # Suggested plotter command:
-# python ray_plotter.py out/test o3d
+# python plotter.py out/test o3d
 # The imperfection of the focus should be obvious
 
 # Units and scales

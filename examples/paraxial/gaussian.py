@@ -1,19 +1,18 @@
 from scipy import constants as C
 import numpy as np
-from scipy.optimize import brentq
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example input file for 3D paraxial wave equation.
 # Rays are converted to paraxial wave which propagates through focus.
 # Rays are relaunched at a symmetric point downstream.
 
 # Suggested plotter commands:
-# python ray_plotter out/test exit=1,8
+# python plotter out/test exit=1,8
 #   Upturned parabolas correspond to rays defocusing out of wave zone.
-# python ray_plotter out/test exit=1,8/4,.999,1.001/6,-.001,.001
+# python plotter out/test exit=1,8/4,.999,1.001/6,-.001,.001
 #   Isolates an individual parabola (fixes w=1 and ky=0)
 # The interactive viewer can be used to examine the paraxial wave itself.
 

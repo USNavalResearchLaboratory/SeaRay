@@ -1,20 +1,23 @@
+import sys
+sys.path.append('modules')
 from time import time
 import os
 import glob
-import sys
 import shutil
 import numpy as np
+import logging
 
-import init
-import ray_kernel
+import modules.init as init
+import modules.ray_kernel as ray_kernel
 
 if len(sys.argv)==1:
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 0.8.7')
-	print('Usage: rays.py cmd [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
+	print('Version: 1.0.0')
+	print('Usage: rays.py cmd [log=<loglevel>] [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
 	print('cmd = run --- executes calculation')
+	print('<loglevel> = logging level: debug, info, warning, error, critical')
 	print('<name> = path of input file, if not given inputs.py must be in working directory.')
 	print('<dev_str> = something in desired device name, or numerical id')
 	print('<plat_str> = something in desired OpenCL platform, or numerical id')
@@ -25,7 +28,7 @@ if len(sys.argv)==1:
 	exit(1)
 
 # Error check command line arguments
-valid_arg_keys = ['run','list','file','device','platform','iterations']
+valid_arg_keys = ['run','list','log','file','device','platform','iterations']
 for arg in sys.argv[1:]:
 	if arg.split('=')[0] not in valid_arg_keys:
 		raise SyntaxError('The argument <'+arg+'> was not understood.')
@@ -35,16 +38,21 @@ print('--------------------')
 print('Accelerator Hardware')
 print('--------------------')
 cl,args = init.setup_opencl(sys.argv)
-cl.add_program('fft')
-cl.add_program('uppe')
-cl.add_program('paraxial')
-cl.add_program('caustic')
-cl.add_program('ionization')
+cl.add_program('kernels','fft')
+cl.add_program('kernels','uppe')
+cl.add_program('kernels','paraxial')
+cl.add_program('kernels','caustic')
+cl.add_program('kernels','ionization')
+cl.add_program('kernels','rotations')
 
-# Get input file
+# Get input file and set log level
+log_level = logging.WARN
 for arg in args:
 	if arg.split('=')[0]=='file':
 		shutil.copyfile(arg.split('=')[1],'inputs.py')
+	if arg.split('=')[0]=='log':
+		log_level = getattr(logging, arg.split('=')[1].upper())
+logging.basicConfig(format='%(levelname)s %(asctime)s %(message)s', datefmt='%m/%d/%y %H:%M:%S', level=log_level)
 import inputs
 
 # Add the outer list if necessary
@@ -72,7 +80,7 @@ for irun in range(len(inputs.sim)):
 
 	output_path = os.path.dirname(inputs.diagnostics[irun]['base filename'])
 	if not os.path.exists(output_path):
-		print('INFO: creating output directory',output_path)
+		logging.info('creating output directory %s',output_path)
 		os.mkdir(output_path)
 
 	print('\nSetting up optics...\n')

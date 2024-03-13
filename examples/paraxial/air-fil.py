@@ -1,10 +1,10 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import ionization
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.ionization as ionization
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Simple axisymmetric USPL air plasma using Paraxial module.
 

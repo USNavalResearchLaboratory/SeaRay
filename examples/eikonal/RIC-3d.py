@@ -1,10 +1,10 @@
 from scipy import constants as C
 import numpy as np
 from scipy.optimize import brentq
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example input file for 3D ray-in-cell propagation through ideal form plasma lens.
 # The alternate test case creates a quartic lens on a 3D grid (will give messy results).
@@ -12,7 +12,7 @@ import input_tools
 # N.b. an explicitly axisymmetric grid will give much better results for a given grid resolution.
 
 # Suggested plotter command:
-# python ray_plotter.py out/test o31
+# python plotter.py out/test o31
 # note near perfect focus (zoom in to see caustic)
 
 # Units and scales

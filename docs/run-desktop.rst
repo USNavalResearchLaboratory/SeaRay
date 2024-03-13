@@ -35,10 +35,10 @@ Running a Ray Example
 #. :samp:`python rays.py run file=examples/eikonal/parabola.py platform={cuda} device={titan}`
 #. This copies the :samp:`parabola.py` example file to the :samp:`{raysroot}` directory as :samp:`inputs.py` and runs the calculation.  If you do not specify a file, SeaRay will use whatever :samp:`inputs.py` is in :samp:`{raysroot}`.  It is best practice to never directly edit :samp:`inputs.py`.
 #. When the run is finished, you should have several output files in :samp:`{raysroot}/out`.  The output files are simply pickled numpy arrays.
-#. Let us plot the results using the SeaRay plotter.  The plotter is not interactive, but allows for a fairly high degree of control using command line options. You can get a help screen by executing :samp:`python ray_plotter.py` with no arguments.
-#. :samp:`python ray_plotter.py out/test o3d`
+#. Let us plot the results using the SeaRay plotter.  The plotter is not interactive, but allows for a fairly high degree of control using command line options. You can get a help screen by executing :samp:`python plotter.py` with no arguments.
+#. :samp:`python plotter.py out/test o3d`
 #. You should see a 3D rendering of the ray orbits reflecting off an off-axis parabola, as in Fig. 1 below (assuming :samp:`matplotlib` environment).  When you are done looking close the plot window.
-#. :samp:`python ray_plotter.py out/test det=1,2/0,0/0.1`
+#. :samp:`python plotter.py out/test det=1,2/0,0/0.1`
 #. This should produce an image of the radiation intensity at the focal point, as in Fig. 2 below.
 
 .. figure:: parabola.png
@@ -61,7 +61,7 @@ Running a Wave Example
 #. Wave runs typically take longer, although this one is fairly quick.  You should see some text based progress indicators as the wave propagation is calculated.  The time stepper is adaptive, so varying amounts of work may be done between diagnostic planes.
 #. At present you must use the Jupyter-based interactive viewer to plot the results.  For the following ``Jupyter`` and ``ipympl`` must be installed in your environment.
 #. :samp:`jupyter notebook`
-#. When the Jupyter home page comes up select :samp:`ray_viewer.ipynb`.
+#. When the Jupyter home page comes up select :samp:`viewer.ipynb`.
 #. For this example you should not need to change the source code.  Generally, if output files are saved under a different location you have to change the value of ``base_diagnostic``.  Note also that as of this writing, the normalizing length is hard coded in the notebook.
 #. Run the notebook (select ``Run All`` from the ``Cell`` menu).  Advance the z-slider to observe the pulse evolution.
 

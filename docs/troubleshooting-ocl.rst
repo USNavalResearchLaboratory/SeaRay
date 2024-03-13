@@ -26,7 +26,7 @@ ICD Files
 
 **LINUX** - The ICD files are the specific OpenCL implementation from a given vendor.  These are libraries that actually know how to interact with a specific device set. If the full path is given in the ICD registry file, then that is the location of the ICD file (if registry files in different locations point to different places, making these consistent may be the solution).  If only the name is given, then :samp:`/usr/lib{64}/` is a likely place the ICD loader will try.  For Anaconda, the loader might try :samp:`{anaconda}/envs/{my_env}/lib{64}/`.
 
-**WINDOWS** - In the case of windows, the full path should be in the system registry (see above). The path is typically ugly, but the filename should be something like ``IntelOpenCL64.dll`` or ``amdocl64.dll``.
+**WINDOWS** - In the case of windows, the full path should be in the system registry (see above). The path is typically ugly, but the filename should be something like ``intelocl.dll`` or ``amdocl64.dll``.
 
 Device Drivers
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

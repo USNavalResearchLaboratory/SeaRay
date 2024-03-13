@@ -1,29 +1,27 @@
 Generic SeaRay Installation
 ===========================
 
-Prepare Anaconda
+Install Miniforge3
 ---------------------
 
-If you are already using anaconda3 and are confident in your environment you can skip this section.
+The ``pyopencl`` developers recommend using Miniforge as opposed to Anaconda or Miniconda.
 
-#. Download Miniconda3 installer from internet
-#. Navigate to downloaded file
-	* For linux or MacOS, execute :samp:`bash {filename}`, where :samp:`{filename}` is the file that you just downloaded
-	* For Windows run the graphical installer and accept the defaults.  When finished use the Anaconda prompt that should be available in the ``Start`` menu to issue the commands below.
+#. Uninstall miniconda/anaconda, or else be prepared to add path specifiers from time to time
+#. Internet search for ``miniforge``
+#. Follow installation guide for your platform
 #. :samp:`conda update conda`
 #. :samp:`conda init`
-	* If you want to use the Windows PowerShell run :samp:`conda init powershell`
+	* If you want to use PowerShell run :samp:`conda init powershell`
+
 
 Environment and Basic Packages
 ------------------------------
 
 #. Choose a name for your environment, denoted :samp:`{NAME}`
-#. :samp:`conda create -n {NAME} -c conda-forge pocl pyopencl scipy matplotlib pillow pytest`
-	* The ``pocl`` package provides generic OpenCL support.  Depending on the system configuration it may be possible to omit this.
+#. :samp:`conda create -n {NAME} pyopencl scipy matplotlib jupyter ipympl pillow pytest python=3.10`
+	* As of this writing there is an issue with OpenSSL, it may help to force miniforge to use a specific version, e.g., add ``openssl=3.2.0`` to all install commands.
 #. :samp:`conda activate {NAME}`
 	* This command puts you in an isolated conda environment.  This command must be issued each time you open a new terminal window, in order to use the environment.
-
-If the ``pyopencl`` package (for hardware acceleration) seems to be causing problems it may help to read :doc:`troubleshooting-ocl`.
 
 Getting SeaRay Components
 -------------------------
@@ -34,7 +32,7 @@ To copy the SeaRay components to your local computer perform the following proce
 #. Test to see if you have Git installed by executing :samp:`git --version`
 #. Install Git if necessary.
 	* Anaconda --- :samp:`conda install git`
-	* CentOS/RHEL --- :samp:`sudo yum install git`
+	* Fedora/RHEL --- :samp:`sudo dnf install git`
 	* Homebrew --- :samp:`brew install git`
 	* MacPorts --- :samp:`sudo port install git`
 	* Ubuntu --- :samp:`sudo apt install git`
@@ -48,11 +46,26 @@ To copy the SeaRay components to your local computer perform the following proce
 
 #. If you like you can give the SeaRay root directory another name, we will call it :samp:`{raysroot}` from now on.
 
-Advanced Installation Preview
-------------------------------
+Install Drivers
+---------------
 
-At this point you should have enough to run SeaRay simulations and view the data with the SeaRay plotter.  If you want to activate more features, see :doc:`adv-install`.  The additional features include:
-	* Higher performance parallelism
-	* Premium plot labels using TeX
-	* Advanced 3D plots using mayavi
-	* Interactive Jupyter notebooks
+* Windows + AMD --- install specific drivers for the video card
+* Windows + NVIDIA --- install CUDA developer tools
+* Windows + Intel CPU --- install Intel CPU Runtime for OpenCL
+* Linux + GPU --- a lot of variation, search internet
+* Mac/Linux + CPU --- activate environment, then :samp:`conda install pocl`
+* Mac/Linux in general --- try ``conda install ocl-icd-system`` to add system-wide drivers to conda environment.
+
+.. sidebar::
+	The ``pocl`` package (portable OpenCL) is a generic way to get OpenCL support for a wide range of devices.
+
+Optional Components
+---------------------------
+
+#. If you want the nicest looking plot labels you may want to install a TeX distribution.
+	* Search internet to find instructions for your operating system.
+	* Uncomment the line :samp:`mpl.rcParams['text.usetex'] = True` near the top of :samp:`plotter.py`.
+#. If you want the best 3D plots you may want to install ``mayavi``
+	* Activate your environment.
+	* :samp:`conda install mayavi`
+	* The plotter automatically senses its presence

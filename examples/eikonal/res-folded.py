@@ -1,9 +1,7 @@
 from scipy import constants as Cmks
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.surface as surface
+import modules.input_tools as input_tools 
 
 # This illustrates an unstable off-axis cavity resonator.
 # In order to fold the path, we position multiple copies of

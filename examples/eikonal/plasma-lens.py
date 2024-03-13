@@ -1,10 +1,10 @@
 from scipy import constants as C
 from scipy.optimize import brentq
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example of 3D Cartesian parabolic or quartic plasma lenses.
 # The parabolic lens produces large area caustic surfaces in
@@ -16,7 +16,7 @@ import input_tools
 # Therefore the wave zone calculation is done in the forward direction.
 
 # Suggested plotter command:
-# python ray_plotter.py out/test o3d det=1,2/0,0/0.1
+# python plotter.py out/test o3d det=1,2/0,0/0.1
 
 # Units and scales
 

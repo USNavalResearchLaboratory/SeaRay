@@ -1,14 +1,14 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example of separating Nd:glass wavelength and its second harmonic in a Pellin-Broca prism.
 
 # Suggested plotter command
-# python ray_plotter.py out/test o3d
+# python plotter.py out/test o3d
 
 # Units and scales
 

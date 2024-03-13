@@ -1,10 +1,10 @@
 from scipy import constants as C
 import numpy as np
 from scipy.optimize import brentq
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example input file for parabolic or quartic plasma lenses.
 # The parabolic lens produces large area caustic surfaces in
@@ -16,7 +16,7 @@ import input_tools
 # Therefore the wave zone calculation is done in the forward direction.
 
 # Suggested plotter command:
-# python ray_plotter.py out/test o31 det=1,2/0,0/0.01
+# python plotter.py out/test o31 det=1,2/0,0/0.01
 # Note underfocused marginal rays, yet micron scale spot size.
 
 # Units and scales

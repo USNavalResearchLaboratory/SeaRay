@@ -1,9 +1,9 @@
 from scipy import constants as C
 import numpy as np
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools
 
 # Example input file for axisymmetric UPPE wave equation.
 # Illustrates self focusing, self phase modulation, and group velocity dispersion in glass
@@ -89,7 +89,7 @@ optics[-1]['density reference'] = 1.0
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
-optics[-1]['nonlinear band'] = (0.0,0.5)
+optics[-1]['nonlinear band'] = (0.0,4.0)
 optics[-1]['subcycles'] = 4
 optics[-1]['minimum step'] = .3/um
 optics[-1]['dispersion inside'] = glass

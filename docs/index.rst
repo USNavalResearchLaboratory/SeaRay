@@ -15,6 +15,7 @@ Preliminaries
 
 	license
 	overview
+	breaking
 
 SeaRay Installation
 -------------------
@@ -23,7 +24,7 @@ SeaRay Installation
 	:maxdepth: 1
 
 	generic-install
-	adv-install
+	driver-install
 
 Running SeaRay
 --------------

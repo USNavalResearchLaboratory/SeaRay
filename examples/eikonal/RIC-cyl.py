@@ -1,17 +1,17 @@
 from scipy import constants as C
 import numpy as np
 from scipy.optimize import brentq
-import dispersion
-import surface
-import volume
-import input_tools
+import modules.dispersion as dispersion
+import modules.surface as surface
+import modules.volume as volume
+import modules.input_tools as input_tools 
 
 # Example input file for ray-in-cell propagation through ideal form plasma lens.
 # The alternate test case creates a quartic lens on a grid (will have caustics).
 # The ideal form lens data must be in ./extras.  Generate with synth-lens.py.
 
 # Suggested plotter command:
-# python ray_plotter.py out/test o31
+# python plotter.py out/test o31
 # note near perfect focus (zoom in to see caustic)
 
 mks_length = 0.8e-6 / (2*np.pi)

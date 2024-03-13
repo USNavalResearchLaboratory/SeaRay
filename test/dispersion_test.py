@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from scipy import constants as C
-import dispersion
+import modules.dispersion as dispersion
 
 class TestSpotCheckSolids:
     # Most of the data points from https://refractiveindex.info

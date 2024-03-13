@@ -1,7 +1,10 @@
 import pytest
 import numpy as np
-import init
-import ray_kernel
+
+import sys
+sys.path.append('modules')
+import modules.init as init
+import modules.ray_kernel as ray_kernel
 
 class TestAction:
     bdx = 1e-4
