@@ -11,7 +11,7 @@ import modules.input_tools as input_tools
 # Output will be chi_eff.  To compare with figure work out the XPM phase shift (SPM*2)
 # k0*2*dn*Leff (Eq. 2), where dn ~ chi_eff/2, and Leff = 4.41 mm.  Probe wavelength is 550 nm.
 # Overall this gives 50350*chi_eff.
-# Propagation range in simulation can be shorter and it won't matter.
+# Propagation range in simulation only needs to match if we want to check actual probe phase shift.
 
 mks_length = 0.8e-6 / (2*np.pi)
 cm = 100*mks_length
@@ -25,12 +25,13 @@ dnum = helper.dnum
 wavelength = 0.8/um
 r00 = 150/um
 w00 = 2*np.pi/wavelength
+wprobe = 2*np.pi/(0.55/um)
 t00 = dnum('0.04 ps')/1.18
 a00 = C.e*np.sqrt(2*377*4.5e13*1e4)/(w00*C.c/mks_length)/C.m_e/C.c
-propagation_range = (0/cm,.1/cm)
+propagation_range = (0/cm,.441/cm)
 rbox = 1/mm
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,16.0)
+band = (0.0,8.0)
 
 # Control Parameters - Gas
 
@@ -74,6 +75,7 @@ ray[-1]['loading coordinates'] = 'cylindrical'
 # It will be transformed appropriately by SeaRay to start in the wave
 ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
 
+# Pump pulse
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
 wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
@@ -83,6 +85,24 @@ wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
 # Thus in the paraxial case the pulse always starts at the waist.
 wave[-1]['focus'] = (0.0,0.0,0.0,-0.1/mm)
 wave[-1]['supergaussian exponent'] = 2
+
+# Probe pulse
+wave.append({})
+wave[-1]['a0'] = (0.0,.1*a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
+wave[-1]['r0'] = (t00/4,r00,r00,t00/4) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
+wave[-1]['k0'] = (wprobe,0.0,0.0,wprobe) # 4-wavenumber: omega,kx,ky,kz
+# 0-component of focus is time at which pulse reaches focal point.
+# If time=0 use paraxial wave, otherwise use spherical wave.
+# Thus in the paraxial case the pulse always starts at the waist.
+wave[-1]['focus'] = (0.0,0.0,0.0,-0.1/mm)
+wave[-1]['supergaussian exponent'] = 2
+
+# Delay filter (delay probe with respect to pump)
+optics.append({})
+optics[-1]['object'] = surface.Filter('delay')
+optics[-1]['origin'] = (0.0,0.0,-0.05/mm)
+optics[-1]['radius'] = 5/cm
+optics[-1]['transfer function'] = lambda w: np.exp(1j*w*np.heaviside(w-0.5*(wprobe+w00),0.5)*dnum('.1 ps'))
 
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')

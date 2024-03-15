@@ -4,15 +4,17 @@ Module: :samp:`paraxial_kernel`
 
 This module is the primary computational engine for advancing paraxial wave equations.
 The call stack is as follows:
+
 * `track` is called externally
 * `track` repeatedly calls `propagator` to advance to the end of the volume
 * `propagator` repeatedly calls `load_source` and RK4 functions to advance to the next diagnostic plane
 * `load_source` has these steps
-  - propagate linearly
-  - transform (kx,ky) -> (x,y)
-  - call `update_current`
-  - transform (x,y) -> (kx,ky)
-  - estimate step size if requested
+
+	- propagate linearly
+	- transform (kx,ky) -> (x,y)
+	- call `update_current`
+	- transform (x,y) -> (kx,ky)
+	- estimate step size if requested
 '''
 import numpy as np
 import pyopencl
@@ -22,6 +24,7 @@ import grid_tools
 import ionization
 import rotations
 import logging
+from base import base_volume_interface
 
 class Material:
 	'''This class manages host and device storage describing the material's density and susceptibility.
@@ -30,7 +33,7 @@ class Material:
 			  ctool: caustic_tools.CausticTool,
 			  N: tuple,
 			  coords: str,
-			  vol: any, # need circular import
+			  vol: base_volume_interface,
 			  chi: np.ndarray,
 			  chi3: np.double,
 			  nref: np.double,

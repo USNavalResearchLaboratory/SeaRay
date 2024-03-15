@@ -34,6 +34,7 @@ Running SeaRay
 
 	run-desktop
 	run-input-files
+	howto
 
 Reference
 ---------

@@ -30,7 +30,7 @@ MOCK_MODULES = ['numpy','numpy.random','numpy.fft','scipy.optimize',
 	'scipy.integrate']
 sys.modules.update((mod_name,Mock()) for mod_name in MOCK_MODULES)
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../modules'))
 
 
 # -- General configuration ------------------------------------------------
@@ -77,7 +77,7 @@ release = '1.0.0a1'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'English'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

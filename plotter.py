@@ -9,6 +9,7 @@ import grid_tools
 import inputs
 import PIL.Image
 import logging
+import importlib.util
 
 # Add the outer list if necessary
 if type(inputs.sim)==dict:
@@ -33,11 +34,19 @@ try:
 except:
 	mpl_loaded = False
 
-try:
-	from mayavi import mlab
-	maya_loaded = True
-except:
-	maya_loaded = False
+def chk_mlab():
+	'''load mlab if available and not already done.
+	returns the module or None.'''
+	nm = 'mayavi.mlab'
+	if nm in sys.modules:
+		return sys.modules[nm]
+	elif (spec := importlib.util.find_spec(nm)) is not None:
+		mlab = importlib.util.module_from_spec(spec)
+		sys.modules[nm] = mlab
+		spec.loader.exec_module(mlab)
+		return mlab
+	else:
+		return None
 
 if len(sys.argv)==1:
 	print('==============BEGIN HELP FOR SEARAY PLOTTER==============')
@@ -395,8 +404,9 @@ class Bundles:
 	def Plot(self,mpl_plot_count,maya_plot_count):
 		lab_str = self.label_system.GetLabels()
 		normalization = self.label_system.GetNormalization()
-		if maya_loaded:
-			try:
+		if 'bundle' in arg_dict:
+			mlab = chk_mlab()
+			if mlab!=None:
 				maya_plot_count += 1
 				b = int(arg_dict['bundle'])
 				xpb = np.load(self.xp)[b,...]
@@ -411,8 +421,6 @@ class Bundles:
 				mlab.axes(xlabel=lab_str[1],ylabel=lab_str[2],zlabel=lab_str[3],extent=extent)
 				mlab.outline(extent=extent)
 				mlab.view(azimuth=80,elevation=30,distance=6*np.max(extent),focalpoint=(0,0,0))
-			except KeyError:
-				None
 		return mpl_plot_count,maya_plot_count
 
 class Orbits:
@@ -437,7 +445,7 @@ class Orbits:
 						plt.figure(mpl_plot_count,figsize=(7,6))
 						harray,plot_ext = grid_tools.GridFromInterpolation(self.xpo[:,i],self.xpo[:,j],self.xpo[:,k],self.res,self.res)
 						cbar_str = TransformColorScale(harray,dynamic_range)
-						plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=units.PlotExt(plot_ext,i,j))
+						plt.imshow(harray.swapaxes(0,1),origin='lower',cmap=my_color_map,aspect='auto',extent=self.label_system.PlotExt(plot_ext,i,j))
 						b=plt.colorbar()
 						b.set_label(cbar_str+lab_str[k],size=18)
 						plt.xlabel(lab_str[i],size=18)
@@ -457,7 +465,8 @@ class Orbits:
 				get_color = lambda i : [0.0,0.0,0.0,render_alpha*(a2[0,i]/a2max)**0.0001]
 		if 'o3d' in sys.argv:
 			characteristic_size = normalization[1]*(np.max(self.orbits[...,1:4]) - np.min(self.orbits[...,1:4]))
-			if maya_loaded:
+			mlab = chk_mlab()
+			if mlab:
 				maya_plot_count += 1
 				for j in range(self.orbits.shape[1]):
 					x = normalization[1]*self.orbits[:,j,1]
@@ -483,7 +492,7 @@ class Orbits:
 					y = mesh[:,:,2]
 					z = mesh[:,:,3]
 					mlab.mesh(x*normalization[1],y*normalization[2],z*normalization[3],color=(0.5,1,0.5),opacity=0.5)
-			if mpl_loaded and not maya_loaded:
+			if mpl_loaded and not mlab:
 				mpl_plot_count += 1
 				fig = plt.figure(mpl_plot_count,figsize=(7,6))
 				ax = fig.add_subplot(111,projection='3d')
@@ -515,7 +524,7 @@ class Orbits:
 				ax.set_ylim(yl-padding[1],yh+padding[1])
 				ax.set_zlim(zl-padding[2],zh+padding[2])
 				if len(self.mesh_list)>0 and needsBar:
-					fig.colorbar(cmap, shrink=0.5, aspect=10, label='height ('+units.LengthLabel()+')')
+					fig.colorbar(cmap, shrink=0.5, aspect=10, label='height ('+self.label_system.LengthLabel()+')')
 				plt.tight_layout()
 		for i in range(12):
 			for j in range(12):
@@ -753,6 +762,10 @@ class FullWaveProfiler:
 							plt.savefig(img_file)
 							plt.close()
 					if len(plot_ax)==3:
+						mlab = chk_mlab()
+						if not mlab:
+							print('cannot make this plot without maya')
+							return
 						maya_plot_count += 1
 						dv = val_rng[1]-val_rng[0]
 						contour_list = []
@@ -824,8 +837,10 @@ mpl_plot_count,maya_plot_count = planePlots.Plot(mpl_plot_count,maya_plot_count)
 besselPlots = BesselBeamProfiler(Units('cyl'))
 mpl_plot_count,maya_plot_count = besselPlots.Plot(mpl_plot_count,maya_plot_count)
 
-if maya_loaded and maya_plot_count>0:
-	mlab.show()
+if maya_plot_count>0:
+	mlab = chk_mlab()
+	if mlab:
+		mlab.show()
 
 if mpl_loaded and mpl_plot_count>0:
 	plt.show()

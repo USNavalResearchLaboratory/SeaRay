@@ -57,6 +57,7 @@ Install Drivers
 * Mac/Linux in general --- try ``conda install ocl-icd-system`` to add system-wide drivers to conda environment.
 
 .. sidebar::
+	
 	The ``pocl`` package (portable OpenCL) is a generic way to get OpenCL support for a wide range of devices.
 
 Optional Components
