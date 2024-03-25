@@ -2,7 +2,7 @@
 Module :samp:`base`
 ----------------------
 
-This is a place for root level interfaces or implementations.
+This is a place for root level interfaces or implementations and other type checking related components.
 '''
 import numpy as np
 
@@ -39,3 +39,40 @@ class base_volume_interface:
         pass
     def Report(self,basename,mks_length):
         pass
+
+def wrong_tuple(nm,num,idxSome,idxNone,tup,bounds):
+    if len(tup)!=num or any([tup[i]==None for i in idxSome]) or any([tup[i]!=None for i in idxNone]):
+        raise ValueError('Expected ' + nm + (' boundary' if bounds else '') + ' tuple, got ' + str(tup))
+
+def check_ray_tuple(tup,bounds=False):
+    if bounds:
+        wrong_tuple('ray-like',8,[0,1,2,3,4,5],[6,7],tup,bounds)
+    else:
+        wrong_tuple('ray-like',4,[0,1,2],[3],tup,bounds)
+
+def check_surf_tuple(tup,bounds=False):
+    if bounds:
+        wrong_tuple('surface-like',8,[2,3,4,5],[0,1,6,7],tup,bounds)
+    else:
+        wrong_tuple('surface-like',4,[1,2],[0,3],tup,bounds)
+
+def check_vol_tuple(tup,bounds=False):
+    if bounds:
+        wrong_tuple('volume-like',8,[2,3,4,5,6,7],[0,1],tup,bounds)
+    else:
+        wrong_tuple('volume-like',4,[1,2,3],[0],tup,bounds)
+
+def check_four_tuple(tup,bounds=False):
+    if bounds:
+        wrong_tuple('full 4d',8,[0,1,2,3,4,5,6,7],[],tup,bounds)
+    else:
+        wrong_tuple('full 4d',4,[0,1,2,3],[],tup,bounds)
+
+def check_rz_tuple(tup):
+    wrong_tuple('RZ',2,[0,1],[],tup,False)
+
+def check_list_of_dict(obj):
+    if not isinstance(obj,list):
+        raise TypeError("Expected list, got " + str(obj))
+    if not all([isinstance(item,dict) for item in obj]):
+        raise TypeError("Expected list of dictionaries")

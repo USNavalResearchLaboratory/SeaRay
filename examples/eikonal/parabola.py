@@ -5,7 +5,7 @@ import modules.input_tools as input_tools
 
 # Example showing 90 degree off-axis parabolic mirror
 # Suggested plotter command:
-# python plotter out/test det=1,2/0,0/0.1
+# python plotter.py out/test det=1,2/0,0/0.1
 # Verify spot size and intensity against preprocessing calculation
 
 # Units and scales
@@ -48,12 +48,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (128,32,1)
-ray[-1]['bundle radius'] = (rb,rb,rb,rb)
+ray[-1]['number'] = (1,128,32,None)
+ray[-1]['bundle radius'] = (None,rb,rb,rb)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -76,7 +76,7 @@ optics[-1]['euler angles'] = (0.,180/deg,0.)
 optics.append({})
 optics[-1]['object'] = surface.FullWaveProfiler('det')
 optics[-1]['size'] = (.4/mm,.4/mm,.2/mm)
-optics[-1]['wave grid'] = (2048,2048,1)
+optics[-1]['wave grid'] = (1,2048,2048,1)
 optics[-1]['distance to caustic'] = 1.25/mm
 optics[-1]['origin'] = (0.,1.25/mm,0.)
 optics[-1]['euler angles'] = (0.,90/deg,0.)
@@ -89,5 +89,5 @@ optics[-1]['euler angles'] = (0.,90/deg,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (2,32,1)
+diagnostics['orbit rays'] = (1,2,32,None)
 diagnostics['base filename'] = 'out/test'

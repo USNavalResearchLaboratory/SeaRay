@@ -33,6 +33,7 @@ import grid_tools
 import caustic_tools
 import logging
 from base import base_volume_interface as base_volume
+from base import check_four_tuple,check_surf_tuple
 
 class base_surface:
 	'''Base class for deriving surfaces.'''
@@ -543,8 +544,9 @@ class AsphericCap(surface_mesh,disc):
 	'''Positive radius has concavity in +z direction, parallel to normals'''
 	def CreateMeshPointsAndNormals(self,input_dict):
 		# Make an aspheric surface out of triangles
-		Nx = input_dict['mesh points'][0]
-		Ny = input_dict['mesh points'][1]
+		check_surf_tuple(input_dict['mesh points'])
+		Nx = input_dict['mesh points'][1]
+		Ny = input_dict['mesh points'][2]
 		C = 1.0/input_dict['radius of sphere']
 		k = input_dict['conic constant']
 		A = input_dict['aspheric coefficients']
@@ -843,7 +845,7 @@ class IdealHarmonicGenerator(disc):
 		eikonal[sel1,1:4] *= np.sqrt(1-self.eff)
 		# Interpolate to modify existing rays
 		momentum_fill = [0.0,0.0,-1.0]
-		for i in range(7):
+		for i in range(4):
 			for j in range(5,8):
 				xp[sel2,i,j] = scipy.interpolate.griddata((xph[:,i,1],xph[:,i,4]),xph[:,i,j],(xp[sel2,i,1],xp[sel2,i,4]),fill_value=momentum_fill[j-5])
 		for j in range(0,4):
@@ -937,7 +939,8 @@ class FullWaveProfiler(BeamProfiler):
 		super().Initialize(input_dict)
 		self.dz = input_dict['distance to caustic']
 		self.Lz = input_dict['size'][2]
-		self.N = ray_kernel.AddFrequencyDimension(input_dict['wave grid'])
+		self.N = input_dict['wave grid']
+		check_four_tuple(self.N)
 	def wave_band(self,wc):
 		if self.N[0]==1:
 			return (wc - 1.0 , wc + 1.0)

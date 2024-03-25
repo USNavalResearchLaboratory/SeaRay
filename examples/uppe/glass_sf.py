@@ -55,12 +55,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (1025,64,4,1)
-ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['number'] = (1025,64,4,None)
+ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,4*r00) + (0.0,2*np.pi) + (0.0,0.0)
+ray[-1]['box'] = band + (0.0,4*r00) + (0.0,2*np.pi) + (None,None)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -89,7 +89,7 @@ optics[-1]['density reference'] = 1.0
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
-optics[-1]['nonlinear band'] = (0.0,4.0)
+optics[-1]['nonlinear band'] = (0.5,1.5)
 optics[-1]['subcycles'] = 4
 optics[-1]['minimum step'] = .3/um
 optics[-1]['dispersion inside'] = glass
@@ -109,5 +109,5 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (8,4,4,1)
+diagnostics['orbit rays'] = (8,4,4,None)
 diagnostics['base filename'] = 'out/test'

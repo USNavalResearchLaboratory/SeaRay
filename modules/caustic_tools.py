@@ -34,7 +34,7 @@ class CausticTool:
 		w0,dw = grid_tools.cyclic_center_and_width(band[0],band[1])
 		self.center = np.array(list((w0,) + center))
 		self.size = np.array(list((dw,) + size))
-		self.dx = self.size/np.array(list(pts))
+		self.dx = self.size/np.array(list(pts[:3]+(1,)))
 		self.default_band = size[0]
 		self.cl = cl
 		# Derived classes must create a transverse transform tool T
@@ -69,7 +69,7 @@ class CausticTool:
 		condx = np.logical_or(np.logical_and(x>=xn[0],x<=xn[-1]),xn.shape[0]==1)
 		condy = np.logical_or(np.logical_and(y>=yn[0],y<=yn[-1]),yn.shape[0]==1)
 		cond = np.logical_and(np.logical_and(condx,condy),condw)
-		for r in range(1,7):
+		for r in range(1,4):
 			cond[:,0] *= cond[:,r] # if any satellite is clipped throw out the bundle
 		return np.where(cond[:,0])[0]
 	def kspace(self,A):
@@ -118,9 +118,9 @@ class FourierTool(CausticTool):
 	def RelaunchRays1(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
 
-		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray xp: phase space data with shape (Nb,4,8)
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
-		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,4,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
@@ -178,9 +178,9 @@ class FourierTool(CausticTool):
 	def RelaunchRays(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
 
-		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray xp: phase space data with shape (Nb,4,8)
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
-		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,4,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
@@ -257,9 +257,9 @@ class BesselBeamTool(CausticTool):
 		'''Use wave data to create a new ray distribution.
 		At present azimuthal phase variation is ignored.
 
-		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray xp: phase space data with shape (Nb,4,8)
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
-		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,4,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
@@ -309,9 +309,9 @@ class BesselBeamTool(CausticTool):
 	def RelaunchRays(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
 
-		:param numpy.ndarray xp: phase space data with shape (Nb,7,8)
+		:param numpy.ndarray xp: phase space data with shape (Nb,4,8)
 		:param numpy.ndarray eik: eikonal data with shape (Nb,4)
-		:param numpy.ndarray vg: group velocity with shape (Nb,7,4)
+		:param numpy.ndarray vg: group velocity with shape (Nb,4,4)
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''

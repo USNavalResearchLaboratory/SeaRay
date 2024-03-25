@@ -7,13 +7,14 @@ import shutil
 import numpy as np
 import logging
 
+import modules.base as base
 import modules.init as init
 import modules.ray_kernel as ray_kernel
 
-if len(sys.argv)==1:
+def help():
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 1.0.0')
-	print('Usage: rays.py cmd [log=<loglevel>] [file=<name>] [device=<dev_str>] [platform=<plat_str>] [iterations=<n>]')
+	print('Version: 1.0.0a2')
+	print('Usage: rays.py cmd [log=<loglevel>] [file=<name>] [device=<dev_str>] [platform=<plat_str>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
 	print('cmd = run --- executes calculation')
@@ -23,77 +24,82 @@ if len(sys.argv)==1:
 	print('<plat_str> = something in desired OpenCL platform, or numerical id')
 	print('large numbers (>10) are assumed to be part of a name rather than an id')
 	print('defaults are the last platform/device in the list')
-	print('<n> = iterations to use in optimization (default=1)')
 	print('==========END HELP FOR SEARAY==========')
-	exit(1)
 
-# Error check command line arguments
-valid_arg_keys = ['run','list','log','file','device','platform','iterations']
-for arg in sys.argv[1:]:
-	if arg.split('=')[0] not in valid_arg_keys:
-		raise SyntaxError('The argument <'+arg+'> was not understood.')
+###############################
+# EXTERNAL CALLER ENTRY POINT #
+###############################
 
-# Set up OpenCL
-print('--------------------')
-print('Accelerator Hardware')
-print('--------------------')
-cl,args = init.setup_opencl(sys.argv)
-cl.add_program('kernels','fft')
-cl.add_program('kernels','uppe')
-cl.add_program('kernels','paraxial')
-cl.add_program('kernels','caustic')
-cl.add_program('kernels','ionization')
-cl.add_program('kernels','rotations')
+def run(cmd_line,sim,ray,wave,optics,diagnostics):
+	'''Run a SeaRay simulation.  This is invoked automatically if `rays.py` is run from
+	the command line.  It can also be called from the user's own control program.
+	
+	:param list cmd_line: command line arguments excluding 0,1
+	:param dict sim: simulation object
+	:param list ray: list of ray objects
+	:param list wave: list of wave objects
+	:param list optics: list of optics
+	:param dict diagnostics: diagnostic object'''
 
-# Get input file and set log level
-log_level = logging.WARN
-for arg in args:
-	if arg.split('=')[0]=='file':
-		shutil.copyfile(arg.split('=')[1],'inputs.py')
-	if arg.split('=')[0]=='log':
-		log_level = getattr(logging, arg.split('=')[1].upper())
-logging.basicConfig(format='%(levelname)s %(asctime)s %(message)s', datefmt='%m/%d/%y %H:%M:%S', level=log_level)
-import inputs
+	# Error check command line arguments
+	valid_arg_keys = ['log','device','platform']
+	for arg in cmd_line:
+		if arg.split('=')[0] not in valid_arg_keys:
+			raise SyntaxError('The argument <'+arg+'> was not understood.')
 
-# Add the outer list if necessary
-if type(inputs.sim)==dict:
-	inputs.sim = [inputs.sim]
-	inputs.wave = [inputs.wave]
-	inputs.ray = [inputs.ray]
-	inputs.optics = [inputs.optics]
-	inputs.diagnostics = [inputs.diagnostics]
+	# Set up OpenCL
+	print('--------------------')
+	print('Accelerator Hardware')
+	print('--------------------')
+	cl,args = init.setup_opencl(sys.argv)
+	cl.add_program('kernels','fft')
+	cl.add_program('kernels','uppe')
+	cl.add_program('kernels','paraxial')
+	cl.add_program('kernels','caustic')
+	cl.add_program('kernels','ionization')
+	cl.add_program('kernels','rotations')
 
-# Pre-simulation cleaning
-if inputs.diagnostics[0]['clean old files']:
-	file_list = glob.glob(inputs.diagnostics[0]['base filename']+'*.npy')
-	for f in file_list:
-		os.remove(f)
+	# Setup logging
+	log_level = logging.WARN
+	for arg in args:
+		if arg.split('=')[0]=='log':
+			log_level = getattr(logging, arg.split('=')[1].upper())
+	logging.basicConfig(format='%(levelname)s %(asctime)s %(message)s', datefmt='%m/%d/%y %H:%M:%S', level=log_level)
 
-# Run one case for each set of dictionaries
-for irun in range(len(inputs.sim)):
+	# verify top level inputs
+	if not isinstance(sim,dict):
+		raise TypeError('sim should be a dictionary')
+	base.check_list_of_dict(ray)
+	base.check_list_of_dict(wave)
+	base.check_list_of_dict(optics)
+	if not isinstance(diagnostics,dict):
+		raise TypeError('diagnostics should be a dictionary')
 
-	print('-------------')
-	print('Begin Run',irun+1)
-	print('-------------')
-	print(inputs.sim[irun]['message'])
+	# Pre-simulation cleaning
+	if diagnostics['clean old files']:
+		file_list = glob.glob(diagnostics['base filename']+'*.npy')
+		for f in file_list:
+			os.remove(f)
+
+	print(sim['message'])
 	time1 = time()
 
-	output_path = os.path.dirname(inputs.diagnostics[irun]['base filename'])
+	output_path = os.path.dirname(diagnostics['base filename'])
 	if not os.path.exists(output_path):
 		logging.info('creating output directory %s',output_path)
 		os.mkdir(output_path)
 
 	print('\nSetting up optics...\n')
-	for opt_dict in inputs.optics[irun]:
+	for opt_dict in optics:
 		print('Initializing',opt_dict['object'].name)
 		opt_dict['object'].Initialize(opt_dict)
 		opt_dict['object'].InitializeCL(cl,opt_dict)
 
 	print('\nSetting up rays and orbits...')
-	if len(inputs.ray[irun])>1:
+	if len(ray)>1:
 		raise ValueError('Only one ray box allowed at present.')
-	xp,eikonal,vg = ray_kernel.init(inputs.wave[irun],inputs.ray[irun][0])
-	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,inputs.ray[irun][0],inputs.diagnostics[irun],inputs.optics[irun])
+	xp,eikonal,vg = ray_kernel.init(wave,ray[0])
+	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,ray[0],diagnostics,optics)
 	micro_action_0 = ray_kernel.GetMicroAction(xp,eikonal,vg)
 	xp0 = np.copy(xp)
 	eikonal0 = np.copy(eikonal)
@@ -101,26 +107,54 @@ for irun in range(len(inputs.sim)):
 	print('\nStart propagation...\n')
 	print('Initial micro-action = {:.3g}\n'.format(micro_action_0))
 
-	for opt_dict in inputs.optics[irun]:
+	for opt_dict in optics:
 		print('\nEncountering',opt_dict['object'].name)
 		opt_dict['object'].Propagate(xp,eikonal,vg,orb=orbit_dict)
 
 	print('\nStart diagnostic reports...\n')
 
-	if len(inputs.sim)>1:
-		basename = inputs.diagnostics[irun]['base filename'] + '_' + str(irun)
-	else:
-		basename = inputs.diagnostics[irun]['base filename']
+	basename = diagnostics['base filename']
 
-	if not inputs.diagnostics[irun]['suppress details']:
+	if not diagnostics['suppress details']:
 		ray_kernel.SyncSatellites(xp,vg)
 		np.save(basename+'_xp0',xp0)
 		np.save(basename+'_xp',xp)
 		np.save(basename+'_eikonal',eikonal)
 		np.save(basename+'_orbits',orbit_dict['data'])
 
-	for opt_dict in inputs.optics[irun]:
-		opt_dict['object'].Report(basename,inputs.sim[irun]['mks_length'])
+	for opt_dict in optics:
+		opt_dict['object'].Report(basename,sim['mks_length'])
 
 	time2 = time()
 	print('Completed in {:.1f} seconds'.format(time2-time1))
+
+############################
+# COMMAND LINE ENTRY POINT #
+############################
+
+if __name__ == "__main__":
+	if len(sys.argv)==1 or sys.argv[1]=='help':
+		help()
+		exit(0)
+
+	valid_arg_keys = ['run','list','log','file','device','platform']
+	for arg in sys.argv[1:]:
+		if arg.split('=')[0] not in valid_arg_keys:
+			raise SyntaxError('The argument <'+arg+'> was not understood.')
+	
+	if sys.argv[1]=='list':
+		init.list_opencl()
+		exit(0)
+	
+	if sys.argv[1]=='run':
+		args = sys.argv[2:]
+		reduced_args = []
+		for arg in args:
+			if arg.split('=')[0]=='file':
+				shutil.copyfile(arg.split('=')[1],'inputs.py')
+			elif arg!='run' and arg!='list':
+				reduced_args += [arg]
+		import inputs
+		run(reduced_args,inputs.sim,inputs.ray,inputs.wave,inputs.optics,inputs.diagnostics)
+	else:
+		raise SyntaxError('The first positional command was not understood.')

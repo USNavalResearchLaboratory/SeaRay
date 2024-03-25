@@ -16,9 +16,9 @@ inline double4 cross4(const double4 x,const double4 y)
 inline double ComputeRayVolume(int vidx,__global double *xp)
 {
 	double4 v1,v2,v3,v1xv2;
-	v1 = vload4(vidx+2,xp) - vload4(vidx+4,xp);
-	v2 = vload4(vidx+6,xp) - vload4(vidx+8,xp);
-	v3 = vload4(vidx+10,xp) - vload4(vidx+12,xp);
+	v1 = vload4(vidx+2,xp) - vload4(vidx,xp);
+	v2 = vload4(vidx+4,xp) - vload4(vidx,xp);
+	v3 = vload4(vidx+6,xp) - vload4(vidx,xp);
 	v1xv2 = cross4(v1,v2);
 	return fabs(dot4(v1xv2,v3));
 }
@@ -61,7 +61,7 @@ __kernel void Symplectic(	__global double * xp,
     // eikonal is a 2d array with [bundle][component]
     // components are phase,ax,ay,az
 	const int bundle = get_global_id(0);
-	const int vidx = bundle*7*2;
+	const int vidx = bundle*4*2;
 
 	double ray_volume,ds=ds0;
 	double4 x0,k0,x1,k1,x2,k2,x3,k3,x4,k4,x5,k5,x6,k6,v00,A,Dk;
@@ -79,12 +79,6 @@ __kernel void Symplectic(	__global double * xp,
 	k2 = vload4(vidx+5,xp);
 	x3 = vload4(vidx+6,xp);
 	k3 = vload4(vidx+7,xp);
-	x4 = vload4(vidx+8,xp);
-	k4 = vload4(vidx+9,xp);
-	x5 = vload4(vidx+10,xp);
-	k5 = vload4(vidx+11,xp);
-	x6 = vload4(vidx+12,xp);
-	k6 = vload4(vidx+13,xp);
 	A = vload4(bundle,eikonal);
 
 	for (int i=0;i<steps;i++)
@@ -110,15 +104,6 @@ __kernel void Symplectic(	__global double * xp,
 
 		x3 += ds*raise(D_alpha_k(x3,k3))/Dk.s0;
 		k3 -= ds*raise(D_alpha_x(x3,k3))/Dk.s0;
-
-		x4 += ds*raise(D_alpha_k(x4,k4))/Dk.s0;
-		k4 -= ds*raise(D_alpha_x(x4,k4))/Dk.s0;
-
-		x5 += ds*raise(D_alpha_k(x5,k5))/Dk.s0;
-		k5 -= ds*raise(D_alpha_x(x5,k5))/Dk.s0;
-
-		x6 += ds*raise(D_alpha_k(x6,k6))/Dk.s0;
-		k6 -= ds*raise(D_alpha_x(x6,k6))/Dk.s0;
 	}
 
 	vstore4(x0,vidx+0,xp);
@@ -129,12 +114,6 @@ __kernel void Symplectic(	__global double * xp,
 	vstore4(k2,vidx+5,xp);
 	vstore4(x3,vidx+6,xp);
 	vstore4(k3,vidx+7,xp);
-	vstore4(x4,vidx+8,xp);
-	vstore4(k4,vidx+9,xp);
-	vstore4(x5,vidx+10,xp);
-	vstore4(k5,vidx+11,xp);
-	vstore4(x6,vidx+12,xp);
-	vstore4(k6,vidx+13,xp);
 
 	// Update Amplitude
 	ray_volume /= ComputeRayVolume(vidx,xp);

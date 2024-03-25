@@ -55,6 +55,11 @@ air = dispersion.HumidAir(mks_length,0.4,1e-3)
 L = propagation_range[1] - propagation_range[0]
 rgn_center = (0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
 
+# Helpers
+
+def rect(w,w1,w2):
+    return np.heaviside(w-w1,0.5) * np.heaviside(w2-w,0.5)
+
 # Set up dictionaries
 
 sim = {}
@@ -68,12 +73,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
 ray.append({})
-ray[-1]['number'] = (2049,128,2,1)
-ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['number'] = (2049,128,2,None)
+ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
 
 # Pump pulse
 wave.append({})
@@ -88,7 +93,7 @@ wave[-1]['supergaussian exponent'] = 2
 
 # Probe pulse
 wave.append({})
-wave[-1]['a0'] = (0.0,.1*a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
+wave[-1]['a0'] = (0.0,.05*a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
 wave[-1]['r0'] = (t00/4,r00,r00,t00/4) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
 wave[-1]['k0'] = (wprobe,0.0,0.0,wprobe) # 4-wavenumber: omega,kx,ky,kz
 # 0-component of focus is time at which pulse reaches focal point.
@@ -102,7 +107,7 @@ optics.append({})
 optics[-1]['object'] = surface.Filter('delay')
 optics[-1]['origin'] = (0.0,0.0,-0.05/mm)
 optics[-1]['radius'] = 5/cm
-optics[-1]['transfer function'] = lambda w: np.exp(1j*w*np.heaviside(w-0.5*(wprobe+w00),0.5)*dnum('.1 ps'))
+optics[-1]['transfer function'] = lambda w: np.exp(1j*rect(w,0.9*wprobe,1.1*wprobe)*w*dnum('.2 ps'))
 
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')
@@ -136,5 +141,5 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (32,8,2,1)
+diagnostics['orbit rays'] = (32,8,2,None)
 diagnostics['base filename'] = 'out/test'

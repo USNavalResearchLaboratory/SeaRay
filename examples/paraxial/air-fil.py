@@ -55,12 +55,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
 ray.append({})
-ray[-1]['number'] = (256,128,2,1)
-ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['number'] = (256,128,2,None)
+ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -101,5 +101,5 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (32,8,2,1)
+diagnostics['orbit rays'] = (32,8,2,None)
 diagnostics['base filename'] = 'out/test'

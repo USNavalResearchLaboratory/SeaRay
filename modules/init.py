@@ -43,6 +43,15 @@ class cl_refs:
 
 		self.prog[basename] = program
 
+def list_opencl():
+	print('PyOpenCL version',pyopencl.VERSION)
+	for platform in pyopencl.get_platforms():
+		print('Platform:',platform.name)
+		for dev in platform.get_devices(pyopencl.device_type.ALL):
+			print('  ',dev.name)
+			print('      ',dev.version)
+			print('      {:0.1f} GB , '.format(dev.global_mem_size/1e9)+str(dev.native_vector_width_float*32)+' bit vectors')
+
 def setup_opencl(argv):
 	"""Process command line arguments and setup OpenCL
 	argv = command line argument list
@@ -50,21 +59,10 @@ def setup_opencl(argv):
 	cl_refs = class containing device, context, and queue
 	args = command line arguments stripped of OpenCL items"""
 
-	if argv[1]=='list':
-		print('PyOpenCL version',pyopencl.VERSION)
-		for platform in pyopencl.get_platforms():
-			print('Platform:',platform.name)
-			for dev in platform.get_devices(pyopencl.device_type.ALL):
-				print('  ',dev.name)
-				print('      ',dev.version)
-				print('      {:0.1f} GB , '.format(dev.global_mem_size/1e9)+str(dev.native_vector_width_float*32)+' bit vectors')
-		exit(0)
-
 	device_search_string = ''
 	device_id = -1
 	platform_search_string = ''
 	platform_id = -1
-	optimization_iterations = 1
 	args = []
 	for arg in argv:
 		CL_related = False

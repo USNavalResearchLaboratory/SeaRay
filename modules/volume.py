@@ -28,6 +28,7 @@ import paraxial_kernel
 import uppe_kernel as uppe_kernel
 import grid_tools
 import surface
+from base import check_rz_tuple,check_vol_tuple
 
 class base_volume:
     '''
@@ -753,18 +754,19 @@ class Grid(grid_volume,Box):
 
 class TestGrid(Grid):
     def LoadMap(self,input_dict):
+        check_vol_tuple(input_dict['mesh points'])
         N = input_dict['mesh points']
-        N = (N[0]+4,N[1]+4,N[2]+4)
-        self.dx = self.size[0]/(N[0]-4)
-        self.dy = self.size[1]/(N[1]-4)
-        self.dz = self.size[2]/(N[2]-4)
-        x = grid_tools.cell_centers(-2*self.dx-self.size[0]/2,2*self.dx+self.size[0]/2,N[0])
-        y = grid_tools.cell_centers(-2*self.dy-self.size[1]/2,2*self.dy+self.size[1]/2,N[1])
-        z = grid_tools.cell_centers(-2*self.dz-self.size[2]/2,2*self.dz+self.size[2]/2,N[2])
-        rho2 = np.outer(x**2,np.ones(N[1])) + np.outer(np.ones(N[0]),y**2)
+        N = (N[1]+4,N[2]+4,N[3]+4)
+        self.dx = self.size[0]/(N[1]-4)
+        self.dy = self.size[1]/(N[2]-4)
+        self.dz = self.size[2]/(N[3]-4)
+        x = grid_tools.cell_centers(-2*self.dx-self.size[0]/2,2*self.dx+self.size[0]/2,N[1])
+        y = grid_tools.cell_centers(-2*self.dy-self.size[1]/2,2*self.dy+self.size[1]/2,N[2])
+        z = grid_tools.cell_centers(-2*self.dz-self.size[2]/2,2*self.dz+self.size[2]/2,N[3])
+        rho2 = np.outer(x**2,np.ones(N[2])) + np.outer(np.ones(N[1]),y**2)
         coeff = self.vol_dict['radial coefficients']
         fr = coeff[0] + coeff[1]*rho2 + coeff[2]*rho2**2 + coeff[3]*rho2**4
-        self.ne = input_dict['density multiplier']*np.einsum('ij,k->ijk',fr,np.ones(N[2]))
+        self.ne = input_dict['density multiplier']*np.einsum('ij,k->ijk',fr,np.ones(N[3]))
 
 class AxisymmetricGrid(grid_volume,Cylinder):
     def LoadMap(self,input_dict):
@@ -812,6 +814,7 @@ class AxisymmetricGrid(grid_volume,Cylinder):
 
 class AxisymmetricTestGrid(AxisymmetricGrid):
     def LoadMap(self,input_dict):
+        check_rz_tuple(input_dict['mesh points'])
         N = input_dict['mesh points']
         N = (N[0]+4,N[1]+4)
         self.dr = self.Rd/(N[0]-4)

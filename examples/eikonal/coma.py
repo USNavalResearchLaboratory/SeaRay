@@ -49,12 +49,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (128,128,1)
-ray[-1]['bundle radius'] = (rb,rb,rb,rb)
+ray[-1]['number'] = (1,128,128,None)
+ray[-1]['bundle radius'] = (None,rb,rb,rb)
 ray[-1]['loading coordinates'] = 'cartesian'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = (-3*r00,3*r00) + (-3*r00,3*r00) + (0.0,0.0)
+ray[-1]['box'] = (0.9,1.1) + (-3*r00,3*r00) + (-3*r00,3*r00) + (None,None)
 
 wave.append({})
 wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -77,7 +77,7 @@ optics[-1]['euler angles'] = (0.,np.pi,0.)
 optics.append({})
 optics[-1]['object'] = surface.FullWaveProfiler('det')
 optics[-1]['size'] = (1/mm,1/mm,1/mm)
-optics[-1]['wave grid'] = (1024,1024,1)
+optics[-1]['wave grid'] = (1,1024,1024,1)
 optics[-1]['distance to caustic'] = 10/mm
 optics[-1]['origin'] = (43/mm,0.0,-490/mm)
 optics[-1]['euler angles'] = (0.,np.pi,0.)
@@ -89,5 +89,5 @@ optics[-1]['origin'] = (0.,0.,-1000/mm)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (4,4,1)
+diagnostics['orbit rays'] = (1,4,4,None)
 diagnostics['base filename'] = 'out/test'

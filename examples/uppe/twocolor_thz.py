@@ -5,6 +5,7 @@ import modules.ionization as ionization
 import modules.surface as surface
 import modules.volume as volume
 import modules.input_tools as input_tools
+import modules.rotations as rotations
 
 # Example input file for 2 color THz generation via UPPE module.
 
@@ -26,7 +27,7 @@ r00 = dnum('3 mm')
 U00 = dnum('6.3 mJ')
 t00 = dnum('55 fs')
 a00 = helper.a0(U00,t00,r00,w00)
-chi3 = helper.chi3(1.0,'32e-24 m2/W')
+chi3 = helper.chi3(1.0,'7.4e-24 m2/W')
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
 band = (0.0,5.5)
 Uion = dnum('12.1 eV')
@@ -35,6 +36,14 @@ Zeff = 0.53
 ionizer = ionization.PPT_Tunneling(mks_length,False,Uion,Zeff)
 air = dispersion.HumidAir(mks_length,0.4,1e-4)
 air.add_opacity_region(1/cm,0.01/um,0.3/um)
+
+jstates = np.arange(0,40)
+damping = np.ones(40)/dnum('100 ps')
+dnuc = 6 - 3*(jstates%2)
+hbar_norm = C.hbar * (w00*C.c/mks_length) / (C.m_e*C.c**2)
+N2rot = rotations.Rotator(2/dnum('1 cm'),4*np.pi*6.7e-25/dnum('1 cm-3'),dnum('.025 eV'),dnuc,damping,hbar_norm)
+dnuc = jstates%2
+O2rot = rotations.Rotator(1.44/dnum('1 cm'),4*np.pi*10.2e-25/dnum('1 cm-3'),dnum('.025 eV'),dnuc,damping,hbar_norm)
 
 # Set up dictionaries
 
@@ -49,12 +58,12 @@ sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
 ray.append({})
-ray[-1]['number'] = (2049,64,2,1)
-ray[-1]['bundle radius'] = (.001*r00,.001*r00,.001*r00,.001*r00)
+ray[-1]['number'] = (2049,64,2,None)
+ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
 ray[-1]['loading coordinates'] = 'cylindrical'
 # Ray box is always put at the origin
 # It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (0.0,0.0)
+ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
 
 wave.append({}) # fundamental
 wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
@@ -101,6 +110,7 @@ optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'uppe'
 optics[-1]['ionizer'] = ionizer
+optics[-1]['rotator'] = N2rot
 optics[-1]['wave coordinates'] = 'cylindrical'
 optics[-1]['wave grid'] = (2049,256,1,11)
 optics[-1]['radial modes'] = 128
@@ -128,5 +138,5 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True
-diagnostics['orbit rays'] = (128,8,2,1)
+diagnostics['orbit rays'] = (128,8,2,None)
 diagnostics['base filename'] = 'out/test'

@@ -7,4 +7,5 @@ docs/_build
 .ipynb_checkpoints
 .pytest_cache
 __pycache__
-inputs.py
+/inputs.py
+/batch.py

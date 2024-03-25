@@ -59,11 +59,9 @@ Running a Wave Example
 #. Activate your virtual environment (see :doc:`generic-install`)
 #. Run the example case :samp:`{raysroot}/examples/paraxial/air-fil.py` following the same general procedure as above.
 #. Wave runs typically take longer, although this one is fairly quick.  You should see some text based progress indicators as the wave propagation is calculated.  The time stepper is adaptive, so varying amounts of work may be done between diagnostic planes.
-#. At present you must use the Jupyter-based interactive viewer to plot the results.  For the following ``Jupyter`` and ``ipympl`` must be installed in your environment.
-#. :samp:`jupyter notebook`
-#. When the Jupyter home page comes up select :samp:`viewer.ipynb`.
+#. Run the Jupyter notebook :samp:`viewer.ipynb` using your favorite notebook interface (Chrome, VS Code, etc.).
 #. For this example you should not need to change the source code.  Generally, if output files are saved under a different location you have to change the value of ``base_diagnostic``.  Note also that as of this writing, the normalizing length is hard coded in the notebook.
-#. Run the notebook (select ``Run All`` from the ``Cell`` menu).  Advance the z-slider to observe the pulse evolution.
+#. Run the notebook (e.g. select ``Run All`` from the ``Cell`` menu).  Advance the z-slider to observe the pulse evolution.
 
 .. figure:: air-filament.png
 	:alt: filament

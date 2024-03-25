@@ -5,7 +5,7 @@ import glob
 import numpy as np
 from scipy import constants as C
 import scipy.interpolate
-import grid_tools
+import modules.grid_tools as grid_tools
 import inputs
 import PIL.Image
 import logging
@@ -40,12 +40,16 @@ def chk_mlab():
 	nm = 'mayavi.mlab'
 	if nm in sys.modules:
 		return sys.modules[nm]
-	elif (spec := importlib.util.find_spec(nm)) is not None:
+	try:
+		# In some cases, find_spec returns None, in others it raises ModuleNotFoundError
+		spec = importlib.util.find_spec(nm)
+		if spec==None:
+			return None
 		mlab = importlib.util.module_from_spec(spec)
 		sys.modules[nm] = mlab
 		spec.loader.exec_module(mlab)
 		return mlab
-	else:
+	except ModuleNotFoundError:
 		return None
 
 if len(sys.argv)==1:
@@ -334,10 +338,10 @@ class Units:
 			self.normalization[2] = 1/np.pi
 			self.normalization[3] = 1/np.pi
 		if label_type=='cart' or label_type=='cyl' or label_type=='sph':
-			self.lab_str[4] = self.lab_str[4].replace('k_0','\omega').replace('k_{00}','\omega_0')
-			self.lab_str[5] = self.lab_str[5].replace('k_1','k_x').replace('k_{00}','\omega_0')
-			self.lab_str[6] = self.lab_str[6].replace('k_2','k_y').replace('k_{00}','\omega_0')
-			self.lab_str[7] = self.lab_str[3].replace('k_3','k_z').replace('k_{00}','\omega_0')
+			self.lab_str[4] = self.lab_str[4].replace('k_0',r'\omega').replace('k_{00}',r'\omega_0')
+			self.lab_str[5] = self.lab_str[5].replace('k_1','k_x').replace('k_{00}',r'\omega_0')
+			self.lab_str[6] = self.lab_str[6].replace('k_2','k_y').replace('k_{00}',r'\omega_0')
+			self.lab_str[7] = self.lab_str[3].replace('k_3','k_z').replace('k_{00}',r'\omega_0')
 	def GetNormalization(self):
 		return self.normalization
 	def GetLabels(self):
@@ -400,7 +404,7 @@ class MeshViewer:
 class Bundles:
 	def __init__(self,lab_sys):
 		self.label_system = lab_sys
-		self.xp = simname+'_xp.npy'
+		self.xp = simname+'_xp0.npy'
 	def Plot(self,mpl_plot_count,maya_plot_count):
 		lab_str = self.label_system.GetLabels()
 		normalization = self.label_system.GetNormalization()
