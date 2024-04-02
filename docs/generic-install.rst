@@ -13,14 +13,19 @@ The ``pyopencl`` developers recommend using Miniforge as opposed to Anaconda or 
 #. :samp:`conda init`
 	* If you want to use PowerShell run :samp:`conda init powershell`
 
-Install Drivers (Windows only)
-------------------------------
+Install Drivers
+---------------
 
 If you are using Windows:
 
-* Windows + AMD --- install specific drivers for the video card
-* Windows + NVIDIA --- install CUDA developer tools
-* Windows + Intel CPU --- install Intel CPU Runtime for OpenCL
+* AMD --- install specific drivers for the video card
+* NVIDIA --- install CUDA developer tools
+* Intel CPU --- install Intel CPU Runtime for OpenCL
+
+If you are using Mac/Linux:
+
+* CPU --- no action required
+* NVIDIA --- install CUDA developer tools
 
 Environment and Basic Packages
 ------------------------------

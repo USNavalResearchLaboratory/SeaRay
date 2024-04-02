@@ -8,7 +8,16 @@ class cl_refs:
 		self.ctx = c
 		self.dev = d
 		self.q = q
+		self.loc_size_1d = None
+		self.loc_size_2d = None
+		self.loc_size_3d = None
 		self.prog = {}
+	def setup_workgroups(self,input_dict):
+		"""If the input dictionary specified any work group parameters, capture them.
+		N.b. each kernel invocation has to explicitly reference these, and objects have to explicitly call this function."""
+		self.loc_size_1d = None if 'work group 1d' not in input_dict else input_dict['work group 1d']
+		self.loc_size_2d = None if 'work group 2d' not in input_dict else input_dict['work group 2d']
+		self.loc_size_3d = None if 'work group 3d' not in input_dict else input_dict['work group 3d']
 	def program(self,basename):
 		"""Retrieve the program with filename = basename (no extension).
 		The program must have been previously added with add_program.

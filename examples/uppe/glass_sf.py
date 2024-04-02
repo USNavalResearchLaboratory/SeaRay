@@ -24,12 +24,12 @@ glass.add_opacity_region(500/um,1.2/um,4/um)
 w00 = 1.0
 r00 = 100/um
 t00 = dnum('15 fs')
-U00 = dnum('0.015 mJ')
+U00 = dnum('0.0025 mJ')
 a00 = helper.a0(U00,t00,r00,w00)
 chi3 = helper.chi3(1.5,'2e-20 m2/W')
 
 # Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,3.0)
+band = (0.0,4.0)
 t00,pulse_band = helper.TransformLimitedBandwidth(w00,t00,1.0)
 
 # Work out the dispersion length
@@ -45,8 +45,6 @@ mess = mess + '  Propagation length = ' + str(1e3*Lprop*mks_length) + ' mm\n'
 # Set up dictionaries
 
 sim = {}
-ray = []
-wave = []
 optics = []
 diagnostics = {}
 
@@ -54,29 +52,33 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
-ray.append({})
-ray[-1]['number'] = (1025,64,4,None)
-ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
-ray[-1]['loading coordinates'] = 'cylindrical'
-# Ray box is always put at the origin
-# It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,4*r00) + (0.0,2*np.pi) + (None,None)
-
-wave.append({})
-wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
-# 0-component of focus is time at which pulse reaches focal point.
-# If time=0 use paraxial wave, otherwise use spherical wave.
-# Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = (0.0,0.0,0.0,-1.0)
-wave[-1]['supergaussian exponent'] = 2
+sources = [
+    {
+        'rays': {
+            'origin': (None,0.0,0.0,-1),
+            'euler angles': (0.0,0.0,0.0),
+            'number': (1025,64,4,None),
+            'bundle radius': (None,) + (.001*r00,)*3,
+            'loading coordinates': 'cylindrical',
+            'bounds': band + (0.0,4*r00) + (0.0,2*np.pi) + (None,None),
+        },
+        'waves': [
+            {
+                'a0': (None,a00,0,None),
+                'r0': (t00,r00,r00,t00),
+                'k0': (w00,None,None,w00),
+                'mode': (None,0,0,None),
+                'basis': 'hermite'
+            }
+        ]
+    }
+]
 
 optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('start')
 optics[-1]['frequency band'] = (0,3)
 optics[-1]['size'] = (6*r00,6*r00)
-optics[-1]['origin'] = (0.,0.,-0.5)
+optics[-1]['origin'] = (None,0,0,-0.5)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
@@ -89,14 +91,14 @@ optics[-1]['density reference'] = 1.0
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
 optics[-1]['frequency band'] = band
-optics[-1]['nonlinear band'] = (0.5,1.5)
-optics[-1]['subcycles'] = 4
+optics[-1]['nonlinear band'] = (0.1,4.0)
+optics[-1]['subcycles'] = 1
 optics[-1]['minimum step'] = .3/um
 optics[-1]['dispersion inside'] = glass
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = chi3
 optics[-1]['size'] = (6*r00,6*r00,Lprop)
-optics[-1]['origin'] = (0.,0.,Lprop/2)
+optics[-1]['origin'] = (None,0,0,Lprop/2)
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = glass.GroupVelocityMagnitude(1.0)
 
@@ -104,7 +106,7 @@ optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('stop')
 optics[-1]['frequency band'] = (0,3)
 optics[-1]['size'] = (8*r00,8*r00)
-optics[-1]['origin'] = (0.,0.,2*Lprop)
+optics[-1]['origin'] = (None,0,0,2*Lprop)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False

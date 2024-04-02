@@ -21,7 +21,7 @@ mess = 'Processing input file...\n'
 
 # Setup pulse parameters
 
-theta = .01 # initial propagation direction
+theta = -.01 # initial propagation direction
 a00 = 1.0
 w00 = 1.0
 r00 = 0.05/cm # spot size of radiation
@@ -31,18 +31,16 @@ band = (0.9,1.1)
 
 # Resonator configuration
 
-feedback_pos = (1/cm,0.0,100/cm)
+feedback_pos = (None,1/cm,0.0,100/cm)
 feedback_angle = (np.pi/2,0.0035,-np.pi/2)
 Rf = 0.5/cm
-primary_pos = (0.0,0.0,0/cm)
+primary_pos = (None,0.0,0.0,0/cm)
 primary_angle = (0.0,0.0,0.0)
 Rp = 10/cm
 
 # Set up dictionaries
 
 sim = {}
-wave = []
-ray = []
 optics = []
 diagnostics = {}
 
@@ -50,23 +48,27 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/Cmks.c
 sim['message'] = mess
 
-ray.append({})
-ray[-1]['number'] = (1,8,1,None)
-ray[-1]['bundle radius'] = (None,rb,rb,rb)
-ray[-1]['loading coordinates'] = 'cartesian'
-# Ray box is always put at the origin
-# It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (-2*r00,2*r00) + (-2*r00,2*r00) + (None,None)
-
-wave.append({})
-wave[-1]['a0'] = (0.0,a00*np.cos(theta),0.0,-a00*np.sin(theta)) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,w00*np.sin(theta),0.0,w00*np.cos(theta)) # 4-wavenumber: omega,kx,ky,kz
-# 0-component of focus is time at which pulse reaches focal point.
-# If time=0 use paraxial wave, otherwise use spherical wave.
-# Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = (0.0,0.0,0.0,-10/cm)
-wave[-1]['supergaussian exponent'] = 2
+sources = [
+    {
+        'rays': {
+            'origin': (None,0,0,-10/cm),
+            'euler angles': helper.rot_zx(theta),
+            'number': (1,8,1,None),
+            'bundle radius': (None,) + (rb,)*3,
+            'loading coordinates': 'cartesian',
+            'bounds': band + (-2*r00,2*r00) + (-2*r00,2*r00) + (None,None)
+        },
+        'waves': [
+            {
+                'a0': (None,a00,0,None),
+                'r0': (t00,r00,r00,t00),
+                'k0': (w00,None,None,w00),
+                'mode': (None,0,0,None),
+                'basis': 'hermite'
+            }
+        ]
+    }
+]
 
 optics.append({})
 optics[-1]['object'] = surface.SphericalCap('M1')
@@ -103,7 +105,7 @@ optics[-1]['euler angles'] = primary_angle
 optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('det')
 optics[-1]['size'] = (4/inch,4/inch)
-optics[-1]['origin'] = (0.0,0.0,100/cm)
+optics[-1]['origin'] = (None,0,0,100/cm)
 optics[-1]['euler angles'] = helper.rot_zx_deg(0)
 
 diagnostics['suppress details'] = False

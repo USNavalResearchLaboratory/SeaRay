@@ -1,14 +1,6 @@
 Running on the Desktop
 ======================
 
-.. warning::
-
-	This document assumes you have followed the installation instructions precisely.  Once installed, running SeaRay should be the same for any UNIX-based desktop system.
-
-.. tip::
-
-	You can issue UNIX like commands in Windows via the PowerShell.  Otherwise, use the Anaconda prompt and replace the forward slash with the backslash in directory paths.
-
 OpenCL Background
 -----------------
 

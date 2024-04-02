@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import constants as C
+import modules.base as base
 
 class InputHelper:
 	def __init__(self,mks_length):
@@ -11,7 +12,7 @@ class InputHelper:
 		self.P1 = self.n1*C.e*mks_length
 		self.u1 = C.m_e*C.c**2
 		self.N1 = self.n1*self.x1**3
-		self.curr_pos = [0.0,0.0,0.0]
+		self.curr_pos = [None,0.0,0.0,0.0]
 
 	def dnum(self,arg):
 		if type(arg)==str:
@@ -118,20 +119,21 @@ class InputHelper:
 		return (np.pi/2,-deg*np.pi/180,-np.pi/2)
 
 	def set_pos(self,pos):
+		base.check_vol_tuple(pos)
 		self.curr_pos = pos
 		return pos
 
 	def move(self,dx,dy,dz):
-		x = self.curr_pos[0] + dx
-		y = self.curr_pos[1] + dy
-		z = self.curr_pos[2] + dz
-		self.curr_pos = [x,y,z]
-		return [x,y,z]
+		x = self.curr_pos[1] + dx
+		y = self.curr_pos[2] + dy
+		z = self.curr_pos[3] + dz
+		self.curr_pos = [None,x,y,z]
+		return [None,x,y,z]
 
 	def polar_move_zx(self,dist,deg):
 		'''angle of 0 is in +x direction, 90 degrees is in +z direction, etc..'''
-		x = self.curr_pos[0] + dist*np.cos(deg*np.pi/180)
-		y = self.curr_pos[1]
-		z = self.curr_pos[2] + dist*np.sin(deg*np.pi/180)
-		self.curr_pos = [x,y,z]
-		return [x,y,z]
+		x = self.curr_pos[1] + dist*np.cos(deg*np.pi/180)
+		y = self.curr_pos[2]
+		z = self.curr_pos[3] + dist*np.sin(deg*np.pi/180)
+		self.curr_pos = [None,x,y,z]
+		return [None,x,y,z]

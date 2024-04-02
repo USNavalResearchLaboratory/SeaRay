@@ -9,6 +9,7 @@ import vec3 as v3
 import pyopencl
 import grid_tools
 import base
+import logging
 
 def SyncSatellites(xp,vg):
 	sync = (xp[...,0:1] - xp[...,0:1,0:1])*vg
@@ -82,14 +83,14 @@ def GetTransversality(xp,eik):
 	ans = np.sqrt(np.mean(ans))
 	return ans
 
-def PulseSpectrum(xp,box,N,pulse_length,w0):
+def PulseSpectrum(xp,N,box,pulse_length,w0):
 	'''Weight the rays based their frequency.  Assume transform limited pulse.
 	Spectral amplitude is matched with time domain amplitude by performing a test FFT.
 	If the lower frequency bound is zero, real carrier resolved fields are used.
 
 	:param numpy.ndarray xp: Ray phase space, primary ray frequency must be loaded
-	:param tuple box: The first two elements are the frequency bounds
 	:param tuple N: The first element is the number of frequency nodes
+	:param tuple box: The first two elements are the frequency bounds
 	:param pulse_length: The Gaussian pulse width (1/e amplitude)
 	:param w0: The central frequency of the wave
 
@@ -110,75 +111,51 @@ def PulseSpectrum(xp,box,N,pulse_length,w0):
 	coeff = 1/np.max(np.abs(envelope))
 	return coeff*np.exp(-(xp[:,0,4]-w0)**2/sigma_w**2)
 
-def ConfigureRayOrientation(xp,eikonal,vg,wave_dict_list):
-	'''Uses the first wave dictionary to orient the rays.
-	This implies that superposition waves must be oriented the same way.'''
-	A4 = np.array(wave_dict_list[0]['a0'])
-	K4 = np.array(wave_dict_list[0]['k0'])
-	F4 = np.array(wave_dict_list[0]['focus'])
+def ConfigureRayOrientation(xp,eikonal,vg,origin,euler):
+	'''Rotate all rays using the provided Euler angles and move to origin.'''
+	if len(euler)!=3:
+		raise ValueError('expected 3 Euler angles')
+	base.check_vol_tuple(origin)
 	orientation = v3.basis()
-	orientation.Create(A4[1:],K4[1:])
-	xp[...,3] -= F4[0]
+	orientation.EulerRotate(euler[0],euler[1],euler[2])
 	orientation.ExpressRaysInStdBasis(xp,eikonal,vg)
-	xp[:,:,1:4] += F4[1:4]
+	xp[:,:,1:4] += origin[1:4]
 
-def SphericalWave(xp,eikonal,vg,wave):
-	A4 = np.array(wave['a0'])
-	K4 = np.array(wave['k0'])
-	R4 = np.array(wave['r0'])
-	F4 = np.array(wave['focus'])
-	SG = np.array(wave['supergaussian exponent'])
-	# Take ray surface to be referenced to the origin, and +z propagation direction.
-	# The center of the sphere is at z = F4[0] = time to reach focus (can be negative)
-	# We do not want to change the positions on the ray surface, only amplitude and wavevector.
-	xperp = np.sqrt(xp[...,1]**2 + xp[...,2]**2)
-	R = np.sqrt(F4[0]**2 + xperp**2)
-	phi = np.arctan2(xp[...,2],xp[...,1])
-	theta = np.arccos(-F4[0]/R) # 0<theta<pi, theta=0 is a point at the +z tip of the sphere
-	dtheta = np.arcsin(R4[1]/F4[0]) # constant
+def load_rays_eik(xp,eikonal,vg,N,box,waves):
+	'''Load momentum, amplitude, and phase using a paraxial superposition.
+	The superposition waves should have minimal overlap in ray space (w,x,y).
+	It is assumed we are in a basis where the waist is at the origin and the
+	wavevector is oriented in the +z direction.'''
 
-	# Start by assuming outward propagating wave for either sign of F4[0]
-	xp[:,:,5] = xp[:,:,4] * np.sin(theta) * np.cos(phi)
-	xp[:,:,6] = xp[:,:,4] * np.sin(theta) * np.sin(phi)
-	xp[:,:,7] = xp[:,:,4] * np.cos(theta)
-	# If F4[0] is positive we want to have an incoming wave
-	xp[...,5:8] *= -np.sign(F4[0])
-	vg[...] = xp[...,4:8]/xp[...,4:5]
-	eikonal[:,0] = -np.sign(F4[0])*(R[:,0]-F4[0])*xp[:,0,4]
-	xp[...,0] -= np.sign(F4[0])*(R[:,0]-F4[0])[:,np.newaxis]
-	theta0 = np.pi*(1 + np.sign(F4[0]))/2
-	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
-	amag *= (F4[0]/R[:,0]) * np.exp(-(theta[:,0]-theta0)**SG/dtheta**SG)
-	# Get vector from eikonal gauge condition dot(k,a) = 0
-	ax = amag / np.sqrt(1+xp[:,0,5]**2/xp[:,0,7]**2)
-	az = -ax*xp[:,0,5]/xp[:,0,7]
-	return ax,az
-
-def ParaxialWave(xp,eikonal,vg,wave):
-	A4 = np.array(wave['a0'])
-	K4 = np.array(wave['k0'])
-	R4 = np.array(wave['r0'])
-	F4 = np.array(wave['focus'])
-	SG = np.array(wave['supergaussian exponent'])
-	try:
-		phase = wave['phase']
-	except KeyError:
-		phase = 0.0
-	# Set up in wave basis where propagation is +z and polarization is +x
-	amag = np.sqrt(np.dot(A4[1:4],A4[1:4]))
+	# rays are collimated unconditionally under these assumptions
 	xp[:,:,7] = xp[:,:,4]
 	vg[...] = xp[...,4:8]/xp[...,4:5]
-	eikonal[:,0] = np.einsum('...i,...i',xp[:,0,1:4],xp[:,0,5:8])
-	ax = amag*np.ones(eikonal.shape[:-1])
-	if SG!=2:
-		r2 = xp[:,0,1]**2 + xp[:,0,2]**2
-		ax *= np.exp(-r2**(SG/2)/R4[1]**SG - xp[:,0,3]**2/R4[3]**2)
-	else:
-		ax *= np.exp(-xp[:,0,1]**2/R4[1]**2 - xp[:,0,2]**2/R4[2]**2 - xp[:,0,3]**2/R4[3]**2)
-	return ax,0.0
+	eikonal[:,0] = np.einsum('...i,...i',xp[:,0,1:4],xp[:,0,5:8]) # longhand for 0
+	eikonal[:,3] = 0.0
+
+	prev = np.zeros(xp.shape[0])
+	for wave in waves:
+		A4 = np.array(wave['a0'])
+		base.check_surf_tuple(A4)
+		K4 = np.array(wave['k0'])
+		base.check_line_tuple(K4)
+		R4 = np.array(wave['r0'])
+		base.check_four_tuple(R4)
+		if wave['mode']!=(None,0,0,None):
+			raise ValueError("unsupported wave mode")
+		if wave['basis']!="hermite":
+			raise ValueError("unsupported wave type")
+		fac = np.exp(-xp[:,0,1]**2/R4[1]**2 - xp[:,0,2]**2/R4[2]**2 - xp[:,0,3]**2/R4[3]**2)
+		fac *= PulseSpectrum(xp,N,box,R4[0],K4[0])
+		a2 = fac * np.dot(A4[1:3],A4[1:3])
+		sel = np.where(a2>=prev)
+		eikonal[:,1][sel] = A4[1] * fac[sel]
+		eikonal[:,2][sel] = A4[2] * fac[sel]
+		prev = a2
 
 def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
-	'''Load the rays in the z=0 plane in a regular pattern.'''
+	'''Load the rays in the z=0 plane in a regular pattern.
+	Momentum, amplitude, and phase are left undefined.'''
 	num_bundles = N[0]*N[1]*N[2]
 	o0 = np.ones(N[0])
 	o1 = np.ones(N[1])
@@ -211,7 +188,8 @@ def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 		xp[:,0,3] = np.zeros(num_bundles)
 		xp[:,0,4] = np.einsum('i,j,k',grid0,o1,o2).reshape(num_bundles)
 
-	# Load the satellite rays in configuration+w space
+	# Load the satellite rays in configuration+w space.
+	# Results are insensitive to the specific tetrahedron that is used.
 
 	xp[:,1,:] = xp[:,0,:]
 	xp[:,2,:] = xp[:,0,:]
@@ -228,8 +206,8 @@ def load_rays_xw(xp,bundle_radius,N,box,loading_coordinates):
 	xp[:,3,2] += bundle_radius[2] * np.sin(np.pi/3)
 	xp[:,3,3] -= bundle_radius[3]
 
-def init(wave_dict_list,ray_dict):
-	'''Use dictionaries from input file to create initial ray distribution.
+def init(source):
+	'''Use source dictionary from input file to create initial ray distribution.
 	Vacuum is assumed as the initial environment.
 	Rays are packed in bundles of 4.  If there are Nb bundles, there are Nb*4 rays.
 
@@ -239,11 +217,19 @@ def init(wave_dict_list,ray_dict):
 	The 8 elements of xp are x0,x1,x2,x3,k0,k1,k2,k3.
 	The 4 elements of eikonal are phase,ax,ay,az.
 	The 4 elements of vg are 1,vx,vy,vz.'''
-	N = ray_dict['number']
-	box = ray_dict['box']
-	brad = ray_dict['bundle radius']
+	rays = source['rays']
+	waves = source['waves']
+	if len(source)>2:
+		raise ValueError('source has',len(source),'items, there should be two.')
+	if not isinstance(rays,dict):
+		raise TypeError('rays should be a dictionary')
+	base.check_list_of_dict(waves)
+
+	N = rays['number']
 	base.check_ray_tuple(N)
+	box = rays['bounds']
 	base.check_ray_tuple(box,True)
+	brad = rays['bundle radius']
 	base.check_vol_tuple(brad)
 
 	# Set up host storage
@@ -258,21 +244,13 @@ def init(wave_dict_list,ray_dict):
 	vg = np.zeros((num_bundles,4,4)).astype(np.double)
 
 	# Spatial and frequency loading
-	load_rays_xw(xp,brad,N,box,ray_dict['loading coordinates'])
+	load_rays_xw(xp,brad,N,box,rays['loading coordinates'])
 
-	# Use wave description to set wavenumber, phase, and amplitude
-	# All primary rays and satellite rays must be loaded into configuration space first
-	# Ray configuration will be transformed into orientation of wave
+	# Using ray points (w,x,y), load (kx,ky,kz) and (phase,ax,ay,az)
+	load_rays_eik(xp,eikonal,vg,N,box,waves)
 
-	for wave_dict in wave_dict_list:
-		if wave_dict['focus'][0]==0.0:
-			ax,az = ParaxialWave(xp,eikonal,vg,wave_dict)
-		else:
-			ax,az = SphericalWave(xp,eikonal,vg,wave_dict)
-		freq_weights = PulseSpectrum(xp,box,N,wave_dict['r0'][0],wave_dict['k0'][0])
-		eikonal[...,1] += ax * freq_weights
-		eikonal[...,3] += az * freq_weights
-	ConfigureRayOrientation(xp,eikonal,vg,wave_dict_list)
+	# Put all rays into the requested orientation
+	ConfigureRayOrientation(xp,eikonal,vg,rays['origin'],rays['euler angles'])
 
 	return xp,eikonal,vg
 
@@ -310,14 +288,18 @@ def setup_orbits(xp,eikonal,ray_dict,diag_dict,opt_list):
 	return orbit_dict
 
 def track(cl,xp,eikonal,vol_dict,orb):
-	"""cl = OpenCL reference class
-	xp,eikonal = all rays, kernel must handle outliers
-	Assumes satellites are synchronized"""
+	"""Move rays through a volume using an analytical density function.
+	
+	:param cl_refs cl: OpenCL reference class
+	:param np.ndarray xp: phase space for all rays, kernel must handle outliers
+	:param np.ndarray eikonal: eikonal data for all rays, kernel must handle outliers
+	:param dict vol_dict: volume dictionary input object
+	:param dict orb: dictionary of orbit information"""
 
 	# Set up host storage
 	num_bundles = xp.shape[0]
 
-	# Set up device storage
+	logging.debug("send rays to device")
 	xp_dev = pyopencl.array.to_device(cl.q,xp)
 	eikonal_dev = pyopencl.array.to_device(cl.q,eikonal)
 	cl.q.finish()
@@ -331,7 +313,7 @@ def track(cl,xp,eikonal,vol_dict,orb):
 
 		cl.program('ray_integrator').Symplectic(cl.q,
 			(num_bundles,),
-			None,
+			cl.loc_size_1d,
 			xp_dev.data,
 			eikonal_dev.data,
 			np.double(vol_dict['dt']),
@@ -346,18 +328,24 @@ def track(cl,xp,eikonal,vol_dict,orb):
 			orb['data'][orb['idx'],:,8:] = eikonal[orb['eiksel']]
 			orb['idx'] += 1
 
+	logging.debug("retrieve rays from device")
 	xp[...] = xp_dev.get().reshape(num_bundles,4,8)
 	eikonal[...] = eikonal_dev.get().reshape(num_bundles,4)
 
 def track_RIC(cl,xp,eikonal,dens,vol_dict,orb):
-	"""cl = OpenCL reference class
-	xp,eikonal = all rays, kernel must handle outliers
-	Assumes satellites are synchronized"""
+	"""Move rays through a volume using ray-in-cell method.
+	
+	:param cl_refs cl: OpenCL reference class
+	:param np.ndarray xp: phase space for all rays, kernel must handle outliers
+	:param np.ndarray eikonal: eikonal data for all rays, kernel must handle outliers
+	:param np.ndarray dens: the density data
+	:param dict vol_dict: volume dictionary input object
+	:param dict orb: dictionary of orbit information"""
 
 	# Set up host storage
 	num_bundles = xp.shape[0]
 
-	# Set up device storage
+	logging.debug("send rays to device")
 	xp_dev = pyopencl.array.to_device(cl.q,xp)
 	eikonal_dev = pyopencl.array.to_device(cl.q,eikonal)
 	dens_dev = pyopencl.array.to_device(cl.q,dens)
@@ -371,13 +359,13 @@ def track_RIC(cl,xp,eikonal,dens,vol_dict,orb):
 		# Push the particles through multiple cycles
 
 		cl.program('ray_in_cell').Symplectic(cl.q,
-						(num_bundles,),
-						None,
-						xp_dev.data,
-						eikonal_dev.data,
-						dens_dev.data,
-						np.double(vol_dict['dt']),
-						np.int32(vol_dict['subcycles']))
+			(num_bundles,),
+			cl.loc_size_1d,
+			xp_dev.data,
+			eikonal_dev.data,
+			dens_dev.data,
+			np.double(vol_dict['dt']),
+			np.int32(vol_dict['subcycles']))
 		cl.q.finish()
 
 		stepNow += vol_dict['subcycles']
@@ -388,6 +376,7 @@ def track_RIC(cl,xp,eikonal,dens,vol_dict,orb):
 			orb['data'][orb['idx'],:,8:] = eikonal[orb['eiksel']]
 			orb['idx'] += 1
 
+	logging.debug("retrieve rays from device")
 	xp[...] = xp_dev.get().reshape(num_bundles,4,8)
 	eikonal[...] = eikonal_dev.get().reshape(num_bundles,4)
 

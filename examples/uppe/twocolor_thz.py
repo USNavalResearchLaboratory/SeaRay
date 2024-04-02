@@ -48,8 +48,6 @@ O2rot = rotations.Rotator(1.44/dnum('1 cm'),4*np.pi*10.2e-25/dnum('1 cm-3'),dnum
 # Set up dictionaries
 
 sim = {}
-ray = []
-wave = []
 optics = []
 diagnostics = {}
 
@@ -57,21 +55,28 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = mess
 
-ray.append({})
-ray[-1]['number'] = (2049,64,2,None)
-ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
-ray[-1]['loading coordinates'] = 'cylindrical'
-# Ray box is always put at the origin
-# It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
-
-wave.append({}) # fundamental
-wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
-# wave[-1]['focus'] = (100/cm,0.0,0.0,0.0)
-wave[-1]['focus'] = (0.0,0.0,0.0,-110/cm)
-wave[-1]['supergaussian exponent'] = 2
+sources = [
+    {
+        'rays': {
+            'origin': (None,0.0,0.0,-110/cm),
+            'euler angles': (0.0,0.0,0.0),
+            'number': (2049,64,2,None),
+            'bundle radius': (None,) + (.001*r00,)*3,
+            'loading coordinates': 'cylindrical',
+            'bounds': band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None),
+        },
+        'waves': [
+            # fundamental
+            {
+                'a0': (None,a00,0,None),
+                'r0': (t00,r00,r00,t00),
+                'k0': (w00,None,None,w00),
+                'mode': (None,0,0,None),
+                'basis': 'hermite'
+            },
+        ]
+    }
+]
 
 optics.append({})
 optics[-1]['object'] = surface.IdealCompressor('compressor')
@@ -79,14 +84,14 @@ optics[-1]['group delay dispersion'] = 4000/fs**2
 optics[-1]['center frequency'] = 1.0
 optics[-1]['frequency band'] = (0.9,1.1)
 optics[-1]['size'] = (1/inch,1/inch)
-optics[-1]['origin'] = (0.0,0.0,-95/cm)
+optics[-1]['origin'] = (None,0,0,-95/cm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
 optics[-1]['object'] = surface.IdealLens('lens')
 optics[-1]['radius'] = 0.5/inch
 optics[-1]['focal length'] = 90/cm
-optics[-1]['origin'] = (0.,0.,-90/cm)
+optics[-1]['origin'] = (None,0,0,-90/cm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
@@ -96,14 +101,14 @@ optics[-1]['harmonic number'] = 2.0
 optics[-1]['frequency band'] = (0.9,1.1)
 optics[-1]['efficiency'] = 0.05
 optics[-1]['radius'] = 0.5/inch
-optics[-1]['origin'] = (0.0,0.0,-80/cm)
+optics[-1]['origin'] = (None,0,0,-80/cm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('start')
 optics[-1]['frequency band'] = (0,3)
 optics[-1]['size'] = (10*r00,10*r00)
-optics[-1]['origin'] = (0.,0.,prop_range[0]-1/mm)
+optics[-1]['origin'] = (None,0,0,prop_range[0]-1/mm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
@@ -125,7 +130,7 @@ optics[-1]['dispersion inside'] = air
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = chi3
 optics[-1]['size'] = (12/mm,12/mm,prop_range[1]-prop_range[0])
-optics[-1]['origin'] = (0.,0.,(prop_range[0]+prop_range[1])/2)
+optics[-1]['origin'] = (None,0,0,(prop_range[0]+prop_range[1])/2)
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)
 
@@ -133,7 +138,7 @@ optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('stop')
 optics[-1]['frequency band'] = (0,3)
 optics[-1]['size'] = (15/mm,15/mm)
-optics[-1]['origin'] = (0.,0.,prop_range[1]+1/mm)
+optics[-1]['origin'] = (None,0,0,prop_range[1]+1/mm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False

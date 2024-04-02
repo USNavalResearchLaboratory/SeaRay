@@ -43,14 +43,12 @@ time_to_focus = abs(2*propagation_range[0])
 diffraction_angle = wavelength / (np.pi*waist)
 r00 = time_to_focus * diffraction_angle
 a00 = helper.a0(U00,t00,r00,w00)
-rgn_center = (0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
+rgn_center = (None,0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
 t00,band = helper.TransformLimitedBandwidth(w00,t00,16)
 
 # Set up dictionaries
 
 sim = {}
-ray = []
-wave = []
 optics = []
 diagnostics = {}
 
@@ -58,23 +56,36 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
-ray.append({})
-ray[-1]['number'] = (128,32,32,None)
-ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
-ray[-1]['loading coordinates'] = 'cartesian'
-# Ray box is always put at the origin
-# It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (-3*r00,3*r00) + (-3*r00,3*r00) + (None,None)
+helper.set_pos((None,0,0,-time_to_focus))
 
-wave.append({})
-wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
-# 0-component of focus is time at which pulse reaches focal point.
-# If time=0 use paraxial wave, otherwise use spherical wave.
-# Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = (time_to_focus,0.0,0.0,0.0)
-wave[-1]['supergaussian exponent'] = 2
+sources = [
+    {
+        'rays': {
+            'origin': helper.curr_pos,
+            'euler angles': (0,0,0),
+            'number': (128,32,32,None),
+            'bundle radius': (None,) + (.001*r00,)*3,
+            'loading coordinates': 'cartesian',
+            'bounds': band + (-3*r00,3*r00) + (-3*r00,3*r00) + (None,None)
+        },
+        'waves': [
+            {
+                'a0': (None,a00,0,None),
+                'r0': (t00,r00,r00,t00),
+                'k0': (w00,None,None,w00),
+                'mode': (None,0,0,None),
+                'basis': 'hermite'
+            },
+        ]
+    }
+]
+
+optics.append({})
+optics[-1]['object'] = surface.IdealLens('L1')
+optics[-1]['origin'] = helper.move(0,0,0.1/mm)
+optics[-1]['euler angles'] = (0,0,0)
+optics[-1]['radius'] = 1/cm
+optics[-1]['focal length'] = time_to_focus
 
 optics.append({})
 optics[-1]['object'] = surface.NoiseMask('screen')
@@ -84,7 +95,7 @@ optics[-1]['inner scale'] = 1/um
 optics[-1]['outer scale'] = 300/um
 optics[-1]['frequency band'] = band
 optics[-1]['size'] = (2*rbox,2*rbox)
-optics[-1]['origin'] = (0.0,0.0,rgn_center[2]-L/2-1.0)
+optics[-1]['origin'] = helper.move(0,0,0.1/mm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
@@ -105,13 +116,6 @@ optics[-1]['size'] = (2*rbox,2*rbox,L)
 optics[-1]['origin'] = rgn_center
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)
-
-optics.append({})
-optics[-1]['object'] = surface.EikonalProfiler('stop')
-optics[-1]['frequency band'] = (0,3)
-optics[-1]['size'] = (10*rbox,10*rbox)
-optics[-1]['origin'] = (0.,0.,L*2)
-optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True

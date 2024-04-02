@@ -6,6 +6,7 @@ import glob
 import shutil
 import numpy as np
 import logging
+import json
 
 import modules.base as base
 import modules.init as init
@@ -13,7 +14,7 @@ import modules.ray_kernel as ray_kernel
 
 def help():
 	print('==========BEGIN HELP FOR SEARAY==========')
-	print('Version: 1.0.0a2')
+	print('Version: 1.0.0a3')
 	print('Usage: rays.py cmd [log=<loglevel>] [file=<name>] [device=<dev_str>] [platform=<plat_str>]')
 	print('Arguments in square brackets are optional.')
 	print('cmd = list --- displays all platforms and devices')
@@ -30,14 +31,13 @@ def help():
 # EXTERNAL CALLER ENTRY POINT #
 ###############################
 
-def run(cmd_line,sim,ray,wave,optics,diagnostics):
+def run(cmd_line,sim,sources,optics,diagnostics):
 	'''Run a SeaRay simulation.  This is invoked automatically if `rays.py` is run from
 	the command line.  It can also be called from the user's own control program.
 	
 	:param list cmd_line: command line arguments excluding 0,1
 	:param dict sim: simulation object
-	:param list ray: list of ray objects
-	:param list wave: list of wave objects
+	:param list sources: list of source objects
 	:param list optics: list of optics
 	:param dict diagnostics: diagnostic object'''
 
@@ -69,8 +69,7 @@ def run(cmd_line,sim,ray,wave,optics,diagnostics):
 	# verify top level inputs
 	if not isinstance(sim,dict):
 		raise TypeError('sim should be a dictionary')
-	base.check_list_of_dict(ray)
-	base.check_list_of_dict(wave)
+	base.check_list_of_dict(sources)
 	base.check_list_of_dict(optics)
 	if not isinstance(diagnostics,dict):
 		raise TypeError('diagnostics should be a dictionary')
@@ -78,6 +77,7 @@ def run(cmd_line,sim,ray,wave,optics,diagnostics):
 	# Pre-simulation cleaning
 	if diagnostics['clean old files']:
 		file_list = glob.glob(diagnostics['base filename']+'*.npy')
+		file_list += glob.glob(diagnostics['base filename']+'*.json')
 		for f in file_list:
 			os.remove(f)
 
@@ -96,13 +96,14 @@ def run(cmd_line,sim,ray,wave,optics,diagnostics):
 		opt_dict['object'].InitializeCL(cl,opt_dict)
 
 	print('\nSetting up rays and orbits...')
-	if len(ray)>1:
-		raise ValueError('Only one ray box allowed at present.')
-	xp,eikonal,vg = ray_kernel.init(wave,ray[0])
-	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,ray[0],diagnostics,optics)
+	if len(sources)>1:
+		raise ValueError('Only one source allowed at present.')
+	xp,eikonal,vg = ray_kernel.init(sources[0])
+	orbit_dict = ray_kernel.setup_orbits(xp,eikonal,sources[0]['rays'],diagnostics,optics)
 	micro_action_0 = ray_kernel.GetMicroAction(xp,eikonal,vg)
-	xp0 = np.copy(xp)
-	eikonal0 = np.copy(eikonal)
+	if not diagnostics['suppress details']:
+		xp0 = np.copy(xp)
+		eikonal0 = np.copy(eikonal)
 
 	print('\nStart propagation...\n')
 	print('Initial micro-action = {:.3g}\n'.format(micro_action_0))
@@ -114,9 +115,16 @@ def run(cmd_line,sim,ray,wave,optics,diagnostics):
 	print('\nStart diagnostic reports...\n')
 
 	basename = diagnostics['base filename']
-
+	with open(basename+'_sim.json','w') as f:
+		json.dump(sim,f)
+	with open(basename+'_sources.json','w') as f:
+		json.dump(sources,f)
+	with open(basename+'_diagnostics.json','w') as f:
+		json.dump(diagnostics,f)
+	
 	if not diagnostics['suppress details']:
 		ray_kernel.SyncSatellites(xp,vg)
+		np.save(basename+'_eikonal0',eikonal0)
 		np.save(basename+'_xp0',xp0)
 		np.save(basename+'_xp',xp)
 		np.save(basename+'_eikonal',eikonal)
@@ -155,6 +163,6 @@ if __name__ == "__main__":
 			elif arg!='run' and arg!='list':
 				reduced_args += [arg]
 		import inputs
-		run(reduced_args,inputs.sim,inputs.ray,inputs.wave,inputs.optics,inputs.diagnostics)
+		run(reduced_args,inputs.sim,inputs.sources,inputs.optics,inputs.diagnostics)
 	else:
 		raise SyntaxError('The first positional command was not understood.')

@@ -130,7 +130,7 @@ def CycleAveragingFactor(Uion,E):
 	return np.sqrt(3.0/np.pi) * np.sqrt(E) / (2*Uion)**0.75
 
 def ExtractEikonalForm(E,dt,w00=0.0,bandwidth=1.0):
-	"""Extract amplitude, phase, and center frequency from a carrier resolved field E.
+	r"""Extract amplitude, phase, and center frequency from a carrier resolved field E.
 	The assumed form is :math:`E = \Re\{Ae^{i\phi}\}`.
 	This is also wrapped by a method of ``Ionization``.
 

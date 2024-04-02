@@ -16,15 +16,7 @@ Preliminaries
 	license
 	overview
 	breaking
-
-SeaRay Installation
--------------------
-
-.. toctree::
-	:maxdepth: 1
-
 	generic-install
-	driver-install
 
 Running SeaRay
 --------------
@@ -43,3 +35,4 @@ Reference
 	:maxdepth: 2
 
 	ref-base
+	troubleshooting-ocl

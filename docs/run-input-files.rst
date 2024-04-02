@@ -13,30 +13,25 @@ The SeaRay input file is strictly speaking, a Python module.  However you do not
 
 The input file can be simple or complicated.  In its simplest form, it is a set of Python lists and dictionaries with hard coded values.  More sophisticated input files can be created by making the dictionary values variables.  The full power of the Python language can be employed to compute these variables inside the input file, if desired.
 
-In the simplest case, where you only need to describe a single simulation, we have the following five objects:
+The input file is required to have the following four objects:
 
 .. glossary::
 
 	``sim``
-		Dictionary of general parameters of the simulations, such as units.
+		Dictionary of general parameters of the simulations, such as units.  This object must be serializable.
 
-	``wave``
-		List of dictionaries, with each dictionary describing an initial electromagnetic wave.  The total initial field configuration is the superposition of all the waves.
-
-	``ray``
-		List of dictionaries describing how initial rays should be loaded.  At present only the first dictionary is used.
+	``sources``
+		List of dictionaries, with each dictionary describing a set of rays and waves.  The waves are used to set the eikonal data carried with the rays.  This object must be serializable.
 
 	``optics``
-		List of dictionaries, with each dictionary describing an optical element, detection surface, or wave propagation region.
+		List of dictionaries, with each dictionary describing an optical element, detection surface, or wave propagation region.  This object does *not* need to be serializable.
 
 	``diagnostics``
-		Dictionary of general parameters pertaining to how diagnostics are written.
+		Dictionary of general parameters pertaining to how diagnostics are written.  This object must be serializable.
 
 .. tip::
 
-	A useful perspective is that SeaRay ignores the whole input file except for the five lists named above.  It makes no difference how the lists are created within.  Best practice in post-processing is also to look only at the five lists.
-
-You can also describe multiple simulations in one input file.  Simply enclose each of the objects above in another list.  Now we have a list of simulations.  It is possible to set up sophisticated batch jobs using this system.
+	A useful perspective is that SeaRay ignores the whole input file except for the four objects named above.  It makes no difference how the objects are created within.  Best practice in post-processing is also to look only at the four objects, some of which are serialized and saved with the output data.
 
 Minimum Python
 --------------
@@ -63,6 +58,8 @@ There is another kind of list called a tuple.  Tuples are denoted using parenthe
 
 A tuple is basically a list that cannot be modified after it is created.
 
+In Python there is a special value called ``None``.  SeaRay sometimes requires a ``None`` value rather than simply omitting it or making it zero.
+
 Geometry
 ---------------
 
@@ -84,4 +81,4 @@ There is a helper class that can be imported into an input file to assist with p
 Four Dimensional Object Properties
 ----------------------------------
 
-Many input file elements are in the form of four-vectors, represented as Python tuples, e.g., ``(t,x,y,z)``.  This example represents the typical arrangement, where time or frequency is the first element, and spatial coordinates are the next three elements.  This pattern is used for specifying time + position, energy + momentum, frequency grid + spatial grid, etc..
+Many input file elements are in the form of four-vectors, represented as Python tuples, e.g., ``(t,x,y,z)``.  This example represents the typical arrangement, where time or frequency is the first element, and spatial coordinates are the next three elements.  This pattern is used for specifying time + position, energy + momentum, frequency grid + spatial grid, etc..  When some component of a four-tuple is not needed, it is set to ``None``.  For example, a point on a ray surface would be given as ``(w,x,y,None)``.

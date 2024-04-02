@@ -50,15 +50,13 @@ air = dispersion.HumidAir(mks_length,0.4,1e-3)
 # Derived Parameters
 
 L = propagation_range[1] - propagation_range[0]
-rgn_center = (0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
+rgn_center = (None,0.0,0.0,0.5*(propagation_range[0]+propagation_range[1]))
 #a00 = helper.a0(U00,t00,r00,w00)
 t00,band = helper.TransformLimitedBandwidth(w00,t00,20)
 
 # Set up dictionaries
 
 sim = {}
-ray = []
-wave = []
 optics = []
 diagnostics = {}
 
@@ -66,23 +64,27 @@ sim['mks_length'] = mks_length
 sim['mks_time'] = mks_length/C.c
 sim['message'] = 'Processing input file...'
 
-ray.append({})
-ray[-1]['number'] = (1024,128,2,None)
-ray[-1]['bundle radius'] = (None,.001*r00,.001*r00,.001*r00)
-ray[-1]['loading coordinates'] = 'cylindrical'
-# Ray box is always put at the origin
-# It will be transformed appropriately by SeaRay to start in the wave
-ray[-1]['box'] = band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None)
-
-wave.append({})
-wave[-1]['a0'] = (0.0,a00,0.0,0.0) # EM 4-potential (eA/mc^2) , component 0 not used
-wave[-1]['r0'] = (t00,r00,r00,t00) # 4-vector of pulse metrics: duration,x,y,z 1/e spot sizes
-wave[-1]['k0'] = (w00,0.0,0.0,w00) # 4-wavenumber: omega,kx,ky,kz
-# 0-component of focus is time at which pulse reaches focal point.
-# If time=0 use paraxial wave, otherwise use spherical wave.
-# Thus in the paraxial case the pulse always starts at the waist.
-wave[-1]['focus'] = (0.0,0.0,0.0,-0.1/mm)
-wave[-1]['supergaussian exponent'] = 2
+sources = [
+    {
+        'rays': {
+            'origin': (None,0,0,-0.1/mm),
+            'euler angles': (0,0,0),
+            'number': (1024,128,2,None),
+            'bundle radius': (None,) + (.001*r00,)*3,
+            'loading coordinates': 'cylindrical',
+            'bounds': band + (0,3*r00) + (0,2*np.pi) + (None,None)
+        },
+        'waves': [
+            {
+                'a0': (None,a00,0,None),
+                'r0': (t00,r00,r00,t00),
+                'k0': (w00,None,None,w00),
+                'mode': (None,0,0,None),
+                'basis': 'hermite'
+            },
+        ]
+    }
+]
 
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')
@@ -104,13 +106,6 @@ optics[-1]['size'] = (2*rbox,2*rbox,L)
 optics[-1]['origin'] = rgn_center
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)
-
-optics.append({})
-optics[-1]['object'] = surface.EikonalProfiler('stop')
-optics[-1]['frequency band'] = (0,3)
-optics[-1]['size'] = (10*rbox,10*rbox)
-optics[-1]['origin'] = (0.,0.,L*2)
-optics[-1]['euler angles'] = (0.,0.,0.)
 
 diagnostics['suppress details'] = False
 diagnostics['clean old files'] = True

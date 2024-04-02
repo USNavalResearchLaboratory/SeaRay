@@ -44,6 +44,12 @@ def wrong_tuple(nm,num,idxSome,idxNone,tup,bounds):
     if len(tup)!=num or any([tup[i]==None for i in idxSome]) or any([tup[i]!=None for i in idxNone]):
         raise ValueError('Expected ' + nm + (' boundary' if bounds else '') + ' tuple, got ' + str(tup))
 
+def check_line_tuple(tup,bounds=False):
+    if bounds:
+        wrong_tuple('line-like',8,[0,1,6,7],[2,3,4,5],tup,bounds)
+    else:
+        wrong_tuple('line-like',4,[0,3],[1,2],tup,bounds)
+
 def check_ray_tuple(tup,bounds=False):
     if bounds:
         wrong_tuple('ray-like',8,[0,1,2,3,4,5],[6,7],tup,bounds)

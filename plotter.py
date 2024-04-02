@@ -6,18 +6,11 @@ import numpy as np
 from scipy import constants as C
 import scipy.interpolate
 import modules.grid_tools as grid_tools
-import inputs
 import PIL.Image
 import logging
 import importlib.util
-
-# Add the outer list if necessary
-if type(inputs.sim)==dict:
-	inputs.sim = [inputs.sim]
-	inputs.wave = [inputs.wave]
-	inputs.ray = [inputs.ray]
-	inputs.optics = [inputs.optics]
-	inputs.diagnostics = [inputs.diagnostics]
+import pathlib
+import json
 
 plotter_defaults = {	'image colors' : 'viridis' ,
 						'level colors' : 'ocean' ,
@@ -107,9 +100,13 @@ if len(sys.argv)==1:
 	print('==============END HELP FOR SEARAY PLOTTER==============')
 	exit(1)
 
-basename = sys.argv[1]
-simname = basename.split('/')[1]
-os.chdir(basename.split('/')[0])
+basename = pathlib.Path(sys.argv[1])
+simname = basename.name
+os.chdir(basename.parent)
+with open(simname + "_sim.json") as f:
+	sim_dict = json.load(f)
+with open(simname + "_sources.json") as f:
+	sources_list = json.load(f)
 
 # Put the arguments into a dictionary where whatever is left of '=' is the key
 # and whatever is right of '=' is the value.
@@ -250,8 +247,8 @@ def IntegrateImage(A,rng):
 
 class Units:
 	def __init__(self,label_type):
-		mks_length = inputs.sim[0]['mks_length']
-		mks_time = inputs.sim[0]['mks_time']
+		mks_length = sim_dict['mks_length']
+		mks_time = sim_dict['mks_time']
 		try:
 			t_str = arg_dict['units'].split(',')[0]
 			l_str = arg_dict['units'].split(',')[1]
@@ -263,10 +260,7 @@ class Units:
 		except:
 			w_str = 'normalized'
 
-		if type(inputs.wave[0])==dict:
-			carrier = inputs.wave[0]['k0'][0]
-		else:
-			carrier = inputs.wave[0][0]['k0'][0]
+		carrier = sources_list[0]['waves'][0]['k0'][0]
 
 		if l_str=='um':
 			l1 = mks_length*1e6

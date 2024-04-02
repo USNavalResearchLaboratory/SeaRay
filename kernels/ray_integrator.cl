@@ -64,7 +64,7 @@ __kernel void Symplectic(	__global double * xp,
 	const int vidx = bundle*4*2;
 
 	double ray_volume,ds=ds0;
-	double4 x0,k0,x1,k1,x2,k2,x3,k3,x4,k4,x5,k5,x6,k6,v00,A,Dk;
+	double4 x0,k0,x1,k1,x2,k2,x3,k3,v00,A,Dk;
 
 	// Propagate the Primary Ray
 	// Prevent it from leaving volume by collapsing time step

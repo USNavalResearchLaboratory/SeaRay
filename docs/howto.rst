@@ -5,19 +5,25 @@ Keep in Mind
 ------------
 
 Rays represent solutions of the eikonal wave equation at a particular frequency.
-Superpositions are used to build complex waveforms.
+The eikonal fields on a surface act as a boundary condition for wave propagation.
+The eikonal condition places limits on surface curvature and tangential derivatives,
+but not on pulse format.
 
-Rays are always initialized on a single surface. The amplitude and direction of the rays are determined by
-a superposition of wave modes.  The phase can only be adjusted using downstream optics (see below).  Equivalently,
-all pulses are synchronized upon initialization.
+Initializing Eikonal Waves
+--------------------------
 
-Generally, the initial set of waves should have no overlap in frequency space.
-If they do, the superposition field needs to be eikonal.
+In experiments with lasers, one almost always has an eikonal wave to start with.
+Wave regions are usually the outcome of an eikonal optical system.
+This motivates eikonal waves as a boundary condition.
+
+Rays are initialized on a single surface. Initial amplitudes are determined by
+a set of wave modes. Each mode should occupy a distinct frequency band.
+More complex superpositions are created using downstream optics.
 
 Coupling to Paraxial Regions
 ----------------------------
 
-Ray bundles can be coupled into volumes with paraxial wave propagators.
+Ray bundles can be coupled into volumes with paraxial wave propagators. SeaRay will work out the waveform associated with the rays.
 
 * set the volume's ``propagator`` to ``paraxial``
 * the ray bundle must have a lower frequency bound greater than zero
@@ -27,7 +33,7 @@ Ray bundles can be coupled into volumes with paraxial wave propagators.
 Coupling to Unidirectional Regions
 ----------------------------------
 
-Ray bundles can be coupled into volumes with UPPE wave propagators.
+Ray bundles can be coupled into volumes with UPPE wave propagators. SeaRay will work out the waveform associated with the rays.
 
 * set the volume's ``propagator`` to ``uppe``
 * the ray bundle must have a lower frequency bound of *exactly zero*
@@ -37,8 +43,8 @@ Multicolor Pulses
 -----------------
 
 To create multiple pulses at *distinct* frequencies, create multiple wave objects at distinct frequencies.
-Rays of a given frequency will have their initial condition affected only
-by the wave that has an appreciable amplitude at that frequency.
+Rays at a point (w,x,y) will have their initial condition affected only
+by the wave that has the highest amplitude at that point.
 
 Delay Lines
 -----------
@@ -52,7 +58,7 @@ For example, to delay all pulses by one picosecond::
 
     optics.append({})
     optics[-1]['object'] = surface.Filter('delay')
-    optics[-1]['origin'] = (0.0,0.0,0.0)
+    optics[-1]['origin'] = (None,0,0)
     optics[-1]['radius'] = dnum('1 cm')
     optics[-1]['transfer function'] = lambda w: np.exp(1j*w*dnum('1 ps'))
 
@@ -81,3 +87,13 @@ window.  For example::
         return 1 + rect * (np.exp(1j*w*dnum('1 ps'))-1)
     
     optics[-1]['transfer function'] = lambda w: delayColor(w,1.9,2.1)
+
+Setup a Batch Job
+-----------------
+
+One way to setup a batch job is to write a script to import ``rays`` and then iteratively call ``rays.run``.
+The arguments to ``rays.run`` can be retrieved by importing any SeaRay input file.
+To vary parameters, you can adjust the input file objects after importing them.
+N.b. in general you will need to reload the input file after each run using ``importlib.reload``.
+This is because, as of this writing, there are no guarantees that objects from the input file are not
+modified during a simulation.

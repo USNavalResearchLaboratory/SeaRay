@@ -33,7 +33,7 @@ import grid_tools
 import caustic_tools
 import logging
 from base import base_volume_interface as base_volume
-from base import check_four_tuple,check_surf_tuple
+from base import check_four_tuple,check_surf_tuple,check_vol_tuple
 
 class base_surface:
 	'''Base class for deriving surfaces.'''
@@ -52,10 +52,13 @@ class base_surface:
 	def OrbitPoints(self):
 		return 1
 	def Translate(self,r):
-		self.P_ref[0] += r[0]
-		self.P_ref[1] += r[1]
-		self.P_ref[2] += r[2]
+		check_vol_tuple(r)
+		self.P_ref[0] += r[1]
+		self.P_ref[1] += r[2]
+		self.P_ref[2] += r[3]
 	def EulerRotate(self,q):
+		if len(q)!=3:
+			raise ValueError("expected 3 Euler angles")
 		self.orientation.EulerRotate(q[0],q[1],q[2])
 	def Initialize(self,input_dict):
 		try:
@@ -778,6 +781,9 @@ class IdealCompressor(rectangle):
 		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
 
 class IdealLens(disc):
+	'''The ideal lens will focus collimated rays to a perfect point.
+	It will also adjust the phase to preserve pulse duration,
+	just as a parabolic mirror would do.'''
 	def Initialize(self,input_dict):
 		super().Initialize(input_dict)
 		self.f = input_dict['focal length']

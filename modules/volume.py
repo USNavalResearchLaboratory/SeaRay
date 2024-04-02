@@ -21,6 +21,7 @@ A possible source of confusion is that the reference density is itself normalize
 '''
 import copy
 import numpy as np
+import logging
 import vec3 as v3
 import dispersion
 import ray_kernel as ray_kernel
@@ -47,10 +48,13 @@ class base_volume:
     def OrbitPoints(self):
         return 2
     def Translate(self,r):
-        self.P_ref[0] += r[0]
-        self.P_ref[1] += r[1]
-        self.P_ref[2] += r[2]
+        check_vol_tuple(r)
+        self.P_ref[0] += r[1]
+        self.P_ref[1] += r[2]
+        self.P_ref[2] += r[3]
     def EulerRotate(self,q):
+        if len(q)!=3:
+            raise ValueError("expected 3 Euler angles")
         self.orientation.EulerRotate(q[0],q[1],q[2])
     def Initialize(self,input_dict):
         self.disp_in = input_dict['dispersion inside']
@@ -147,14 +151,14 @@ class SphericalLens(base_volume):
         self.surfaces.append(surface.SphericalCap('s1'))
         self.surfaces.append(surface.SphericalCap('s2'))
         self.surfaces.append(surface.cylindrical_shell('shell'))
-        surf_dict = { 'origin' : (0.,0.,-self.Lz/2),
+        surf_dict = { 'origin' : (None,0.,0.,-self.Lz/2),
             'radius of sphere' : -self.R1,
             'radius of edge' : self.Re,
             'euler angles' : (0.,np.pi,0.),
             'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out }
         self.surfaces[0].Initialize(surf_dict)
-        surf_dict = { 'origin' : (0.,0.,self.Lz/2),
+        surf_dict = { 'origin' : (None,0.,0.,self.Lz/2),
             'radius of sphere' : self.R2,
             'radius of edge' : self.Re,
             'euler angles' : (0.,0.,0.),
@@ -167,7 +171,7 @@ class SphericalLens(base_volume):
         cap_thickness2 = self.R2*(1-np.cos(cap_angle2))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,0.5*(cap_thickness1+cap_thickness2)),
+            'origin' : (None,0.,0.,0.5*(cap_thickness1+cap_thickness2)),
             'euler angles' : (0.,0.,0.),
             'radius' : self.Re,
             'length' : self.Lz-cap_thickness1+cap_thickness2 }
@@ -188,7 +192,7 @@ class AsphericLens(base_volume):
         self.surfaces.append(surface.cylindrical_shell('shell'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,-Lz/2),
+            'origin' : (None,0.,0.,-Lz/2),
             'euler angles' : (0.,np.pi,0.),
             'radius' : Re,
             'radius of sphere' : -R1,
@@ -200,13 +204,13 @@ class AsphericLens(base_volume):
         Rd = self.surfaces[0].Rd # reduced relative to Re
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,Lz/2),
+            'origin' : (None,0.,0.,Lz/2),
             'euler angles' : (0.,0.,0.),
             'radius' : Rd }
         self.surfaces[1].Initialize(surf_dict)
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,0.5*cap_thickness),
+            'origin' : (None,0.,0.,0.5*cap_thickness),
             'euler angles' : (0.,0.,0.),
             'radius' : Rd,
             'length' : Lz-cap_thickness }
@@ -220,42 +224,42 @@ class Box(base_volume):
         yrot = lambda q : (-np.pi/2,-q,np.pi/2)
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (-self.size[0]/2,0,0),
+            'origin' : (None,-self.size[0]/2,0,0),
             'euler angles' : yrot(-np.pi/2),
             'size' : (self.size[2],self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('f2'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (self.size[0]/2,0,0),
+            'origin' : (None,self.size[0]/2,0,0),
             'euler angles' : yrot(np.pi/2),
             'size' : (self.size[2],self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('f3'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,-self.size[1]/2,0),
+            'origin' : (None,0,-self.size[1]/2,0),
             'euler angles' : (0,np.pi/2,0),
             'size' : (self.size[0],self.size[2]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('f4'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,self.size[1]/2,0),
+            'origin' : (None,0,self.size[1]/2,0),
             'euler angles' : (0,-np.pi/2,0),
             'size' : (self.size[0],self.size[2]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('f5'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,0,-self.size[2]/2),
+            'origin' : (None,0,0,-self.size[2]/2),
             'euler angles' : (0,np.pi,0),
             'size' : (self.size[0],self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('f6'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,0,self.size[2]/2),
+            'origin' : (None,0,0,self.size[2]/2),
             'euler angles' : (0,0,0),
             'size' : (self.size[0],self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -271,21 +275,21 @@ class Prism(base_volume):
         self.surfaces.append(surface.rectangle('base'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (-self.size[0]/2,0,0),
+            'origin' : (None,-self.size[0]/2,0,0),
             'euler angles' : yrot(-np.pi/2),
             'size' : (self.size[2],self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('in'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,0,-np.sin(halfangle)*hyp/2),
+            'origin' : (None,0,0,-np.sin(halfangle)*hyp/2),
             'euler angles' : yrot(np.pi-halfangle),
             'size' : (hyp,self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('out'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0,0,np.sin(halfangle)*hyp/2),
+            'origin' : (None,0,0,np.sin(halfangle)*hyp/2),
             'euler angles' : yrot(halfangle),
             'size' : (hyp,self.size[1]) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -364,14 +368,14 @@ class PellinBroca(base_volume):
         self.surfaces.append(surface.rectangle('in'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Ac,
+            'origin' : (None,) + tuple(Ac),
             'euler angles' : yrot(np.pi),
             'size' : (A,h) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('out'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Bc,
+            'origin' : (None,) + tuple(Bc),
             'euler angles' : yrot(np.pi/2),
             'size' : (B,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -379,14 +383,14 @@ class PellinBroca(base_volume):
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
             'reflective' : True,
-            'origin' : Cc,
+            'origin' : (None,) + tuple(Cc),
             'euler angles' : yrot(-(np.pi/4-qr)),
             'size' : (C,h) }
         self.surfaces[-1].Initialize(surf_dict)
         self.surfaces.append(surface.rectangle('extra'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Dc,
+            'origin' : (None,) + tuple(Dc),
             'euler angles' : yrot(-(np.pi/2-qr)),
             'size' : (D,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -473,7 +477,7 @@ class PellinBroca2(base_volume):
         self.surfaces.append(surface.rectangle('out'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Bc,
+            'origin' : (None,) + tuple(Bc),
             'euler angles' : yrot(np.pi/2),
             'size' : (B,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -481,7 +485,7 @@ class PellinBroca2(base_volume):
         self.surfaces.append(surface.rectangle('in'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Ac,
+            'origin' : (None,) + tuple(Ac),
             'euler angles' : yrot(np.pi),
             'size' : (A,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -489,7 +493,7 @@ class PellinBroca2(base_volume):
         self.surfaces.append(surface.rectangle('side'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : Cc,
+            'origin' : (None,) + tuple(Cc),
             'euler angles' : yrot(0.0),
             'size' : (C,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -498,7 +502,7 @@ class PellinBroca2(base_volume):
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
             'reflective' : True,
-            'origin' : Dc,
+            'origin' : (None,) + tuple(Dc),
             'euler angles' : yrot(-np.pi/4-qr),
             'size' : (D,h) }
         self.surfaces[-1].Initialize(surf_dict)
@@ -561,19 +565,19 @@ class Cylinder(base_volume):
         self.surfaces.append(surface.cylindrical_shell('shell'))
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,-self.Lz/2),
+            'origin' : (None,0.,0.,-self.Lz/2),
             'euler angles' : (0.,np.pi,0.),
             'radius' : self.Rd }
         self.surfaces[0].Initialize(surf_dict)
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,self.Lz/2),
+            'origin' : (None,0.,0.,self.Lz/2),
             'euler angles' : (0.,0.,0.),
             'radius' : self.Rd }
         self.surfaces[1].Initialize(surf_dict)
         surf_dict = { 'dispersion beneath' : self.disp_in,
             'dispersion above' : self.disp_out,
-            'origin' : (0.,0.,0.),
+            'origin' : (None,0.,0.,0.),
             'euler angles' : (0.,0.,0.),
             'radius' : self.Rd,
             'length' : self.Lz }
@@ -608,7 +612,9 @@ class nonuniform_volume(base_volume):
             self.dom4d = ret[4]
             self.UpdateOrbits(xp,eikonal,orb)
         if self.propagator=='eikonal':
+            logging.info("start eikonal propagation")
             ray_kernel.SyncSatellites(xp,vg)
+            logging.info("finished sync")
             if np.any(dens==None):
                 ray_kernel.track(self.cl,xp,eikonal,self.vol_dict,orb)
             else:
@@ -673,6 +679,7 @@ class AnalyticCylinder(AnalyticDensity,Cylinder):
         # Here and below we are writing a unique OpenCL program for this object.
         # Therefore do not assign to self.cl by reference, instead use copy.
         self.cl = copy.copy(cl)
+        self.cl.setup_workgroups(input_dict)
         plugin_str = super().get_density_plugin(input_dict)
         plugin_str += '\ninline double outside(const double4 x)\n'
         plugin_str += '{\n'
@@ -689,6 +696,7 @@ class AnalyticBox(AnalyticDensity,Box):
         # Here and below we are writing a unique OpenCL program for this object.
         # Therefore do not assign to self.cl by reference, instead use copy.
         self.cl = copy.copy(cl)
+        self.cl.setup_workgroups(input_dict)
         plugin_str = super().get_density_plugin(input_dict)
         plugin_str += '\ninline double outside(const double4 x)\n'
         plugin_str += '{\n'
@@ -727,6 +735,7 @@ class Grid(grid_volume,Box):
         self.LoadMap(input_dict)
     def InitializeCL(self,cl,input_dict):
         self.cl = copy.copy(cl)
+        self.cl.setup_workgroups(input_dict)
         # Set up the dispersion function in OpenCL kernel
         plugin_str = '\n#define MAC_CART 1.0;\n'
         plugin_str += '\n#define MAC_CYL 0.0;\n'
@@ -786,6 +795,7 @@ class AxisymmetricGrid(grid_volume,Cylinder):
         self.LoadMap(input_dict)
     def InitializeCL(self,cl,input_dict):
         self.cl = copy.copy(cl)
+        self.cl.setup_workgroups(input_dict)
         # Set up the dispersion function in OpenCL kernel
         plugin_str = '\n#define MAC_CART 0.0;\n'
         plugin_str += '\n#define MAC_CYL 1.0;\n'

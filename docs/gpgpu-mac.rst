@@ -1,4 +1,0 @@
-Mac Advanced Install
-=========================
-
-TBD

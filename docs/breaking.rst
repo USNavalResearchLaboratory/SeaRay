@@ -5,6 +5,10 @@ Changes for v1.0
 Breaking Changes (Outward Facing)
 ---------------------------------
 
+* Initial ray distribution works differently
+    - New source dictionary contains ray and wave dictionaries, which have changed slightly
+    - Use ``origin`` and ``euler angles`` to change position and orientation
+    - No more spherical waves, use ideal lens to achieve same effect
 * Input file readers are more strict, but also provide more helpful error messages.
 * Outer lists are no longer accepted, for batch jobs import ``rays`` and call the ``run`` method.
 * The nonlinear susceptibility is scaled with density. The value that is entered into the volume is the value at the reference density.  Linear susceptibility has always been handled this way.
@@ -36,3 +40,8 @@ Improved Behaviors
 * The main program ``rays.py`` works as either a module or a command line program
     - See ``examples/uppe/batch`` for an example that varies parameters across runs
 * Conflicts between ``matplotlib`` and ``maya`` are better handled when using the plotter.
+* Serialized input file data is saved with the output data
+* ``plotter.py`` does not need the input file
+* ``viewer.ipynb`` does not rely on hard coded normalization
+* Logging level can be controlled
+* Work group sizes can be controlled
