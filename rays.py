@@ -60,7 +60,7 @@ def run(cmd_line,sim,sources,optics,diagnostics):
 	cl.add_program('kernels','rotations')
 
 	# Setup logging
-	log_level = logging.WARN
+	log_level = logging.WARNING
 	for arg in args:
 		if arg.split('=')[0]=='log':
 			log_level = getattr(logging, arg.split('=')[1].upper())

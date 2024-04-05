@@ -113,7 +113,7 @@ class FourierTool(CausticTool):
 		# Perform interpolation
 		A,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],eiks[:,c],w_nodes,x_nodes,y_nodes)
 		psi,ignore = grid_tools.GridFromInterpolation(w,dx[:,0],dx[:,1],kr,w_nodes,x_nodes,y_nodes)
-		return A*np.exp(1j*psi) , plot_ext
+		return A*np.exp(1j*psi)
 
 	def RelaunchRays1(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
@@ -184,7 +184,7 @@ class FourierTool(CausticTool):
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
-		logging.warn('Using simplified ray relaunch; only valid for close couplings.')
+		logging.warning('Using simplified ray relaunch; only valid for close couplings.')
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		# Rays keep their original frequency and transverse positions.
@@ -251,7 +251,7 @@ class BesselBeamTool(CausticTool):
 		logging.info("get boundary fields radial bounds %d , %d",rho_nodes[0],rho_nodes[-1])
 		A,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,eiks[:,c],w_nodes,rho_nodes,phi_nodes)
 		psi,ignore = grid_tools.CylGridFromInterpolation(w,rho,phi,kr,w_nodes,rho_nodes,phi_nodes)
-		return A*np.exp(1j*psi),plot_ext
+		return A*np.exp(1j*psi)
 
 	def RelaunchRays1(self,xp,eikonal,vg,a,L,material):
 		'''Use wave data to create a new ray distribution.
@@ -315,7 +315,7 @@ class BesselBeamTool(CausticTool):
 		:param numpy.ndarray a: vector potential with shape (Nw,Nx,Ny)
 		:param float L: length of the wave zone
 		:param class material: dispersion object rays are emerging from'''
-		logging.warn('Using simplified ray relaunch; only valid for close couplings.')
+		logging.warning('Using simplified ray relaunch; only valid for close couplings.')
 		# Assume vacuum for now
 		wn,xn,yn,ext = self.GetGridInfo()
 		# Rays keep their original frequency and transverse positions.

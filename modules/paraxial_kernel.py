@@ -360,6 +360,10 @@ def track(cl,xp,eikonal,vg,vol_dict: dict):
 	diagnostic_steps = N[3]-1
 	subcycles = vol_dict['subcycles']
 	steps = diagnostic_steps*subcycles
+	A = np.zeros(N).astype(np.cdouble)
+	J = np.zeros(N).astype(np.cdouble)
+	chiNL = np.zeros(N).astype(np.cdouble)
+	ne = np.zeros(N).astype(np.cdouble)
 
 	powersof2 = [2**i for i in range(32)]
 	if N[0] not in powersof2:
@@ -381,19 +385,20 @@ def track(cl,xp,eikonal,vg,vol_dict: dict):
 	except KeyError:
 		full_relaunch = False
 
-	# Capture the rays
 	if vol_dict['wave coordinates']=='cartesian':
 		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],cl)
 	else:
 		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl,vol_dict['radial modes'])
+	w_nodes,x1_nodes,x2_nodes,dom3d = field_tool.GetGridInfo()
 
-	logging.warning("Polarization information is lost upon entering paraxial region")
-	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
-	A = np.zeros(N).astype(np.cdouble)
-	J = np.zeros(N).astype(np.cdouble)
-	chiNL = np.zeros(N).astype(np.cdouble)
-	ne = np.zeros(N).astype(np.cdouble)
-	A[...,0],dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
+	if 'incoming wave' not in vol_dict:
+		logging.info('Start paraxial propagation using ray data.')
+		logging.warning('Polarization information is lost upon entering paraxial region.')
+		A[...,0] = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
+	else:
+		logging.info('Start paraxial propagation using wave data')
+		A[...,0] = vol_dict['incoming wave'](w_nodes,x1_nodes,x2_nodes)
+
 	w0 = w_nodes[int(N[0]/2)]
 	#n0 = np.mean(np.sqrt(np.einsum('...i,...i',xp[:,0,5:8],xp[:,0,5:8]))/xp[:,0,4])
 	n0 = 1/window_speed

@@ -26,6 +26,7 @@ Coupling to Paraxial Regions
 Ray bundles can be coupled into volumes with paraxial wave propagators. SeaRay will work out the waveform associated with the rays.
 
 * set the volume's ``propagator`` to ``paraxial``
+* make sure incoming wave is x-polarized
 * the ray bundle must have a lower frequency bound greater than zero
 * the rays should be paraxial
 * frequency node count should be a power of 2
@@ -36,8 +37,32 @@ Coupling to Unidirectional Regions
 Ray bundles can be coupled into volumes with UPPE wave propagators. SeaRay will work out the waveform associated with the rays.
 
 * set the volume's ``propagator`` to ``uppe``
+* make sure incoming wave is x-polarized
 * the ray bundle must have a lower frequency bound of *exactly zero*
 * frequency node count should be a power of 2 *plus one*
+
+Full Wave Simulations
+---------------------
+
+If you need to use a full wave description from start to finish, you can setup the ``incoming wave`` function in any propagation volume.
+If this key exists, the incoming ray data will be ignored, and the user's own callback function will be used to fill the required array.
+The callback function takes the mesh nodes as arguments and returns an array, e.g.::
+
+    def incoming_gaussian(w_nodes,x_nodes,y_nodes):
+        f = lambda x,x0,dx: np.exp(-(x-x0)**2/dx**2)
+        return np.einsum('i,j,k',f(w_nodes,1,0.1),f(x_nodes,0,10),f(y_nodes,0,10))
+
+This function becomes the value of the ``incoming wave`` key::
+
+    optics[-1]['incoming wave'] = incoming_gaussian
+
+If you want to make the callback depend on parameters of your own, use lambda, e.g., to have an adjustable delay::
+
+    def incoming_wave(w,x,y,delay):
+        # some code to compute A
+        return A * np.exp(1j*w*delay)[:,np.newaxis,np.newaxis]
+
+    optics[-1]['incoming wave'] = lambda w,x,y: incoming_wave(w,x,y,1.0)
 
 Multicolor Pulses
 -----------------

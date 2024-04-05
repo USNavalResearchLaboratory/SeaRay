@@ -3,6 +3,23 @@ Module: :samp:`uppe_kernel`
 -------------------------------
 
 This module is the primary computational engine for advancing unidirectional pulse propagation equations (UPPE).
+The call stack is as follows:
+
+* `track` is called externally
+* `track` repeatedly calls `propagator` to advance to the end of the volume
+* `propagator` advances to the next diagnostic plane by repeatedly calling
+
+	- `load_source`
+	- RK4 functions
+	- `condition_field`
+
+* `load_source` has these steps
+
+	- propagate linearly
+	- transform (kx,ky) -> (x,y)
+	- call `update_current`
+	- transform (x,y) -> (kx,ky)
+	- estimate step size if requested
 '''
 import logging
 import numpy as np
@@ -329,7 +346,10 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	diagnostic_steps = N[3]-1
 	subcycles = vol_dict['subcycles']
 	steps = diagnostic_steps*subcycles
-	field_planes = steps + 1
+	A = np.zeros(N).astype(np.cdouble)
+	J = np.zeros(N).astype(np.cdouble)
+	chiNL = np.zeros(N).astype(np.cdouble)
+	ne = np.zeros(N).astype(np.cdouble)
 
 	powersof2 = [2**i for i in range(32)]
 	if N[0]-1 not in powersof2:
@@ -351,19 +371,19 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	except KeyError:
 		full_relaunch = False
 
-	# Capture the rays
 	if vol_dict['wave coordinates']=='cartesian':
 		field_tool = caustic_tools.FourierTool(N,band,(0,0,0),size[1:],cl)
 	else:
 		field_tool = caustic_tools.BesselBeamTool(N,band,(0,0,0),size[1:],cl,vol_dict['radial modes'])
+	w_nodes,x1_nodes,x2_nodes,dom3d = field_tool.GetGridInfo()
 
-	logging.warn('Polarization information is lost upon entering paraxial region.')
-	w_nodes,x1_nodes,x2_nodes,plot_ext = field_tool.GetGridInfo()
-	A = np.zeros(N).astype(np.cdouble)
-	J = np.zeros(N).astype(np.cdouble)
-	chiNL = np.zeros(N).astype(np.cdouble)
-	ne = np.zeros(N).astype(np.cdouble)
-	A[...,0],dom3d = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
+	if 'incoming wave' not in vol_dict:
+		logging.info('Start UPPE propagation using ray data.')
+		logging.warning('Polarization information is lost upon entering UPPE region.')
+		A[...,0] = field_tool.GetBoundaryFields(xp[:,0,:],eikonal,1)
+	else:
+		logging.info('Start UPPE propagation using wave data')
+		A[...,0] = vol_dict['incoming wave'](w_nodes,x1_nodes,x2_nodes)
 
 	# Setup the wave propagation medium
 	chi = vol_dict['dispersion inside'].chi(w_nodes).astype(np.cdouble)
@@ -381,7 +401,6 @@ def track(cl,xp,eikonal,vg,vol_dict):
 	field_walls = grid_tools.cell_walls(dens_nodes[0],dens_nodes[-1],steps)
 	diagnostic_walls = np.linspace(-size[3]/2,size[3]/2,N[3])
 	dzmin = vol_dict['minimum step']
-	Dz = diagnostic_walls[1]-diagnostic_walls[0]
 	dom4d = np.concatenate((dom3d,[field_walls[0],field_walls[-1]]))
 
 	# Step through the domain
