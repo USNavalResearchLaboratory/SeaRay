@@ -68,7 +68,7 @@ __kernel void AddChiParaxial(
 			cum += 2 * term.s1 * ngas[xyoff] * dalpha;
 			dchi[idx] += cum;
 			// driving term with frequency units at full time steps
-			F = (dalpha/hbar) * 0.5 * (E[idx].s0*E[idx].s0 + E[idx].s1*E[idx].s1);
+			F = 0.5 * (dalpha/hbar) * 0.5 * (E[idx].s0*E[idx].s0 + E[idx].s1*E[idx].s1);
 			exp_iwt = cmul(exp_iwt,exp_iwdth);
 			// update j <-> j-2 transition at half time steps
 			rhojj -= dt * F * cmul((tw_Complex)(0,1),exp_iwt);
@@ -119,7 +119,7 @@ __kernel void AddChiUPPE(
 			cum += 2 * term.s1 * ngas[xyoff] * dalpha;
 			dchi[idx] += cum;
 			// driving term with frequency units at full time steps
-			F = (dalpha/hbar) * E[idx] * E[idx];
+			F = 0.5 * (dalpha/hbar) * E[idx] * E[idx];
 			exp_iwt = cmul(exp_iwt,exp_iwdth);
 			// update j <-> j-2 transition at half time steps
 			rhojj -= dt * F * cmul((tw_Complex)(0,1),exp_iwt);

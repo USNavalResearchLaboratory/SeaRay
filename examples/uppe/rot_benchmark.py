@@ -8,10 +8,14 @@ import modules.volume as volume
 import modules.input_tools as input_tools 
 
 # Compare with Wahlstrand et al., PRA 85, 043820 (2012), Fig. 2(b).
-# Output will be chi_eff.  To compare with figure work out the XPM phase shift (SPM*2)
-# k0*2*dn*Leff (Eq. 2), where dn ~ chi_eff/2, and Leff = 4.41 mm.  Probe wavelength is 550 nm.
-# Overall this gives 50350*chi_eff.
+# Output will be chi_eff.  To compare with figure work out the phase shift:
+# k0*dn*Leff (Eq. 2), where dn ~ chi_eff/2, and Leff = 4.41 mm.  Probe wavelength is 580 nm.
+# Overall this gives 23900*chi_eff.  N.b. the Kerr part will be underestimated by two-fold,
+# due to XPM, so we double the Kerr term below to account for that.
 # Propagation range in simulation only needs to match if we want to check actual probe phase shift.
+
+# This input file can either be `uppe` or `paraxial`, controlled by parameter below
+propagator = 'paraxial'
 
 mks_length = 0.8e-6 / (2*np.pi)
 cm = 100*mks_length
@@ -25,24 +29,27 @@ dnum = helper.dnum
 wavelength = 0.8/um
 r00 = 150/um
 w00 = 2*np.pi/wavelength
-wprobe = 2*np.pi/(0.55/um)
-t00 = dnum('0.04 ps')/1.18
+t00 = dnum('0.04 ps')/np.sqrt(2*np.log(2))
 a00 = C.e*np.sqrt(2*377*4.5e13*1e4)/(w00*C.c/mks_length)/C.m_e/C.c
 propagation_range = (0/cm,.441/cm)
 rbox = 1/mm
-# Setting the lower frequency bound to zero triggers carrier resolved treatment
-band = (0.0,8.0)
+if propagator=='uppe':
+    band = (0.0,8.0)
+    freq_nodes = 2049
+else:
+    band = (0.5,1.5)
+    freq_nodes = 256
 
 # Control Parameters - Gas
 
 ngas_ref = dnum('2.7e19 cm-3') # density at which parameters are given
 ngas = ngas_ref*90/760 # actual density of the volume
-chi3 = helper.chi3(1.0,'7.4e-24 m2/W')
+chi3 = helper.chi3(1.0,'14.8e-24 m2/W') # doubled to account for XPM
 Uion = dnum('12.1 eV')
 Zeff = 0.53
 ionizer = ionization.StitchedPPT(mks_length,True,Uion,Zeff,lstar=0,l=0,m=0,w0=w00,terms=80)
-jstates = np.arange(0,40)
-damping = np.ones(40)/dnum('100 ps')
+jstates = np.arange(0,32)
+damping = np.ones(32)/dnum('100 ps')
 dnuc = 6 - 3*(jstates%2)
 hbar_norm = C.hbar * (w00*C.c/mks_length) / (C.m_e*C.c**2)
 N2rot = rotations.Rotator(2/dnum('1 cm'),4*np.pi*6.7e-25/dnum('1 cm-3'),dnum('.025 eV'),dnuc,damping,hbar_norm)
@@ -75,7 +82,7 @@ sources = [
         'rays': {
             'origin': (None,0.0,0.0,-0.1/mm),
             'euler angles': (0.0,0.0,0.0),
-            'number': (2049,128,2,None),
+            'number': (freq_nodes,128,2,None),
             'bundle radius': (None,) + (.001*r00,)*3,
             'loading coordinates': 'cylindrical',
             'bounds': band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None),
@@ -88,33 +95,18 @@ sources = [
                 'k0': (w00,None,None,w00),
                 'mode': (None,0,0,None),
                 'basis': 'hermite'
-            },
-            # probe pulse
-            {
-                'a0': (None,.05*a00,0,None),
-                'r0': (t00/4,r00,r00,t00/4),
-                'k0': (wprobe,None,None,wprobe),
-                'mode': (None,0,0,None),
-                'basis': 'hermite'
-            },
+            }
         ]
     }
 ]
 
-# Delay filter (delay probe with respect to pump)
-optics.append({})
-optics[-1]['object'] = surface.Filter('delay')
-optics[-1]['origin'] = (None,0,0,-0.05/mm)
-optics[-1]['radius'] = 5/cm
-optics[-1]['transfer function'] = lambda w: np.exp(1j*rect(w,0.9*wprobe,1.1*wprobe)*w*dnum('.2 ps'))
-
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')
-optics[-1]['propagator'] = 'uppe'
+optics[-1]['propagator'] = propagator
 optics[-1]['ionizer'] = None
 optics[-1]['rotator'] = N2rot
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (2049,256,1,5)
+optics[-1]['wave grid'] = (freq_nodes,256,1,5)
 optics[-1]['radial modes'] = 256
 optics[-1]['density reference'] = ngas_ref
 optics[-1]['density function'] = str(ngas/ngas_ref)

@@ -218,16 +218,20 @@ class TransverseModeTool:
 class FourierTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to plane wave basis'''
 	def kspacex(self,a):
+		'''This assumes a is already on the device, and result will be left on the device'''
 		self.cl.program('fft').FFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
 		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.q.finish()
 	def rspacex(self,a):
+		'''This assumes a is already on the device, and result will be left on the device'''
 		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.program('fft').IFFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
 		self.cl.q.finish()
 	def kspace(self,a):
+		'''This does not use OpenCL'''
 		return np.fft.fft(np.fft.fft(a,axis=1),axis=2)
 	def rspace(self,a):
+		'''This does not use OpenCL'''
 		return np.fft.ifft(np.fft.ifft(a,axis=2),axis=1)
 	def k_diff(self,i):
 		# Square of this is the proper eigenvalue of the finite difference laplacian
@@ -302,6 +306,7 @@ class HankelTransformTool(TransverseModeTool):
 		self.L_dev = None
 		self.scratch_dev = None
 	def kspacex(self,a):
+		'''This assumes a is already on the device, and result will be left on the device'''
 		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.scratch_dev[...] = a.copy(queue=self.cl.q)
@@ -311,6 +316,7 @@ class HankelTransformTool(TransverseModeTool):
 		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.q.finish()
 	def rspacex(self,a):
+		'''This assumes a is already on the device, and result will be left on the device'''
 		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.scratch_dev[...] = a.copy(queue=self.cl.q)
 		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(self.Nk))
@@ -329,6 +335,9 @@ class HankelTransformTool(TransverseModeTool):
 			f(v_dev)
 		return v_dev.get()
 	def kspace(self,a):
+		'''This involves moving data to the device and back again.
+		If a is 4D it is transformed in place, if 3D it is unchanged.
+		In either case return value has the k-space data.'''
 		if len(a.shape)==3:
 			return self.trans(self.kspacex,a)
 		else:
@@ -336,6 +345,9 @@ class HankelTransformTool(TransverseModeTool):
 				a[...,k] = self.trans(self.kspacex,a[...,k])
 			return a
 	def rspace(self,a):
+		'''This involves moving data to the device and back again
+		If a is 4D it is transformed in place, if 3D it is unchanged.
+		In either case return value has the r-space data.'''
 		if len(a.shape)==3:
 			return self.trans(self.rspacex,a)
 		else:

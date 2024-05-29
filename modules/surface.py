@@ -828,6 +828,54 @@ class IdealLens(disc):
 		filter = np.where(q**2>1e-20)[0]
 		eikonal[filter,1:4] = np.einsum('...ij,...j',M[filter,:]/q[filter,np.newaxis,np.newaxis]**2,eikonal[filter,1:4])
 
+class FlyingFocus(disc):
+	'''Create an arbitrary flying focus.'''
+	def Initialize(self,input_dict):
+		super().Initialize(input_dict)
+		self.rmax = input_dict['max radius']
+		self.zbeg = input_dict['start pos']
+		self.zend = input_dict['end pos']
+		self.vfront = input_dict['front velocity']
+	def Deflect(self,xp,eikonal,vg,vol: base_volume | None):
+		# Save the starting ray direction for use in polarization update
+		u0 = np.copy(xp[...,0,5:8])
+		u0 /= np.sqrt(np.einsum('...i,...i',u0,u0))[...,np.newaxis]
+		# direct ray toward flying focus for each radius
+		r2 = np.einsum('...i,...i',xp[:,:,1:4],xp[:,:,1:4])
+		r = np.sqrt(r2)
+		alpha = (self.zend-self.zbeg)/self.rmax
+		img_pts = np.zeros(xp.shape)
+		img_pts[...,3] = self.zbeg + alpha*r
+		k2 = np.einsum('...i,...i',xp[:,:,5:8],xp[:,:,5:8])[...,np.newaxis]
+		R = img_pts[...,1:4] - xp[...,1:4]
+		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
+		xp[:,:,5:8] = np.sqrt(k2)*R/np.sqrt(R2)
+		# Advance ray time and phase
+		tadv = -(alpha*r[...,np.newaxis]/self.vfront - np.sqrt(R2))
+		eikonal[:,0] -= tadv[:,0,0]*xp[:,0,4]
+		xp[...,0] -= tadv[...,0]
+		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n
+		vg[...] = self.GetDownstreamVelocity(xp,kdotn)
+		# Remaining code updates the polarization
+		u1 = np.copy(xp[...,0,5:8])
+		u1 /= np.sqrt(np.einsum('...i,...i',u1,u1))[...,np.newaxis]
+		w = np.cross(u0,u1)
+		q = np.sqrt(np.einsum('...i,...i',w,w))
+		cosq = np.cos(q)
+		sinq = np.sin(q)
+		M = np.zeros((eikonal.shape[0],3,3))
+		M[...,0,0] = w[...,0]**2 + cosq*(w[...,1]**2 + w[...,2]**2)
+		M[...,1,1] = w[...,1]**2 + cosq*(w[...,0]**2 + w[...,2]**2)
+		M[...,2,2] = w[...,2]**2 + cosq*(w[...,0]**2 + w[...,1]**2)
+		M[...,0,1] = w[...,0]*w[...,1]*(1-cosq) - w[...,2]*q*sinq
+		M[...,0,2] = w[...,0]*w[...,2]*(1-cosq) + w[...,1]*q*sinq
+		M[...,1,2] = w[...,1]*w[...,2]*(1-cosq) - w[...,0]*q*sinq
+		M[...,1,0] = w[...,0]*w[...,1]*(1-cosq) + w[...,2]*q*sinq
+		M[...,2,0] = w[...,0]*w[...,2]*(1-cosq) - w[...,1]*q*sinq
+		M[...,2,1] = w[...,1]*w[...,2]*(1-cosq) + w[...,0]*q*sinq
+		filter = np.where(q**2>1e-20)[0]
+		eikonal[filter,1:4] = np.einsum('...ij,...j',M[filter,:]/q[filter,np.newaxis,np.newaxis]**2,eikonal[filter,1:4])
+
 class IdealHarmonicGenerator(disc):
 	'''Move energy from w to 2w.  Amplitude is exchanged between existing ray frequencies.
 	We are following a protocol of never altering any ray frequency.
