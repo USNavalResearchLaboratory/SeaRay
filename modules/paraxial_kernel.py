@@ -162,9 +162,9 @@ def update_current(cl: init.cl_refs,
 	src.At_dev[...] = src.Aw_dev.copy(queue=cl.q)
 	src.ne_dev.fill(0.0,queue=cl.q)
 	src.chi_dev.fill(0.0,queue=cl.q)
-	cl.program('fft').DtSpectral(cl.q,shp3,None,Etdev,wdev,np.double(-1.0))
-	cl.program('fft').IFFT(cl.q,shp2,None,Etdev,np.int32(src.freqs))
-	cl.program('fft').IFFT(cl.q,shp2,None,Atdev,np.int32(src.freqs))
+	cl.fft.DtSpectral(cl.q,shp3,None,Etdev,wdev,np.double(-1.0))
+	cl.fft.IFFT(cl.q,shp2,None,Etdev,np.int32(src.freqs))
+	cl.fft.IFFT(cl.q,shp2,None,Atdev,np.int32(src.freqs))
 
 	# First handle plasma formation
 	if ionizer!=None:
@@ -173,20 +173,20 @@ def update_current(cl: init.cl_refs,
 	# Effective susceptibility due to nonlinear terms
 	if rotator!=None:
 		rotator.AddChi(cl,shp3,chidev,Etdev,ngasdev,src.dt,False)
-	cl.program('paraxial').AddKerrChi(cl.q,shp3,None,chidev,Etdev,ngasdev,np.double(mat.redchi3))
+	cl.paraxial.AddKerrChi(cl.q,shp3,None,chidev,Etdev,ngasdev,np.double(mat.redchi3))
 	# Form polarization due to Raman and Kerr susceptibility
 	# We are putting polarization into Jdev which will later become current density
-	cl.program('paraxial').SourcePolarization(cl.q,shp3,None,Jdev,chidev,Etdev)
+	cl.paraxial.SourcePolarization(cl.q,shp3,None,Jdev,chidev,Etdev)
 	#src.J_dev.fill(0.0,queue=cl.q) # uncomment to force linear propagation
 	# Now go to frequency domain to add non-uniform but dispersive contributions,
 	# and also take time derivative in frequency space to get J
-	cl.program('fft').FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
-	#cl.program('paraxial').AddNonuniformChi(cl.q,shp3,None,Jdev,Ewdev,dchi)
-	cl.program('fft').DtSpectral(cl.q,shp3,None,Jdev,wdev,np.double(1.0))
+	cl.fft.FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
+	#cl.paraxial.AddNonuniformChi(cl.q,shp3,None,Jdev,Ewdev,dchi)
+	cl.fft.DtSpectral(cl.q,shp3,None,Jdev,wdev,np.double(1.0))
 	# Plasma current
-	cl.program('fft').IFFT(cl.q,shp2,None,Jdev,np.int32(src.freqs))
-	cl.program('paraxial').AddPlasmaCurrent(cl.q,shp3,None,Jdev,Atdev,nedev)
-	cl.program('fft').FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
+	cl.fft.IFFT(cl.q,shp2,None,Jdev,np.int32(src.freqs))
+	cl.paraxial.AddPlasmaCurrent(cl.q,shp3,None,Jdev,Atdev,nedev)
+	cl.fft.FFT(cl.q,shp2,None,Jdev,np.int32(src.steps))
 
 def load_source(z0: np.double,
 				z: np.double,
@@ -218,17 +218,17 @@ def load_source(z0: np.double,
 	k0dev = mat.k0_dev.data
 	dzdev = src.ne_dev.data # re-use ne for the step size estimate
 	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(z0-src.zi+z))
+	cl.paraxial.PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(z0-src.zi+z))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer,rotator)
 	T.kspacex(src.J_dev)
-	cl.program('paraxial').CurrentToODERHS(cl.q,shp3,None,Jdev,kzdev,k0dev,np.double(z0-src.zi+z))
+	cl.paraxial.CurrentToODERHS(cl.q,shp3,None,Jdev,kzdev,k0dev,np.double(z0-src.zi+z))
 	if return_dz:
-		cl.program('paraxial').LoadModulus(cl.q,shp3,None,qwdev,dzdev)
+		cl.paraxial.LoadModulus(cl.q,shp3,None,qwdev,dzdev)
 		if np.isnan(pyopencl.array.sum(src.ne_dev,queue=cl.q).get(queue=cl.q)):
 			print('!',end='',flush=True)
 		amin = src.rel_amin * pyopencl.array.max(src.ne_dev,queue=cl.q).get(queue=cl.q)
-		cl.program('paraxial').LoadStepSize(cl.q,shp3,None,qwdev,Jdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
+		cl.paraxial.LoadStepSize(cl.q,shp3,None,qwdev,Jdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
 		dz = pyopencl.array.min(src.ne_dev,queue=cl.q).get(queue=cl.q)
 		if z+dz>src.L:
 			dz = src.L-z
@@ -258,7 +258,7 @@ def finish(cl: init.cl_refs,
 	Awdev = src.Aw_dev.data
 	kzdev = mat.kz_dev.data
 	src.Aw_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('paraxial').PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(zf-src.zi))
+	cl.paraxial.PropagateLinear(cl.q,shp3,None,Awdev,kzdev,np.double(zf-src.zi))
 	T.rspacex(src.Aw_dev)
 	update_current(cl,src,mat,ionizer,rotator)
 	return src.Aw_dev.get(queue=cl.q), \
@@ -319,16 +319,16 @@ def propagator(cl: init.cl_refs,
 			src.qf_dev[...] = src.qw_dev.copy(queue=cl.q)
 
 			dz = load_source(z0,z,cl,T,src,mat,ionizer,rotator,return_dz=True) # load k1
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
 
 			load_source(z0,z+0.5*dz,cl,T,src,mat,ionizer,rotator) # load k2
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz/2))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz/2))
 
 			load_source(z0,z+0.5*dz,cl,T,src,mat,ionizer,rotator) # load k3
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz))
 
 			load_source(z0,z+dz,cl,T,src,mat,ionizer,rotator) # load k4
-			cl.program('uppe').RKFinish(cl.q,sw,None,qwdev,qfdev,Jwdev,np.double(dz/6))
+			cl.uppe.RKFinish(cl.q,sw,None,qwdev,qfdev,Jwdev,np.double(dz/6))
 
 			iterations += 1
 			z += dz

@@ -2,9 +2,73 @@ import pyopencl
 import logging
 import pathlib
 
+class fft:
+	"""contains kernel programs for Fourier and Hankel transformation"""
+	def __init__(self,program: pyopencl.Program):
+		self.FFT = program.FFT
+		self.IFFT = program.IFFT
+		self.RFFT = program.RFFT
+		self.IRFFT = program.IRFFT
+		self.DtSpectral = program.DtSpectral
+		self.iDtSpectral = program.iDtSpectral
+		self.Filter = program.Filter
+		self.SoftTimeWindow = program.SoftTimeWindow
+		self.FFT_axis1 = program.FFT_axis1
+		self.FFT_axis2 = program.FFT_axis2
+		self.IFFT_axis1 = program.IFFT_axis1
+		self.IFFT_axis2 = program.IFFT_axis2
+		self.RootVolumeMultiply = program.RootVolumeMultiply
+		self.RootVolumeDivide = program.RootVolumeDivide
+		self.RadialTransform = program.RadialTransform
+		self.InverseRadialTransform = program.InverseRadialTransform
+
+class uppe:
+	"""contains kernel programs for UPPE module"""
+	def __init__(self,program: pyopencl.Program):
+		self.RKStage = program.RKStage
+		self.RKFinish = program.RKFinish
+		self.SourcePolarization = program.SourcePolarization
+		self.PropagateLinear = program.PropagateLinear
+		self.VectorPotentialToElectricField = program.VectorPotentialToElectricField
+		self.CurrentToODERHS = program.CurrentToODERHS
+		self.AddKerrChi = program.AddKerrChi
+
+class paraxial:
+	"""contains kernel programs for paraxial module"""
+	def __init__(self,program: pyopencl.Program):
+		self.SourcePolarization = program.SourcePolarization
+		self.PropagateLinear = program.PropagateLinear
+		self.CurrentToODERHS = program.CurrentToODERHS
+		self.AddKerrChi = program.AddKerrChi
+		#self.AddNonuniformChi = program.AddNonuniformChi
+		self.AddPlasmaCurrent = program.AddPlasmaCurrent
+		self.LoadModulus = program.LoadModulus
+		self.LoadStepSize = program.LoadStepSize
+
+class ionization:
+	"""contains kernel programs for ionization"""
+	def __init__(self,program: pyopencl.Program):
+		self.ComputePlasmaDensity = program.ComputePlasmaDensity
+		self.EnvelopeRate = program.EnvelopeRate
+		self.ExplicitRate = program.ExplicitRate
+		self.EnvelopeRateSeries = program.EnvelopeRateSeries
+		self.ExplicitRateSeries = program.ExplicitRateSeries
+
+class rotations:
+	"""contains kernel programs for molecular rotations"""
+	def __init__(self,program: pyopencl.Program):
+		self.AddChiUPPE = program.AddChiUPPE
+		self.AddChiParaxial = program.AddChiParaxial
+
+class caustic:
+	"""contains kernel programs for analyzing caustics"""
+	def __init__(self,program: pyopencl.Program):
+		self.divergence = program.divergence
+		self.laplacian = program.laplacian
+
 class cl_refs:
 	"""All OpenCL functionality is accessed through this object."""
-	def __init__(self,c,d,q):
+	def __init__(self,c: pyopencl.Context, d: pyopencl.Device, q: pyopencl.CommandQueue):
 		self.ctx = c
 		self.dev = d
 		self.q = q
@@ -51,6 +115,16 @@ class cl_refs:
 		program.build()
 
 		self.prog[basename] = program
+
+	def create_all_kernels(self):
+		"""Create all universal kernels, some other kernels have plugin headers
+		and have to be created per object."""
+		self.fft = fft(self.program('fft'))
+		self.uppe = uppe(self.program('uppe'))
+		self.paraxial = paraxial(self.program('paraxial'))
+		self.ionization = ionization(self.program('ionization'))
+		self.rotations = rotations(self.program('rotations'))
+		self.caustic = caustic(self.program('caustic'))
 
 def list_opencl():
 	print('PyOpenCL version',pyopencl.VERSION)

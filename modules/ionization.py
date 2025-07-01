@@ -31,7 +31,7 @@ def GetPlasmaDensityCL(cl,shp,ne,ngas,dt):
 	:param cl_data ne: the data member of the pyopencl array for ne, which on input has the rate, on output density with same units as ngas.
 	:param cl_data ngas: the data member of the pyopencl array for ngas, which has the gas density with shape (Nx,Ny), any units.
 	:returns: no return value, but plasma density is loaded into ne on output'''
-	cl.program('ionization').ComputePlasmaDensity(cl.q,shp[1:3],None,ne,ngas,np.double(dt),np.int32(shp[0]))
+	cl.ionization.ComputePlasmaDensity(cl.q,shp[1:3],None,ne,ngas,np.double(dt),np.int32(shp[0]))
 
 class UnitTranslation(izbase.AtomicUnits):
 	def __init__(self,mks_length):
@@ -133,18 +133,18 @@ class Ionizer(UnitTranslation):
 		rate_conv = self.rate_au_to_sim(1.0)
 		if self.C1>0.0:
 			if envelope:
-				k = cl.program('ionization').EnvelopeRate
+				k = cl.ionization.EnvelopeRate
 			else:
-				k = cl.program('ionization').ExplicitRate
+				k = cl.ionization.ExplicitRate
 			k(cl.q,shp,None,rate,Es,
 				np.double(field_conv),np.double(rate_conv),np.double(self.cutoff_field),
 				np.double(self.C1),np.double(self.C2),np.double(self.C3))
 		else:
 			cn = np.array(self.Clog).astype(np.double)
 			if envelope:
-				k = cl.program('ionization').EnvelopeRateSeries
+				k = cl.ionization.EnvelopeRateSeries
 			else:
-				k = cl.program('ionization').ExplicitRateSeries
+				k = cl.ionization.ExplicitRateSeries
 			k(cl.q,shp,None,rate,Es,
 				np.double(field_conv),np.double(rate_conv),np.double(self.cutoff_field),
 				cn[0],cn[1],cn[2],cn[3],cn[4],cn[5])

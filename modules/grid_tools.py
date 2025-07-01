@@ -219,13 +219,13 @@ class FourierTransformTool(TransverseModeTool):
 	'''Transform Cartesian components to plane wave basis'''
 	def kspacex(self,a):
 		'''This assumes a is already on the device, and result will be left on the device'''
-		self.cl.program('fft').FFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
-		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.fft.FFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
+		self.cl.fft.FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.q.finish()
 	def rspacex(self,a):
 		'''This assumes a is already on the device, and result will be left on the device'''
-		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
-		self.cl.program('fft').IFFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
+		self.cl.fft.IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.fft.IFFT_axis1(self.cl.q,(a.shape[0],a.shape[2]),None,a.data,np.int32(a.shape[1]))
 		self.cl.q.finish()
 	def kspace(self,a):
 		'''This does not use OpenCL'''
@@ -256,10 +256,14 @@ class HankelTransformTool(TransverseModeTool):
 		if Nk==None:
 			Nk = Nr
 		self.Nk = Nk
+		dri = np.ones(Nr)*dr
 		r_list = cell_centers(0.0,Nr*dr,Nr)
-		A1 = 2*np.pi*(r_list-0.5*dr)
-		A2 = 2*np.pi*(r_list+0.5*dr)
-		V = np.pi*((r_list+0.5*dr)**2 - (r_list-0.5*dr)**2)
+		for ir in range(int(Nr/2),Nr):
+			dri[ir] = dri[ir-1]*1.0 # factor >1 will cause cells to grow
+			r_list[ir] = r_list[ir-1] + 0.5*dri[ir-1] + 0.5*dri[ir]
+		A1 = 2*np.pi*(r_list-0.5*dri)
+		A2 = 2*np.pi*(r_list+0.5*dri)
+		V = np.pi*((r_list+0.5*dri)**2 - (r_list-0.5*dri)**2)
 		self.Lambda = np.sqrt(V)
 		# Highest negative mode is never needed due to symmetry, so we have 2*mmax modes instead of 2*mmax+1.
 		# We could save storage by only keeping eigenvectors for positive modes (negative modes are the same).
@@ -271,9 +275,9 @@ class HankelTransformTool(TransverseModeTool):
 			self.vals = np.zeros((Nr,2*mmax)) # pad out to full resolution
 			Hi = np.zeros((Nr,Nk,2*mmax))
 		for m in range(0,mmax+1):
-			T1 = A1/(dr*V)
-			T2 = -(A1 + A2)/(dr*V) - (m/r_list)**2
-			T3 = A2/(dr*V)
+			T1 = A1/(dri*V)
+			T2 = -(A1 + A2)/(dri*V) - (m/r_list)**2
+			T3 = A2/(dri*V)
 			# Boundary conditions
 			T2[0] += T1[0]
 			T2[Nr-1] -= T3[Nr-1]
@@ -307,21 +311,21 @@ class HankelTransformTool(TransverseModeTool):
 		self.scratch_dev = None
 	def kspacex(self,a):
 		'''This assumes a is already on the device, and result will be left on the device'''
-		self.cl.program('fft').FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
-		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.fft.FFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.fft.RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.scratch_dev[...] = a.copy(queue=self.cl.q)
 		a.fill(0.0,queue=self.cl.q)
 		shp = ( a.shape[0] , self.Nk , a.shape[2] )
-		self.cl.program('fft').RadialTransform(self.cl.q,shp,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(a.shape[1]))
-		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.fft.RadialTransform(self.cl.q,shp,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(a.shape[1]))
+		self.cl.fft.RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.cl.q.finish()
 	def rspacex(self,a):
 		'''This assumes a is already on the device, and result will be left on the device'''
-		self.cl.program('fft').RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.fft.RootVolumeMultiply(self.cl.q,a.shape,None,a.data,self.L_dev.data)
 		self.scratch_dev[...] = a.copy(queue=self.cl.q)
-		self.cl.program('fft').InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(self.Nk))
-		self.cl.program('fft').RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
-		self.cl.program('fft').IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
+		self.cl.fft.InverseRadialTransform(self.cl.q,a.shape,None,self.H_dev.data,self.scratch_dev.data,a.data,np.int32(self.Nk))
+		self.cl.fft.RootVolumeDivide(self.cl.q,a.shape,None,a.data,self.L_dev.data)
+		self.cl.fft.IFFT_axis2(self.cl.q,a.shape[:2],None,a.data,np.int32(a.shape[2]))
 		self.cl.q.finish()
 	def trans(self,f,v):
 		vc = np.ascontiguousarray(np.copy(v))

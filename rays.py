@@ -58,6 +58,7 @@ def run(cmd_line,sim,sources,optics,diagnostics):
 	cl.add_program('kernels','caustic')
 	cl.add_program('kernels','ionization')
 	cl.add_program('kernels','rotations')
+	cl.create_all_kernels()
 
 	# Setup logging
 	log_level = logging.WARNING

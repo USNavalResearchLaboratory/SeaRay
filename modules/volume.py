@@ -688,6 +688,7 @@ class AnalyticCylinder(AnalyticDensity,Cylinder):
         plugin_str += '''const double r2 = x.s1*x.s1 + x.s2*x.s2;
                         return (double)(r2>Rd*Rd || x.s3*x.s3>0.25*dz*dz);
                         }\n'''
+        # TODO: save the kernel itself rather than its name
         self.cl.add_program('kernels','ray_integrator',plugin=plugin_str)
 
 class AnalyticBox(AnalyticDensity,Box):
@@ -704,6 +705,7 @@ class AnalyticBox(AnalyticDensity,Box):
         plugin_str += 'const double Ly = ' + str(self.size[1]) + ';\n'
         plugin_str += 'const double Lz = ' + str(self.size[2]) + ';\n'
         plugin_str += 'return (double)(x.s1*x.s1>0.25*Lx*Lx || x.s2*x.s2>0.25*Ly*Ly || x.s3*x.s3>0.25*Lz*Lz);\n}\n'
+        # TODO: save the kernel itself rather than its name
         self.cl.add_program('kernels','ray_integrator',plugin=plugin_str)
 
 class Grid(grid_volume,Box):
@@ -756,7 +758,7 @@ class Grid(grid_volume,Box):
         plugin_str += '{\n'
         plugin_str += self.disp_in.Dxk('Gather(dens,x)')
         plugin_str += '}\n\n'
-
+        # TODO: save the kernel itself rather than its name
         self.cl.add_program('kernels','ray_in_cell',plugin=plugin_str)
     def GetRelDensity(self,xp):
         return ray_kernel.gather(self.cl,xp,self.ne)
@@ -817,7 +819,7 @@ class AxisymmetricGrid(grid_volume,Cylinder):
         plugin_str += '{\n'
         plugin_str += self.disp_in.Dxk('Gather(dens,x)')
         plugin_str += '}\n\n'
-
+        # TODO: save the kernel itself rather than its name
         self.cl.add_program('kernels','ray_in_cell',plugin_str)
     def GetRelDensity(self,xp):
         return ray_kernel.gather(self.cl,xp,self.ne)

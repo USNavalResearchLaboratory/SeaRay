@@ -468,3 +468,10 @@ class Ge(sellmeier_medium):
 		super().__init__(mks_length,
 			A=np.array([0.4886331,14.5142535,0.0091224]),
 			L=np.array([1.393959,0.1626427,752.190]))
+
+class Ar(sellmeier_medium_alt1):
+	# Sellmeier formula from https://refractiveindex.info/?shelf=main&book=Ar&page=Bideau-Mehu
+	def __init__(self,mks_length):
+		super().__init__(mks_length,
+			B=2*np.array([2.50141e-3, 5.00283e-4, 5.22343e-2]),
+			C=np.array([91.012, 87.892, 214.02]))

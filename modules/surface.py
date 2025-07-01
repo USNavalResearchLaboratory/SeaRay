@@ -851,7 +851,7 @@ class FlyingFocus(disc):
 		R2 = np.einsum('...i,...i',R,R)[...,np.newaxis]
 		xp[:,:,5:8] = np.sqrt(k2)*R/np.sqrt(R2)
 		# Advance ray time and phase
-		tadv = -(alpha*r[...,np.newaxis]/self.vfront - np.sqrt(R2))
+		tadv = alpha*r[...,np.newaxis]/self.vfront - np.sqrt(R2)
 		eikonal[:,0] -= tadv[:,0,0]*xp[:,0,4]
 		xp[...,0] -= tadv[...,0]
 		kdotn = np.ones(xp.shape[:-1]) # getting vg only requires the sign of k.n

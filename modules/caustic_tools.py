@@ -374,7 +374,7 @@ def GetDivergence(Ax,Az,dr,dz,cl):
 	Az_dev = pyopencl.array.to_device(cl.queue,Az)
 	ans_dev = pyopencl.array.to_device(cl.queue,ans)
 	cl.queue.finish()
-	cl.program('caustic').divergence(cl.q,(Ax.shape[0]-2,Ax.shape[1]-2),None,Ax_dev.data,Az_dev.data,ans_dev.data,dr,dz,global_offset=(1,1))
+	cl.caustic.divergence(cl.q,(Ax.shape[0]-2,Ax.shape[1]-2),None,Ax_dev.data,Az_dev.data,ans_dev.data,dr,dz,global_offset=(1,1))
 	cl.queue.finish()
 	ans_dev.get(ary=ans)
 	return ans
@@ -384,7 +384,7 @@ def GetLaplacian(A,dr,dz,m,cl):
 	A_dev = pyopencl.array.to_device(cl.queue,A)
 	ans_dev = pyopencl.array.to_device(cl.queue,ans)
 	cl.queue.finish()
-	cl.program('caustic').laplacian(cl.q,(A.shape[0]-2,A.shape[1]-2),None,A_dev.data,ans_dev.data,dr,dz,m,global_offset=(1,1))
+	cl.caustic.laplacian(cl.q,(A.shape[0]-2,A.shape[1]-2),None,A_dev.data,ans_dev.data,dr,dz,m,global_offset=(1,1))
 	cl.queue.finish()
 	ans_dev.get(ary=ans)
 	return ans

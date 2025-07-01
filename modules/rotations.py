@@ -60,7 +60,7 @@ class Rotator:
 			self.Tjj_dev = pyopencl.array.empty(cl.q,self.Wj.shape,np.double)
 			self.Tjj_dev.set(self.Tj,queue=cl.q)
 		if uppe:
-			cl.program('rotations').AddChiUPPE(cl.q,shp[1:3],None,
+			cl.rotations.AddChiUPPE(cl.q,shp[1:3],None,
 				chi,
 				E,
 				ngas,
@@ -72,7 +72,7 @@ class Rotator:
 				np.int32(shp[0]),
 				np.int32(self.Wj.shape[0]))
 		else:
-			cl.program('rotations').AddChiParaxial(cl.q,shp[1:3],None,
+			cl.rotations.AddChiParaxial(cl.q,shp[1:3],None,
 				chi,
 				E,
 				ngas,

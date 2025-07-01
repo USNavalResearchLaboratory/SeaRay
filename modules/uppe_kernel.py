@@ -134,7 +134,7 @@ def condition_field(cl,src):
 	qwdev = src.qw_dev.data
 	cond = src.conditioner_dev.data
 	# Filter DC and very low frequencies
-	cl.program('fft').Filter(cl.q,sw,None,qwdev,cond)
+	cl.fft.Filter(cl.q,sw,None,qwdev,cond)
 
 def update_current(cl,src,mat,ionizer: ionization.Ionizer,rotator: rotations.Rotator):
 	'''Get current density from A[w,x,y]'''
@@ -153,9 +153,9 @@ def update_current(cl,src,mat,ionizer: ionization.Ionizer,rotator: rotations.Rot
 	Jtdev = src.Jt_dev.data
 	Jwdev = src.Jw_dev.data
 
-	# Form time domain fields
+	# Form time domain electric field
 	# N.b. time index runs backwards due to FFT conventions
-	cl.program('fft').IRFFT(cl.q,s2,None,Ewdev,Etdev,np.int32(src.freqs))
+	cl.fft.IRFFT(cl.q,s2,None,Ewdev,Etdev,np.int32(src.freqs))
 
 	# Accumulate the source terms
 	# First handle plasma formation
@@ -165,10 +165,10 @@ def update_current(cl,src,mat,ionizer: ionization.Ionizer,rotator: rotations.Rot
 	else:
 		ionizer.RateCL(cl,st,nedev,Etdev,False)
 		ionizer.GetPlasmaDensityCL(cl,st,nedev,ngasdev,src.dt)
-		cl.program('fft').SoftTimeWindow(cl.q,st,None,nedev,np.int32(4),np.int32(64))
+		cl.fft.SoftTimeWindow(cl.q,st,None,nedev,np.int32(4),np.int32(64))
 		src.Jt_dev[...] = (src.ne_dev*src.Et_dev).copy(queue=cl.q)
-		cl.program('fft').RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
-		cl.program('fft').iDtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(0.1),np.double(1.0))
+		cl.fft.RFFT(cl.q,s2,None,Jtdev,Jwdev,np.int32(src.steps))
+		cl.fft.iDtSpectral(cl.q,sw,None,Jwdev,wdev,np.double(0.1),np.double(1.0))
 
 	# Add currents due to Raman
 	src.chi_dev.fill(0.0,queue=cl.q)
@@ -176,14 +176,14 @@ def update_current(cl,src,mat,ionizer: ionization.Ionizer,rotator: rotations.Rot
 		rotator.AddChi(cl,st,chidev,Etdev,ngasdev,src.dt,True)
 
 	# Kerr effect
-	cl.program('uppe').AddKerrChi(cl.q,st,None,chidev,Etdev,ngasdev,np.double(mat.redchi3))
+	cl.uppe.AddKerrChi(cl.q,st,None,chidev,Etdev,ngasdev,np.double(mat.redchi3))
 
 	# Form polarization, then current, then filter
-	cl.program('uppe').SourcePolarization(cl.q,st,None,Jtdev,chidev,Etdev)
-	cl.program('fft').RFFT(cl.q,s2,None,Jtdev,scratch,np.int32(src.steps))
-	cl.program('fft').DtSpectral(cl.q,sw,None,scratch,wdev,np.double(1.0))
+	cl.uppe.SourcePolarization(cl.q,st,None,Jtdev,chidev,Etdev)
+	cl.fft.RFFT(cl.q,s2,None,Jtdev,scratch,np.int32(src.steps))
+	cl.fft.DtSpectral(cl.q,sw,None,scratch,wdev,np.double(1.0))
 	src.Jw_dev[...] = (src.Jw_dev+src.scratchw_dev).copy(queue=cl.q)
-	cl.program('fft').Filter(cl.q,sw,None,Jwdev,src.NLFilt_dev.data)
+	cl.fft.Filter(cl.q,sw,None,Jwdev,src.NLFilt_dev.data)
 
 def load_source(z0,z,cl,T,src,mat,ionizer,rotator,return_dz=False,dzmin=1.0):
 	'''We have an equation in the form dq/dz = S(z,q).
@@ -208,18 +208,18 @@ def load_source(z0,z,cl,T,src,mat,ionizer,rotator,return_dz=False,dzmin=1.0):
 	Jwdev = src.Jw_dev.data
 	dzdev = src.dz_dev.data
 	src.Ew_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('uppe').PropagateLinear(cl.q,sw,None,Ewdev,kzdev,kgdev,np.double(z0-src.zi+z))
-	cl.program('uppe').VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
+	cl.uppe.PropagateLinear(cl.q,sw,None,Ewdev,kzdev,kgdev,np.double(z0-src.zi+z))
+	cl.uppe.VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
 	T.rspacex(src.Ew_dev)
 	update_current(cl,src,mat,ionizer,rotator)
 	T.kspacex(src.Jw_dev)
-	cl.program('uppe').CurrentToODERHS(cl.q,sw,None,Jwdev,kzdev,kgdev,np.double(z0-src.zi+z))
+	cl.uppe.CurrentToODERHS(cl.q,sw,None,Jwdev,kzdev,kgdev,np.double(z0-src.zi+z))
 	if return_dz:
-		cl.program('paraxial').LoadModulus(cl.q,sw,None,qwdev,dzdev)
+		cl.paraxial.LoadModulus(cl.q,sw,None,qwdev,dzdev)
 		if np.isnan(pyopencl.array.sum(src.dz_dev,queue=cl.q).get(queue=cl.q)):
 			print('!',end='',flush=True)
 		amin = src.rel_amin * pyopencl.array.max(src.dz_dev,queue=cl.q).get(queue=cl.q)
-		cl.program('paraxial').LoadStepSize(cl.q,sw,None,qwdev,Jwdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
+		cl.paraxial.LoadStepSize(cl.q,sw,None,qwdev,Jwdev,dzdev,np.double(src.L),np.double(src.dphi),np.double(amin))
 		dz = pyopencl.array.min(src.dz_dev,queue=cl.q).get(queue=cl.q)
 		if dz<dzmin:
 			dz = dzmin
@@ -247,10 +247,10 @@ def finish(cl,T,src,mat,ionizer,rotator,zf):
 	Ewdev = src.Ew_dev.data
 	kzdev = mat.kz_dev.data
 	kgdev = mat.kg_dev.data
-	cl.program('uppe').PropagateLinear(cl.q,sw,None,qwdev,kzdev,kgdev,np.double(zf-src.zi))
+	cl.uppe.PropagateLinear(cl.q,sw,None,qwdev,kzdev,kgdev,np.double(zf-src.zi))
 	T.rspacex(src.qw_dev)
 	src.Ew_dev[...] = src.qw_dev.copy(queue=cl.q)
-	cl.program('uppe').VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
+	cl.uppe.VectorPotentialToElectricField(cl.q,sw,None,Ewdev,kzdev)
 	update_current(cl,src,mat,ionizer,rotator)
 	return src.qw_dev.get(queue=cl.q), \
 		src.Jw_dev.get(queue=cl.q), \
@@ -306,19 +306,19 @@ def propagator(cl,ctool,vg,a,mat,ionizer,rotator,NL_band,subcycles,zi,zf,dzmin):
 			src.qf_dev[...] = src.qw_dev.copy(queue=cl.q)
 
 			dz = load_source(z0,z,cl,T,src,mat,ionizer,rotator,return_dz=True,dzmin=dzmin) # load k1
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/6),np.double(dz/2))
 			condition_field(cl,src)
 
 			load_source(z0,z+0.5*dz,cl,T,src,mat,ionizer,rotator) # load k2
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz/2))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz/2))
 			condition_field(cl,src)
 
 			load_source(z0,z+0.5*dz,cl,T,src,mat,ionizer,rotator) # load k3
-			cl.program('uppe').RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz))
+			cl.uppe.RKStage(cl.q,sw,None,qwdev,qidev,qfdev,Jwdev,np.double(dz/3),np.double(dz))
 			condition_field(cl,src)
 
 			load_source(z0,z+dz,cl,T,src,mat,ionizer,rotator) # load k4
-			cl.program('uppe').RKFinish(cl.q,sw,None,qwdev,qfdev,Jwdev,np.double(dz/6))
+			cl.uppe.RKFinish(cl.q,sw,None,qwdev,qfdev,Jwdev,np.double(dz/6))
 			condition_field(cl,src)
 
 			iterations += 1

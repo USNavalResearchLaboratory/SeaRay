@@ -21,10 +21,10 @@ mess = 'Processing input file...\n'
 
 # Control parameters
 
-prop_range = (-15/cm,15/cm)
+prop_range = (-3/cm,-2/cm)
 w00 = 1.0
 r00 = dnum('3 mm')
-U00 = dnum('0.1 mJ')
+U00 = dnum('0.01 mJ')
 t00 = dnum('55 fs')
 a00 = helper.a0(U00,t00,r00,w00)
 chi3 = helper.chi3(1.0,'7.4e-24 m2/W')
@@ -60,10 +60,10 @@ sources = [
         'rays': {
             'origin': (None,0.0,0.0,-110/cm),
             'euler angles': (0.0,0.0,0.0),
-            'number': (2049,64,2,None),
+            'number': (2049,128,2,None),
             'bundle radius': (None,) + (.001*r00,)*3,
             'loading coordinates': 'cylindrical',
-            'bounds': band + (0.0,3*r00) + (0.0,2*np.pi) + (None,None),
+            'bounds': band + (0.0,2*r00) + (0.0,2*np.pi) + (None,None),
         },
         'waves': [
             # fundamental
@@ -100,19 +100,19 @@ optics[-1]['radius'] = 0.5/inch
 optics[-1]['max radius'] = 2*r00
 optics[-1]['start pos'] = 90/cm
 optics[-1]['end pos'] = 96/cm
-optics[-1]['front velocity'] = 1.001
+optics[-1]['front velocity'] = 0.999
 optics[-1]['origin'] = (None,0,0,-90/cm)
 optics[-1]['euler angles'] = (0.,0.,0.)
 
-optics.append({})
-optics[-1]['object'] = surface.IdealHarmonicGenerator('SHG')
-optics[-1]['harmonic delay'] = 20/fs
-optics[-1]['harmonic number'] = 2.0
-optics[-1]['frequency band'] = (0.9,1.1)
-optics[-1]['efficiency'] = 0.1
-optics[-1]['radius'] = 0.5/inch
-optics[-1]['origin'] = (None,0,0,-80/cm)
-optics[-1]['euler angles'] = (0.,0.,0.)
+# optics.append({})
+# optics[-1]['object'] = surface.IdealHarmonicGenerator('SHG')
+# optics[-1]['harmonic delay'] = 20/fs
+# optics[-1]['harmonic number'] = 2.0
+# optics[-1]['frequency band'] = (0.9,1.1)
+# optics[-1]['efficiency'] = 0.1
+# optics[-1]['radius'] = 0.5/inch
+# optics[-1]['origin'] = (None,0,0,-80/cm)
+# optics[-1]['euler angles'] = (0.,0.,0.)
 
 optics.append({})
 optics[-1]['object'] = surface.EikonalProfiler('start')
@@ -124,11 +124,11 @@ optics[-1]['euler angles'] = (0.,0.,0.)
 optics.append({})
 optics[-1]['object'] = volume.AnalyticBox('air')
 optics[-1]['propagator'] = 'uppe'
-optics[-1]['ionizer'] = None
+optics[-1]['ionizer'] = ionizer
 optics[-1]['rotator'] = None
 optics[-1]['wave coordinates'] = 'cylindrical'
-optics[-1]['wave grid'] = (2049,512,1,11)
-optics[-1]['radial modes'] = 512
+optics[-1]['wave grid'] = (2049,1024,1,11)
+optics[-1]['radial modes'] = 1024
 optics[-1]['density reference'] = ngas
 optics[-1]['density function'] = '1.0'
 optics[-1]['density lambda'] = lambda x,y,z,r2 : np.ones(r2.shape)
@@ -139,7 +139,7 @@ optics[-1]['minimum step'] = 1.0
 optics[-1]['dispersion inside'] = air
 optics[-1]['dispersion outside'] = dispersion.Vacuum()
 optics[-1]['chi3'] = 0
-optics[-1]['size'] = (6/mm,6/mm,prop_range[1]-prop_range[0])
+optics[-1]['size'] = (1.2/mm,1.2/mm,prop_range[1]-prop_range[0])
 optics[-1]['origin'] = (None,0,0,(prop_range[0]+prop_range[1])/2)
 optics[-1]['euler angles'] = (0.,0.,0.)
 optics[-1]['window speed'] = air.GroupVelocityMagnitude(1.0)
